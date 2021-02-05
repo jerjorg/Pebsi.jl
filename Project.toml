@@ -3,6 +3,13 @@ uuid = "2a69df80-e322-46d0-b6cf-045ccd04b54b"
 authors = ["Jeremy Jorgensen"]
 version = "0.1.0"
 
+[deps]
+LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
+MiniQhull = "978d7f02-9e05-4691-894f-ae31a51d76ca"
+PyCall = "438e738f-606a-5dbb-bf0a-cddfbfd45ab0"
+PyPlot = "d330b81b-6aea-500a-939a-2ce795aea3ee"
+SymmetryReduceBZ = "49a35663-c880-4242-bebb-1ec8c0fa8046"
+
 [compat]
 julia = "1.5"
 
