@@ -17,7 +17,7 @@ import PyCall: pyimport
 
 import PyPlot: subplots
 import SymmetryReduceBZ.Lattices: get_recip_latvecs
-import SymmetryReduceBZ.Utilities: sample_sphere
+import SymmetryReduceBZ.Utilities: sample_circle, sample_sphere
 import LinearAlgebra: norm, Symmetric, eigvals
 
 # The lattice types of the EPMs (follows of the naming convention
@@ -85,19 +85,19 @@ Zn_latvecs = genlat_HEX(Zn_abc[1],Zn_abc[3])
 eVtoRy = 0.07349864435130871395
 RytoeV = 13.6056931229942343775
 # Reciprocal lattice vectors
-# Ag_rlatvecs = get_recip_latvecs(Ag_latvecs,"angular")
-# Al_rlatvecs = get_recip_latvecs(Al_latvecs,"angular")
-# Au_rlatvecs = get_recip_latvecs(Au_latvecs,"angular")
-# Cs_rlatvecs = get_recip_latvecs(Cs_latvecs,"angular")
-# Cu_rlatvecs = get_recip_latvecs(Cu_latvecs,"angular")
-# In_rlatvecs = get_recip_latvecs(In_latvecs,"angular")
-# K_rlatvecs = get_recip_latvecs(K_latvecs,"angular")
-# Li_rlatvecs = get_recip_latvecs(Li_latvecs,"angular")
-# Na_rlatvecs = get_recip_latvecs(Na_latvecs,"angular")
-# Pb_rlatvecs = get_recip_latvecs(Pb_latvecs,"angular")
-# Rb_rlatvecs = get_recip_latvecs(Rb_latvecs,"angular")
-# Sn_rlatvecs = get_recip_latvecs(Sn_latvecs,"angular")
-# Zn_rlatvecs = get_recip_latvecs(Zn_latvecs,"angular")
+Ag_rlatvecs = get_recip_latvecs(Ag_latvecs,"angular")
+Al_rlatvecs = get_recip_latvecs(Al_latvecs,"angular")
+Au_rlatvecs = get_recip_latvecs(Au_latvecs,"angular")
+Cs_rlatvecs = get_recip_latvecs(Cs_latvecs,"angular")
+Cu_rlatvecs = get_recip_latvecs(Cu_latvecs,"angular")
+In_rlatvecs = get_recip_latvecs(In_latvecs,"angular")
+K_rlatvecs = get_recip_latvecs(K_latvecs,"angular")
+Li_rlatvecs = get_recip_latvecs(Li_latvecs,"angular")
+Na_rlatvecs = get_recip_latvecs(Na_latvecs,"angular")
+Pb_rlatvecs = get_recip_latvecs(Pb_latvecs,"angular")
+Rb_rlatvecs = get_recip_latvecs(Rb_latvecs,"angular")
+Sn_rlatvecs = get_recip_latvecs(Sn_latvecs,"angular")
+Zn_rlatvecs = get_recip_latvecs(Zn_latvecs,"angular")
 
 # EPM rules for replacing distances with pseudopotential form factors
 # Distances are for the angular reciprocal space convention.
@@ -114,6 +114,20 @@ Pb_rules = Dict(2.33 => -0.039,1.16 => -0.084)
 Rb_rules = Dict(1.46 => -0.002)
 Sn_rules = Dict(4.48 => 0.033,1.65 => -0.056,2.38 => -0.069,3.75 => 0.051)
 Zn_rules = Dict(1.34 => -0.022,1.59 => 0.063,1.44 => 0.02)
+
+Ag_electrons = 1
+Al_electrons = 3
+Au_electrons = 1
+Cs_electrons = 1
+Cu_electrons = 1
+In_electrons = 3
+K_electrons = 1
+Li_electrons = 1
+Na_electrons = 1
+Pb_electrons = 4
+Rb_electrons = 1
+Sn_electrons = 4
+Zn_electrons = 2
 
 eVtoRy = 0.07349864435130871395
 RytoeV = 13.6056931229942343775
@@ -163,8 +177,19 @@ function eval_EPM(kpoint::AbstractArray{<:Real,1},
     rbasis::AbstractArray{<:Real,2}, rules::Dict{Float64,Float64}, cutoff::Real,
     sheets::UnitRange{<:Int})
 
-    rlatpts = sample_sphere(rbasis,cutoff,kpoint)
+    if length(kpoint) == 3
+        rlatpts = sample_sphere(rbasis,cutoff,kpoint)
+    elseif length(kpoint) == 2
+        rlatpts = sample_circle(rbasis,cutoff,kpoint)
+    else
+        throw(ArgumentError("The k-point may only have 2 or 3 elements."))
+    end
+
     npts = size(rlatpts,2)
+    if npts < sheets[end]
+        error("The cutoff is too small for the requested number of sheets. The"*
+            " number of terms in the expansion is $npts.")
+    end
     ham=zeros(Float64,npts,npts)
     dist = 0.0
     for i=1:npts, j=i:npts
@@ -263,10 +288,7 @@ function plot_bandstructure(name::String,basis::AbstractArray{<:Real,2},
     # DOI: 10.1016/j.commatsci.2016.10.015
     structure=[basis,atompos,atomtypes]
     timereversal=true
-    @show structure
-    @show timereversal
-    @show kpoint_dist
-    @show sp
+
     spdict=sp[:get_explicit_k_path](structure,timereversal,kpoint_dist)
     sympath_pts=Array(spdict["explicit_kpoints_abs"]')
 
