@@ -1,6 +1,2 @@
-using Pebsi
-using Test
+include("RectangularMethod.jl")
 
-@testset "Pebsi.jl" begin
-    # Write your tests here.
-end

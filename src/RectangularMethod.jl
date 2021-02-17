@@ -45,12 +45,12 @@ function sample_unitcell(latvecs::AbstractArray{<:Real,2},
     rtol::Real=sqrt(eps(float(maximum(latvecs)))),
     atol::Real=1e-9)::Array{Float64,2}
 
-    offset = (inv(N)*latvecs)*grid_offset
-
     H = hnf(matrix(ZZ,N))
     H = convert(Array{Int,2},Array(H))
     gridvecs = inv(H)*latvecs
     inv_latvecs = inv(latvecs)
+
+    offset = (inv(H)*latvecs)*grid_offset
     if size(latvecs) == (2,2) && length(grid_offset) == 2
         (a,c) = diag(H)
         grid = reduce(hcat,[gridvecs*[i,j] + offset for
@@ -205,7 +205,6 @@ function symreduce_grid(recip_latvecs::AbstractArray{<:Real,2},
     end
     orbits = orbits[findall(x->x==1,keep)]
     if sort(indices) != 1:num_kpoints
-        @show sort(indices)
         error("The k-point indices are calculated incorrectly.")
     end
 
