@@ -1,6 +1,5 @@
 module RectangularMethod
 
-
 import SymmetryReduceBZ.Symmetry: mapto_unitcell
 import Pebsi.EPMs: eval_EPM
 import Base.Iterators: product
@@ -46,24 +45,25 @@ function sample_unitcell(latvecs::AbstractArray{<:Real,2},
     rtol::Real=sqrt(eps(float(maximum(latvecs)))),
     atol::Real=1e-9)::Array{Float64,2}
 
+    offset = (inv(N)*latvecs)*grid_offset
+
     H = hnf(matrix(ZZ,N))
-    H = convert(Array{Integer,2},Array(H))
+    H = convert(Array{Int,2},Array(H))
     gridvecs = inv(H)*latvecs
     inv_latvecs = inv(latvecs)
     if size(latvecs) == (2,2) && length(grid_offset) == 2
         (a,c) = diag(H)
-        grid = reduce(hcat,[gridvecs*([i,j] + grid_offset) for
+        grid = reduce(hcat,[gridvecs*[i,j] + offset for
             (i,j)=product(0:a-1,0:c-1)])
     elseif size(latvecs) == (3,3) && length(grid_offset) == 3
         (a,c,f) = diag(H)
-        grid = reduce(hcat,[gridvecs*([i,j,k] + grid_offset) for
+        grid = reduce(hcat,[gridvecs*[i,j,k] + offset for
             (i,j,k)=product(0:a-1,0:c-1,0:f-1)])
     else
         throw(ArgumentError("The lattice vectors and offset are incompatible."))
     end
 
-    reduce(hcat,[mapto_unitcell(grid[:,i],latvecs,inv_latvecs,"Cartesian",
-        rtol,atol) for i=1:size(grid,2)])
+    mapto_unitcell(grid,latvecs,inv_latvecs,"Cartesian",rtol,atol)
 end
 
 """
@@ -137,33 +137,24 @@ symreduce_grid(recip_latvecs,N,grid_offset,pointgroup)
 """
 function symreduce_grid(recip_latvecs::AbstractArray{<:Real,2},
     N::AbstractArray{<:Integer,2}, grid_offset::AbstractArray{<:Real,1},
-    pointgroup::AbstractArray, include_orbits::Bool=false,
+    pointgroup::AbstractArray,
     rtol::Real=sqrt(eps(float(maximum(recip_latvecs)))),
     atol::Real=1e-9)
 
-    if (size(N) == (2,2) && size(recip_latvecs) == (2,2) &&
-            length(grid_offset) == 2)
-        dim = 2
-        kpoint_index = kpoint_index2D
-    elseif (size(N) == (3,3) && size(recip_latvecs) == (3,3) &&
-            length(grid_offset) == 3)
-        dim = 3
-        kpoint_index = kpoint_index3D
-    else
-        throw(ArgumentError("Only regular grids in 2D or 3D can be reduced."))
-    end
+    dim = length(grid_offset)
 
     origin = zeros(Int,dim)
     inv_rlatvecs = inv(recip_latvecs)
-    K = inv(N)*recip_latvecs
-    invK = inv_rlatvecs*N
-    offset = K*grid_offset
     N = matrix(ZZ,N)
     (H,U) = hnf_with_transform(N)
     (D,A,B) = snf_with_transform(H)
-    (D,A,B,N) = [Array(x) for x=[D,A,B,N]]
-    (D,A,B,N) = [convert(Array{Int64,2},x) for x=[D,A,B,N]]
+    (D,A,N,H) = [Array(x) for x=[D,A,N,H]]
+    (D,A,N,H) = [convert(Array{Int64,2},x) for x=[D,A,N,H]]
     d = diag(D)
+    K = inv(H)*recip_latvecs
+    invK = inv_rlatvecs*H
+    offset = mapto_unitcell(K*grid_offset,recip_latvecs,inv(recip_latvecs),
+        "Cartesian",rtol,atol)
     grid = sample_unitcell(recip_latvecs,N,grid_offset,rtol,atol)
     num_kpoints = size(grid,2)
     unique_count = 0
@@ -173,13 +164,15 @@ function symreduce_grid(recip_latvecs::AbstractArray{<:Real,2},
     # The representative k-point for each orbit
     first_kpoint = zeros(Int,num_kpoints)
     kpoint_weights = zeros(Int,num_kpoints)
-    # A list of indices, used as a failsafe
+    # A list of all indices, used as a failsafe
     indices = zeros(Int,num_kpoints)
 
+    orbits = [zeros(Int,length(pointgroup)) for i=1:num_kpoints]
+    keep = zeros(Int,num_kpoints)
     for i=1:num_kpoints
+        orbsize = 0
         # Remove the offset because indexing doesn't work with shifted grids.
-        dialᵢ = mod.(A*round.(Int,invK*(grid[:,i]-offset)),d)
-        indexᵢ = kpoint_index(dialᵢ,d)
+        indexᵢ = kpoint_index(grid[:,i],offset,invK,A,d)
         indices[i] = indexᵢ
         # Move on if this k-point is already part of an orbit.
         if hash_table[indexᵢ] != 0
@@ -189,107 +182,126 @@ function symreduce_grid(recip_latvecs::AbstractArray{<:Real,2},
         hash_table[indexᵢ] = unique_count
         first_kpoint[indexᵢ] = i
         kpoint_weights[indexᵢ] = 1
+        orbits[i][1] = indexᵢ
+        orbsize += 1
+        keep[i] = 1
         for (j,op) in enumerate(pointgroup)
-            test = op*grid[:,i]
-
             rot_point = mapto_unitcell(op*grid[:,i],recip_latvecs,inv_rlatvecs,
                 "Cartesian",rtol,atol)
             test = mapto_unitcell(rot_point-offset,K,invK,"Cartesian",rtol,atol)
             if !(isapprox(test,origin,rtol=rtol,atol=atol))
                 continue
             end
-            dialⱼ = mod.(A*round.(Int,invK*(rot_point-offset)),d)
-            indexⱼ = kpoint_index(dialⱼ,d)
+
+            indexⱼ = kpoint_index(rot_point,offset,invK,A,d)
             if hash_table[indexⱼ] == 0
                 hash_table[indexⱼ] = unique_count
                 kpoint_weights[indexᵢ] += 1
+                orbsize += 1
+                orbits[i][orbsize] = indexⱼ
             end
         end
+        orbits[i] = orbits[i][1:orbsize]
     end
-    @show hash_table
-    test = sort(indices) - collect(1:num_kpoints)
-    test = findall(x->x!=0,test)
-    if sort(indices) != collect(1:num_kpoints)
+    orbits = orbits[findall(x->x==1,keep)]
+    if sort(indices) != 1:num_kpoints
+        @show sort(indices)
         error("The k-point indices are calculated incorrectly.")
     end
 
-    indices = findall(x->x!=0,kpoint_weights)
-    unique_kpoints = grid[:,first_kpoint[indices]]
-    kpoint_weights = kpoint_weights[indices]
+    nonzero_orbits = findall(x->x!=0,kpoint_weights)
+    unique_kpoints = grid[:,first_kpoint[nonzero_orbits]]
+    kpoint_weights = kpoint_weights[nonzero_orbits]
 
-    if include_orbits
-        orbits = Array{Array{Float64,2},1}([])
-        for i=1:unique_count
-            append!(orbits,[grid[:,findall(x->x==i,hash_table)]])
-        end
-        (kpoint_weights, unique_kpoints, orbits)
-    else
-        (kpoint_weights, unique_kpoints)
+    order = sortperm(indices)
+    orbits = [grid[:,order[orb]] for orb = orbits]
+    (kpoint_weights, unique_kpoints, orbits)
+end
+
+"""
+    convert_mixedradix(dials,dial_sizes)
+
+Convert a mixed-radix number to an integer.
+
+# Arguments
+- `dial::AbstractArray{<:Integer,1}`: the mixed radix number as integers
+    in a 1D array.
+- `dial_sizes::AbstractArray{<:Integer,1}`: the maximum value of each dial
+    as integers in a 1D array.
+
+# Returns
+    `val::Integer`: the mixed radix-number as an integer, such as the position
+    in a 1D array, for example.
+
+# Examples
+```jldoctest
+dials = [1,2]
+dial_sizes = [3,4]
+convert_mixedradix(dials,dial_sizes)
+# output
+8
+```
+"""
+function convert_mixedradix(dial::AbstractArray{<:Integer,1},
+        dial_sizes::AbstractArray{<:Integer,1})::Integer
+    val = 1 + dial[1]
+    for (i,x)=enumerate(dial[2:end])
+        val += x*prod(dial_sizes[1:i])
     end
+    val
 end
 
-
 """
-    kpoint_index2D(dial, snf_diag)
+    kpoint_index(point,offset,invK,A,snf_diag)
 
-Calculate the index of a k-point in a regular grid in 2D.
+Calculate the index of a point in a generalized regular grid.
 
 # Arguments
-- `dial::AbstractArray{Integer,1}`: the odometer reading of the point in the
-    generalized regular grid.
-- `snf_diag::AbstractArray{Integer,1}`: the diagonal elements of the integer
-    matrix that relates the lattice vectors to the superlattice vectors in
-    Smith normal form.
+- `point::AbstractArray{<:Real,1}`: a point in the grid in Cartesian
+    coordinates.
+- `offset::AbstractArray{<:Real,1}`: the offset of the grid in Cartesian
+    coordinates.
+- `invK::AbstractArray{<:Real,2}`: the inverse of the array with the grid
+    generating vectors as columns.
+- `A::AbstractArray{<:Real,2}`: the left transform for converting an integer
+    array into Smith normal form: `N = A*S*B` where N in an integer array.
+- `snf_diag::AbstractArray{<:Real,1}`: the diagonal elements of the integer
+    array in Smith normal form.
 
 # Returns
-- `::Integer`: the index of the k-point in the grid.
+- `::Integer`: the index of the point.
 
 # Examples
 ```jldoctest
-import Pebsi.RectangularMethod: kpoint_index2D
-dial = [1,2]
-snf_diag = [2,3]
-kpoint_index2D(dial,snf_diag)
+point = [0.5, 0.5]
+offset = [0,0]
+invK = [0.25  0; 0 0.25]
+A = [1 1; -1 0]
+snf_diag = [4,4]
+kpoint_index(point,offset,invK,A,snf_diag)
 # output
-6
+1
 ```
 """
-function kpoint_index2D(dial::AbstractArray{<:Integer,1},
-    snf_diag::AbstractArray{<:Integer,1})::Integer
-    round(Int,1 + dial[2] + dial[1]*snf_diag[2])
+function kpoint_index(point::AbstractArray{<:Real,1},
+        offset::AbstractArray{<:Real,1}, invK::AbstractArray{<:Real,2},
+        A::AbstractArray{<:Real,2}, snf_diag::AbstractArray{<:Real,1})::Integer
+    dial = mod.(A*round.(Int,invK*(point-offset)),snf_diag)
+    convert_mixedradix(dial,snf_diag)
 end
 
 """
-    kpoint_index3D(dial, snf_diag)
+    kpoint_index(points,offset,invK,A,snf_diag)
 
-Calculate the index of a k-point in a regular grid in 3D.
-
-# Arguments
-- `dial::AbstractArray{Integer,1}`: the odometer reading of the point in the
-    generalized regular grid.
-- `snf_diag::AbstractArray{Integer,1}`: the diagonal elements of the integer
-    matrix that relates the lattice vectors to the superlattice vectors in
-    Smith normal form.
-
-# Returns
-- `::Integer`: the index of the k-point in the grid.
-
-# Examples
-```jldoctest
-import Pebsi.RectangularMethod: kpoint_index3D
-dial = [1,2,0]
-snf_diag = [2,4,8]
-kpoint_index3D(dial,snf_diag)
-# output
-49
-```
+Calculate the indices of points in an array as columns.
 """
-function kpoint_index3D(dial::AbstractArray{<:Integer,1},
-    snf_diag::AbstractArray{<:Integer,1})::Integer
-    round(Int,1 + dial[3] + dial[2]*snf_diag[3] + dial[1]*
-        snf_diag[3]*snf_diag[2])
-end
+function kpoint_index(points::AbstractArray{<:Real,2},
+        offset::AbstractArray{<:Real,1}, invK::AbstractArray{<:Real,2},
+        A::AbstractArray{<:Real,2},
+        snf_diag::AbstractArray{<:Real,1})::AbstractArray{Integer,1}
 
+    [kpoint_index(points[:,i],offset,invK,A,snf_diag) for i=1:size(points,2)]
+end
 
 """
     calculate_orbits(grid,pointgroup,latvecs)
@@ -310,7 +322,7 @@ Calculate the points of the grid in each orbit the hard way.
 
 # Examples
 ```jldoctest
-import Pebsi.RectangularMethod: calculate_orbits, sample_unitcell
+import Pebsi.RectangularMethod: calculate_orbits, coordinatescell
 import SymmetryReduceBZ.Symmetry: calc_pointgroup
 recip_latvecs = [1 0; 0 1]
 N = [2 0; 0 2]
@@ -327,18 +339,19 @@ calculate_orbits(grid,pointgroup,recip_latvecs)
 function calculate_orbits(grid::AbstractArray{<:Real,2},
     pointgroup,latvecs::AbstractArray{<:Real,2},
     rtol::Real=sqrt(eps(float(maximum(grid)))),atol::Real=1e-9)::AbstractArray
+
     inv_latvecs = inv(latvecs)
     coordinates = "Cartesian"
-    uc_grid = reduce(hcat,[mapto_unitcell(grid[:,i],latvecs,inv_latvecs,
-        coordinates) for i=1:size(grid,2)]);
+    dim = size(grid,1)
+    uc_grid = mapto_unitcell(grid,latvecs,inv_latvecs,coordinates,rtol,atol)
     numpts = 0
-    orbits = [zeros(2,length(pointgroup)) for i=1:size(uc_grid,2)]
-    orbit = zeros(2,length(pointgroup))
+    orbits = [zeros(dim,length(pointgroup)) for i=1:size(uc_grid,2)]
+    orbit = zeros(dim,length(pointgroup))
     gridcopy =  uc_grid
-    while size(gridcopy) != (2,0)
+    while size(gridcopy) != (dim,0)
         pt = gridcopy[:,1]
         numpts += 1
-        orbit = zeros(2,length(pointgroup))
+        orbit = zeros(dim,length(pointgroup))
         orbsize = 0
         for op in pointgroup
             rot_pt = Array{Float64,1}(op*pt)
@@ -349,7 +362,7 @@ function calculate_orbits(grid::AbstractArray{<:Real,2},
                 orbsize += 1
                 orbit[:,orbsize] = gridcopy[:,pos]
                 gridcopy = gridcopy[:,1:end .!= pos]
-                if size(gridcopy) == (2,0)
+                if size(gridcopy) == (dim,0)
                     break
                 end
             end
@@ -357,6 +370,7 @@ function calculate_orbits(grid::AbstractArray{<:Real,2},
         orbit = orbit[:,1:orbsize]
         orbits[numpts] = orbit
     end
+
     orbits = orbits[1:numpts]
 end
 
