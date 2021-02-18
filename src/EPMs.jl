@@ -13,12 +13,10 @@ import SymmetryReduceBZ.Lattices: genlat_FCC, genlat_BCC, genlat_HEX,
     genlat_BCT, get_recip_latvecs
 
 import PyCall: pyimport
-
-
 import PyPlot: subplots
 import SymmetryReduceBZ.Lattices: get_recip_latvecs
 import SymmetryReduceBZ.Utilities: sample_circle, sample_sphere
-import LinearAlgebra: norm, Symmetric, eigvals
+import LinearAlgebra: norm, Symmetric, eigvals, dot
 
 # The lattice types of the EPMs (follows of the naming convention
 # of High-throughput electronic band structure calculations:
@@ -82,8 +80,6 @@ Rb_latvecs = genlat_BCC(Rb_abc[1])
 Sn_latvecs = genlat_BCT(Sn_abc[1],Sn_abc[3])
 Zn_latvecs = genlat_HEX(Zn_abc[1],Zn_abc[3])
 
-eVtoRy = 0.07349864435130871395
-RytoeV = 13.6056931229942343775
 # Reciprocal lattice vectors
 Ag_rlatvecs = get_recip_latvecs(Ag_latvecs,"angular")
 Al_rlatvecs = get_recip_latvecs(Al_latvecs,"angular")
@@ -132,8 +128,107 @@ Zn_electrons = 2
 eVtoRy = 0.07349864435130871395
 RytoeV = 13.6056931229942343775
 
+
+# 2D "toy" empirical pseudopotentials (the form factors are chosen at random)
+
+# Model 1 - square symmetry
+convention = "ordinary"
+m1real_latvecs = [1 0; 0 1]
+m1recip_latvecs = get_recip_latvecs(m1real_latvecs,convention)
+m1rules = Dict(1.00 => -0.23, 1.41 => 0.12)
+m1electrons1 = 6
+
+m1cutoff = 6.1
+m1fermilevel1 = 0.9381309375519309
+m1bandenergy1 = 1.0423513259405526
+
+m1electrons2 = 7
+m1fermilevel2 = 1.1057574662181007
+m1bandenergy2 = 1.5535874027360785
+
+m1electrons3 = 8
+m1fermilevel3 = 1.258616280256323
+m1bandenergy3 = 2.145219996962875
+
+# Model 2 - hexagonal symmetry
+convention = "ordinary"
+m2recip_latvecs = [0.5 0.5; 0.8660254037844386 -0.8660254037844386]
+m2real_latvecs = get_recip_latvecs(m2recip_latvecs,convention)
+m2rules = Dict(1.0 => 0.39, 1.73 => 0.23, 2.0 => -0.11)
+m2cutoff = 5.9
+
+m2electrons1 = 5
+m2fermilevel1 = 0.06138423898212197
+m2bandenergy1 = -0.4302312741509512
+
+m2electrons2 = 7
+m2fermilevel2 = 0.9021827685803184
+m2bandenergy2 = -0.024599327665460413
+
+m2electrons3 = 8
+m2fermilevel3 = 0.9968615721784458
+m2bandenergy3 = 0.38884262264868563
+
+# Model 3 - centered rectangular symmetry
+convention = "ordinary"
+m3recip_latvecs = [0.4338837391175581 1.0; 0.9009688679024191 0.0]
+m3real_latvecs = get_recip_latvecs(m3recip_latvecs,convention)
+m3rules = Dict(1.0 => -0.27, 1.06 => 0.2, 1.69 => -0.33)
+m3cutoff = 5.95
+
+m3electrons1 = 5
+m3fermilevel1 = 0.5833433206577795
+m3bandenergy1 = 0.0035066586253235665
+
+m3electrons2 = 7
+m3fermilevel2 = 0.9911138305912597
+m3bandenergy2 = 0.71444638735834
+
+m3electrons3 = 8
+m3fermilevel3 = 1.1117071929086504
+m3bandenergy3 = 1.1860046687293682
+
+# # Model 4 - rectangular symmetry
+convention = "ordinary"
+m4recip_latvecs = [1 0; 0 2]
+m4real_latvecs = get_recip_latvecs(m4recip_latvecs,convention)
+m4rules = Dict(1.0 => 0.39, 2.0 => -0.11, 2.24 => 0.11)
+m4cutoff = 8.6
+
+m4electrons1 = 6
+m4fermilevel1 = 1.9034249381001005
+m4bandenergy1 = 5.1056578173306795
+
+m4electrons2 = 7
+m4fermilevel2 = 2.2266488438956333
+m4bandenergy2 = 7.1685536634386136
+
+m4electrons3 = 8
+m4fermilevel3 = 2.551004975931985
+m4bandenergy3 = 9.555193758896971
+
+# Model 5 - oblique symmetry
+convention = "ordinary"
+m5recip_latvecs = [1.0 -0.4; 0.0 1.0392304845413265]
+m5real_latvecs = get_recip_latvecs(m5recip_latvecs,convention)
+m5rules = Dict(1.0 => 0.42, 1.11 => 0.02, 1.2 => -0.18)
+m5cutoff = 6.3
+
+m5electrons1 = 5
+m5fermilevel1 = 0.7916464535133585
+m5bandenergy1 = 0.47750270146629903
+
+m5electrons2 = 7
+m5fermilevel2 = 1.1470444743280181
+m5bandenergy2 = 1.4588171623200643
+
+m5electrons3 = 9
+m5fermilevel3 = 1.4883816210907215
+m5bandenergy3 = 2.8258962133639556
+
 @doc """
-    eval_EPM(kpoint,rbasis,rules,cutoff,sheets)
+    eval_epm(kpoint,rbasis,rules,cutoff,sheets,energy_conversion_factor,rtol,
+        atol)
 
 Evaluate an empirical pseudopotential.
 
@@ -146,19 +241,25 @@ Evaluate an empirical pseudopotential.
     are the empirical pseudopotential form factors.
 - `cutoff::Real`: the Fourier expansion cutoff.
 - `sheets::UnitRange{<:Int}`: the positions of eigenenergies returned.
+- `energy_conversion_factor::Real=RytoeV`: converts the energy eigenvalue units
+    from the energy unit for `rules` to an alternative energy unit.
+- `rtol::Real=sqrt(eps(float(maximum(rbasis))))`: a relative tolerance for
+    finite precision comparisons. This is used for identifying points within a
+    circle or sphere in the Fourier expansion.
+- `atol::Real=0.0`: an absolute tolerance for finite precision comparisons.
 
 # Returns
 - `::AbstractArray{<:Real,1}`: a list of eigenenergies
 
 # Examples
 ```jldoctest
-import PEBSI.EPMs: eval_EPM
+import PEBSI.EPMs: eval_epm
 kpoint = [0,0,0]
 rlatvecs = [1 0 0; 0 1 0; 0 0 1]
 rules = Dict(1.00 => .01, 2.00 => 0.015)
 cutoff = 3.0
 sheets = 1:10
-eval_EPM(kpoint, rlatvecs, rules, cutoff, sheets)
+eval_epm(kpoint, rlatvecs, rules, cutoff, sheets)
 # output
 10-element Array{Float64,1}:
  -0.012572222255690903
@@ -173,14 +274,15 @@ eval_EPM(kpoint, rlatvecs, rules, cutoff, sheets)
  26.798122290711415
 ```
 """
-function eval_EPM(kpoint::AbstractArray{<:Real,1},
+function eval_epm(kpoint::AbstractArray{<:Real,1},
     rbasis::AbstractArray{<:Real,2}, rules::Dict{Float64,Float64}, cutoff::Real,
-    sheets::UnitRange{<:Int})
+    sheets::UnitRange{<:Int},energy_conversion_factor::Real=RytoeV,
+    rtol::Real=sqrt(eps(float(maximum(rbasis)))),atol::Real=0.0)
 
     if length(kpoint) == 3
-        rlatpts = sample_sphere(rbasis,cutoff,kpoint)
+        rlatpts = sample_sphere(rbasis,cutoff,kpoint,rtol,atol)
     elseif length(kpoint) == 2
-        rlatpts = sample_circle(rbasis,cutoff,kpoint)
+        rlatpts = sample_circle(rbasis,cutoff,kpoint,rtol,atol)
     else
         throw(ArgumentError("The k-point may only have 2 or 3 elements."))
     end
@@ -194,7 +296,8 @@ function eval_EPM(kpoint::AbstractArray{<:Real,1},
     dist = 0.0
     for i=1:npts, j=i:npts
         if i==j
-            ham[i,j] = norm(kpoint + rlatpts[:,i])^2
+            # ham[i,j] = norm(kpoint + rlatpts[:,i])^2
+            ham[i,j] = dot(kpoint + rlatpts[:,i],kpoint + rlatpts[:,i])
         else
             dist = round(norm(rlatpts[:,i] - rlatpts[:,j]),digits=2)
             if haskey(rules,dist)
@@ -203,7 +306,7 @@ function eval_EPM(kpoint::AbstractArray{<:Real,1},
         end
     end
 
-    eigvals(Symmetric(ham))[sheets]*RytoeV
+    eigvals(Symmetric(ham))[sheets]*energy_conversion_factor
 end
 
 """
@@ -244,7 +347,7 @@ Plot the band structure of an empirical pseudopotential.
 
 # Examples
 ```jldoctest
-import PEBSI.EPMs: eval_EPM,plot_bandstructure
+import PEBSI.EPMs: eval_epm,plot_bandstructure
 name="Al"
 Al_latvecs=[0.0 3.8262 3.8262; 3.8262 0.0 3.8262; 3.8262 3.8262 0.0]
 Al_rules=Dict(2.84 => 0.0562,1.42 => 0.0179)
@@ -317,7 +420,7 @@ function plot_bandstructure(name::String,basis::AbstractArray{<:Real,2},
     end
 
     # Eigenvalues in band structure plot
-    evals=[eval_EPM(sympath_pts[:,i],rbasis,rules,cutoff,sheets)
+    evals=[eval_epm(sympath_pts[:,i],rbasis,rules,cutoff,sheets)
             for i=1:size(sympath_pts,2)]
     evals = reduce(hcat,evals)
 

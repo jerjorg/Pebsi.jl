@@ -1,7 +1,7 @@
 using Test
 
 import Pebsi.RectangularMethod: sample_unitcell, symreduce_grid,
-    calculate_orbits, convert_mixedradix
+    calculate_orbits, convert_mixedradix, rectangular_method
 
 import Base.Iterators: product
 import SymmetryReduceBZ.Symmetry: calc_pointgroup, calc_ibz, mapto_ibz,
@@ -112,5 +112,55 @@ import SymmetryReduceBZ.Utilities: contains
         test = reduce(hcat,[convert_mixedradix([i,j],[a,c]) for
             (i,j)=product(0:a-1,0:c-1)])
         @test test[1:end] == 1:length(test)
+    end
+
+    @testset "rectangular_method" begin
+        atom_types = [0]
+        atom_pos = Array([0 0]')
+        coordinates = "Cartesian"
+        convention = "ordinary"
+        energy_factor = 1
+        N = [100 0; 0 100]
+        grid_offset = [0.5,0.5]
+        sheets=1:10
+
+        vars1 = ["real_latvecs","recip_latvecs","rules","cutoff"]
+        vars2 = ["electrons","fermilevel","bandenergy"]
+
+        for model=1:5,area=1:3
+
+            for var=vars1
+                tmp = Symbol("m"*string(model)*var)
+                @eval import Pebsi.EPMs: $tmp
+            end
+
+            for var=vars2
+                tmp = Symbol("m"*string(model)*var*string(area))
+                @eval import Pebsi.EPMs: $tmp
+            end
+
+            real_latvecs = getfield(Main,Symbol("m"*string(model)*
+                "real_latvecs"))
+            recip_latvecs = getfield(Main,Symbol("m"*string(model)*
+                "recip_latvecs"))
+            rules = getfield(Main,Symbol("m"*string(model)*"rules"))
+            cutoff = getfield(Main,Symbol("m"*string(model)*"cutoff"))
+
+            bandenergy_sol = getfield(Main,Symbol("m"*string(model)*
+                "bandenergy"*string(area)))
+            fermilevel_sol = getfield(Main,Symbol("m"*string(model)*
+                "fermilevel"*string(area)))
+            electrons = getfield(Main,Symbol("m"*string(model)*
+                "electrons"*string(area)))
+
+            (num_unique,fermilevel,bandenergy) = rectangular_method(
+            real_latvecs,atom_types,atom_pos,rules,electrons,cutoff,
+                sheets,N,grid_offset,convention,coordinates,energy_factor)
+
+            @test abs(fermilevel - fermilevel_sol) < 1e-2
+            @test abs(bandenergy - bandenergy_sol) < 1e-3
+        end
+
+
     end
 end

@@ -1,9 +1,11 @@
 module RectangularMethod
 
-import SymmetryReduceBZ.Symmetry: mapto_unitcell
-import Pebsi.EPMs: eval_EPM
+import SymmetryReduceBZ.Symmetry: mapto_unitcell, make_primitive,
+    calc_spacegroup
+import SymmetryReduceBZ.Lattices: get_recip_latvecs
+import Pebsi.EPMs: eval_epm, RytoeV, eVtoRy
 import Base.Iterators: product
-import LinearAlgebra: det, diag
+import LinearAlgebra: det, diag, dot
 import AbstractAlgebra: ZZ, matrix, snf_with_transform, hnf_with_transform, hnf
 
 
@@ -67,25 +69,147 @@ function sample_unitcell(latvecs::AbstractArray{<:Real,2},
 end
 
 """
-    rectangular_method(real_latvecs,atom_types,atom_pos,rules,cutoff,
-        sheets,ndivs,grid_offset)
+    rectangular_method(real_latvecs,atom_types,atom_pos,rules,electrons,cutoff,
+        sheets,N,grid_offset,convention,coordinates,energy_factor,rtol,atol)
 
-Calculate the Fermi level and band energy with the rectangular method.
+# Arguments
+- `real_latvecs::AbstractArray{<:Real,2}`: the basis of the lattice as columns
+    of an array.
+- `atom_types::AbstractArray{<:Int,1}`: a list of atom types as integers.
+- `atom_pos::AbstractArray{<:Real,2}`: the positions of atoms in the crystal
+    structure as columns of an array.
+- `rules::Dict{Float64,Float64}`: a dictionary whose keys are distances between
+    reciprocal lattice points rounded to two decimals places and whose values
+    are the empirical pseudopotential form factors.
+- `electrons::Integer`: the number of free electrons in the unit cell.
+- `cutoff::Real`: the Fourier expansion cutoff.
+- `sheets::UnitRange{<:Int}`: the sheets of the band structure included in the
+    calculation. This must begin with 1 for the result to make any sense.
+- `N::AbstractArray{<:Integer,2}`: an integer, square array that relates the
+    reciprocal lattice vectors `R` to the grid generating vectors `K`: `R=KN`.
+- `grid_offset::AbstractArray{<:Real,1}=[0,0]`: the offset of the grid in grid
+    coordinates (fractions of the grid generating vectors).
+- `convention::String="ordinary"`: the convention used to go between real and
+    reciprocal space. The two conventions are ordinary (temporal) frequency and
+    angular frequency. The transformation from real to reciprocal space is
+    unitary if the convention is ordinary.
+- `coordinates::String`: indicates the positions of the atoms are in \"lattice\"
+    or \"Cartesian\" coordinates.
+- `energy_conversion_factor::Real=RytoeV`: converts the energy eigenvalue units
+    from the energy unit used for `rules` to an alternative energy unit.
+- `rtol::Real=sqrt(eps(float(maximum(real_latvecs))))` a relative tolerance for
+    floating point comparisons.
+- `atol::Real=0.0`: an absolute tolerance for floating point comparisons.
+
+# Returns
+- `num_unique::Integer`: the number of symmetrically unique points in the grid.
+- `fermilevel::Real`: the Fermi level.
+- `bandenergy::Real`: the band energy.
+
+# Examples
+```jldoctest
+import Pebsi.RectangularMethod: rectangular_method
+
+real_latvecs = [1 0; 0 1]
+atom_types = [0]
+atom_pos = Array([0 0]')
+coordinates = "Cartesian"
+rules = Dict(1.00 => -0.23, 1.41 => 0.12)
+electrons = 6
+cutoff = 6.1
+sheets = 1:10
+N = [10 0; 0 10]
+grid_offset = [0.5,0.5]
+convention = "ordinary"
+coordinates = "Cartesian"
+energy_factor = 1
+rectangular_method(real_latvecs,atom_types,atom_pos,rules,electrons,cutoff,
+    sheets,N,grid_offset,convention,coordinates,energy_factor)
+# output
+(38, 0.8913900782229439, 1.0409313912201126)
+```
 """
-function rectangular_method(recip_latvecs,atom_types,atom_pos,rules,electrons,
-    cutoff,sheets,ndivs,grid_offset=[0,0])
+function rectangular_method(real_latvecs::AbstractArray{<:Real,2},
+    atom_types::AbstractArray{<:Integer,1}, atom_pos::AbstractArray{<:Real,2},
+    rules::Dict{Float64,Float64}, electrons::Integer, cutoff::Real,
+    sheets::UnitRange{<:Int}, N::AbstractArray{<:Integer,2},
+    grid_offset::AbstractArray{<:Real,1}=[0,0], convention::String="ordinary",
+    coordinates::String="Cartesian", energy_factor::Real=RytoeV,
+    rtol::Real=sqrt(eps(float(maximum(real_latvecs)))),
+    atol::Real=0.0)::Tuple{Int64,Float64,Float64}
 
-    integration_points = sample_unitcell(recip_latvecs, ndivs, grid_offset)
+    (atom_types,atom_pos,real_latvecs)=make_primitive(real_latvecs,atom_types,
+        atom_pos,coordinates,rtol,atol)
+    (frac_trans,pointgroup) = calc_spacegroup(real_latvecs,atom_types,atom_pos,
+        coordinates,rtol,atol)
+
+    recip_latvecs = get_recip_latvecs(real_latvecs,convention)
+    (kpoint_weights,unique_kpoints,orbits) = symreduce_grid(recip_latvecs,N,
+        grid_offset,pointgroup,rtol,atol)
+    eigenvalues = mapslices(x->eval_epm(x,recip_latvecs,rules,cutoff,sheets,
+        energy_factor,rtol,atol),unique_kpoints,dims=1)
+
+    num_unique = size(unique_kpoints,2)
+    num_kpoints = sum(kpoint_weights)
+
+    maxoccupied_state = ceil(Int,round(electrons*num_kpoints/2,sigdigits=12))
+    rectangle_size = abs(det(recip_latvecs))/num_kpoints
+
+    eigenweights = zeros(sheets[end],num_unique)
+    for i=1:num_unique
+        eigenweights[:,i] .= kpoint_weights[i]
+    end
+
+    eigenvalues = [eigenvalues...]
+    eigenweights = [eigenweights...]
+
+    order = sortperm(eigenvalues)
+    eigenvalues = eigenvalues[order]
+    eigenweights = eigenweights[order]
+
+    totalstates = sheets[end]*num_kpoints
+    counter = maxoccupied_state
+    index = 0
+    for i=1:num_kpoints*sheets[end]
+        counter -= eigenweights[i]
+        if counter <= 0
+            index = i
+            break
+        end
+    end
+
+    fermilevel = eigenvalues[index]
+    bandenergy = rectangle_size*dot(eigenweights[1:index],eigenvalues[1:index])
+
+    (num_unique,fermilevel,bandenergy)
+end
+
+"""
+    rectangular_method(recip_latvecs,rules,electrons,cutoff,sheets,N,
+        grid_offset,energy_factor,rtol,atol)
+
+Calculate the Fermi level and band energy with the rectangular method without symmetry.
+"""
+function rectangular_method(recip_latvecs::AbstractArray{<:Real,2},
+    rules::Dict{Float64,Float64}, electrons::Integer, cutoff::Real,
+    sheets::UnitRange{<:Int}, N::AbstractArray{<:Real,2},
+    grid_offset::AbstractArray{<:Real,1}=[0,0], energy_factor::Real=RytoeV,
+    rtol::Real=sqrt(eps(float(maximum(recip_latvecs)))),
+    atol::Real=0.0)::Tuple{Int64,Float64,Float64}
+
+    integration_points = sample_unitcell(recip_latvecs, N, grid_offset,rtol,
+        atol)
     num_kpoints = size(integration_points,2)
     num_states = num_kpoints*sheets[end]
     eigenvalues = zeros(num_states)
 
     for i=1:num_kpoints
-        eigenvalues[1+(i-1)*sheets[end]:(sheets[end]*i)] = eval_EPM(
-            integration_points[:,i], recip_latvecs, rules, cutoff,sheets)
+        eigenvalues[1+(i-1)*sheets[end]:(sheets[end]*i)] = eval_epm(
+            integration_points[:,i],recip_latvecs,rules,cutoff,sheets,
+            energy_factor,rtol,atol)
     end
 
-    sort!(eigenvalues);
+    sort!(eigenvalues)
     occupied_states = 1:ceil(Int,electrons*num_kpoints/2)
     rectangle_size = det(recip_latvecs)/num_kpoints
     fermi_level = eigenvalues[occupied_states[end]]
@@ -94,9 +218,8 @@ function rectangular_method(recip_latvecs,atom_types,atom_pos,rules,electrons,
     (num_kpoints,fermi_level,band_energy)
 end
 
-
 """
-    symreduce_grid(recip_latvecs,ndivs,grid_offset,pointgroup,rtol,atol)
+    symreduce_grid(recip_latvecs,N,grid_offset,pointgroup,rtol,atol)
 
 Calculate the symmetrically unique points and their weights in a GR grid.
 
