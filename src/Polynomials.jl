@@ -1,8 +1,8 @@
 module Polynomials
 
 import Base.Iterators: product
-import LinearAlgebra: dot
-
+import LinearAlgebra: dot, det
+import Statistics: mean
 """
     sample_simplex(dim,deg)
 
@@ -69,9 +69,9 @@ function bernstein_basis(bpt::AbstractArray,dim::Integer,
     indices = filter(x->length(x)>0, [[sum(p)==deg ? p : []
         for p=collect(product([0:deg for i=0:dim]...))]...])
     [factorial(deg)/prod(factorial.(index))*prod(bpt.^index) for index=indices]
-    end
+end
 
-    """
+"""
     barytocart(barypt,simplex)
 
 Convert a point from barycentric to Cartesian coordinates.
@@ -99,6 +99,16 @@ barytocart(barypt,simplex)
 function barytocart(barypt::AbstractArray{<:Real,1},
         simplex::AbstractArray{<:Real,2})::AbstractArray{<:Real,1}
     [sum(reduce(hcat,[simplex[:,i]*barypt[i] for i=1:length(barypt)]),dims=2)...]
+end
+
+"""
+    barytocart(barypts,simplex)
+
+Convert points as colums on an array from barycentric to Cartesian coordinates.
+"""
+function barytocart(barypts::AbstractArray{<:Real,2},
+    simplex::AbstractArray{<:Real,2})::AbstractArray{<:Real,2}
+    mapslices(x->barytocart(x,simplex),barypts,dims=1)
 end
 
 """
@@ -167,6 +177,143 @@ eval_poly(barypt,coeffs,dim,deg)
 function eval_poly(barypt::AbstractArray{<:Real,1},
     coeffs::AbstractArray{<:Real,1},dim::Integer,deg::Integer)::Real
     dot(coeffs,bernstein_basis(barypt,dim,deg))
+end
+
+"""
+    eval_poly(barypt,coeffs,dim,deg)
+
+Evaluate a polynomial for each point in an array (points are columns).
+
+# Examples
+```jldoctest
+simplex_bpts = [1.0 0.5 0.0 0.5 0.0 0.0; 0.0 0.5 1.0 0.0 0.5 0.0; 0.0 0.0 0.0 0.5 0.5 1.0]
+coeffs = [0.4, 0.5, 0.4, -0.2, -0.1, -0.3]
+dim = 2
+deg = 2
+eval_poly(simplex_bpts,coeffs,dim,deg)
+# output
+6-element Array{Float64,1}:
+  0.4
+  0.44999999999999996
+  0.4
+ -0.075
+ -0.024999999999999994
+ -0.3
+````
+"""
+function eval_poly(barypts::AbstractArray{<:Real,2},
+    coeffs::AbstractArray{<:Real,1},dim::Integer,
+    deg::Integer)::AbstractArray{<:Real,1}
+    mapslices(x->eval_poly(x,coeffs,dim,deg),barypts,dims=1)[:]
+end
+
+"""
+    simplex_size(simplex)
+
+Calculate the size of the region within a simplex.
+
+# Arguments
+- `simplex::AbstractArray{<:Real,2}`: the vertices of the simplex as columns of 
+    an array.
+
+# Returns
+- `::Real`: the size of the region within the simplex. For example, the area
+    within a triangle in 2D.
+
+# Examples
+```jldoctest
+import Pebsi.Polynomials: simplex_size
+simplex = [0 0 1; 0 1 0]
+simplex_size(simplex)
+# output
+0.5
+```
+"""
+function simplex_size(simplex::AbstractArray{<:Real,2})::Real
+    abs(1/factorial(size(simplex,1))*det(vcat(simplex,ones(1,size(simplex,2)))))
+end
+
+"""
+    shadow_size(coeff,simplex,val,rtol,atol)
+
+Calculate the size of the shadow of a linear or quadratic Bezier triangle.
+
+# Arguments
+- `coeffs::AbstractArray{<:Real,1}`: the coefficients of the Bezier triangle.
+- `simplex::AbstractArray{<:Real,2}`: the domain of the Bezier triangle.
+- `val::Real`: the value of a cutting plane.
+- `rtol::Real=sqrt(eps(float(maximum(coeffs))))`: a relative tolerance for 
+    floating point comparisons.
+- `atol::Real=0.0`: an absolute tolerance for floating point comparisons.
+
+# Returns
+- `::Real`: the size of the shadow of the Bezier triangle within `simplex` and 
+    below a cutting plane of height `val`.
+
+# Examples
+```jldoctest
+coeffs = [0.4, 0.5, 0.3, -0.2, -0.1, -0.3, 0.7, -0.6, 0.9, -0.7]
+simplex = [0.0 0.5 0.5 0.0; 1.0 1.0 0.0 0.0; 0.0 0.0 0.0 1.0]
+val = 0.9
+shadow_size(coeffs,simplex,val)
+# output
+0.08333333333333333
+```
+"""
+function shadow_size(coeffs::AbstractArray{<:Real,1},
+    simplex::AbstractArray{<:Real,2},val::Real,
+    rtol::Real=sqrt(eps(float(maximum(coeffs)))),
+    atol::Real=0.0)::Real
+    
+    if minimum(coeffs) > val|| isapprox(minimum(coeffs),val,rtol=rtol,atol=atol)
+        0
+    elseif maximum(coeffs) < val || isapprox(maximum(coeffs),val,rtol=rtol,atol=atol)
+        simplex_size(simplex)
+    else
+        1e10
+    end
+end
+
+"""
+    bezsimplex_size(coeff,simplex,val,rtol,atol)
+
+Calculate the size of the shadow of a linear or quadratic Bezier triangle.
+
+# Arguments
+- `coeffs::AbstractArray{<:Real,1}`: the coefficients of the Bezier triangle.
+- `simplex::AbstractArray{<:Real,2}`: the domain of the Bezier triangle.
+- `val::Real`: the value of a cutting plane.
+- `rtol::Real=sqrt(eps(float(maximum(coeffs))))`: a relative tolerance for 
+    floating point comparisons.
+- `atol::Real=0.0`: an absolute tolerance for floating point comparisons.
+
+# Returns
+- `::Real`: the size of the shadow of the Bezier triangle within `simplex` and 
+    below a cutting plane of height `val`.
+
+# Examples
+```jldoctest
+import Pebsi.Polynomials: bezsimplex_size
+coeffs = [0.4, 0.5, 0.3, -0.2, -0.2, -0.3]
+simplex = [0.0 0.5 0.5; 1.0 1.0 0.0]
+bezsimplex_size(coeffs,simplex,100)
+# output
+0.020833333333333332
+```
+"""
+function bezsimplex_size(coeffs::AbstractArray{<:Real,1},
+    simplex::AbstractArray{<:Real,2},val::Real,
+    rtol::Real=sqrt(eps(float(maximum(coeffs)))),
+    atol::Real=0.0)::Real
+    
+    if maximum(coeffs) < val || isapprox(maximum(coeffs),val,rtol=rtol,atol=atol)
+        simplex_size(simplex)*mean(coeffs)
+    elseif minimum(coeffs) > val || isapprox(minimum(coeffs),val,rtol=rtol,atol=atol)
+        0
+    else
+       1e10
+    end
+    
 end
 
 end
