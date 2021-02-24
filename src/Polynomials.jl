@@ -28,8 +28,11 @@ sample_simplex(dim,deg)
  0.0  0.0  1.0
 ```
 """
-function sample_simplex(dim::Integer,deg::Integer)::AbstractArray{<:Real,2}
-    reduce(hcat,filter(x->length(x)>0, [sum(p)==1 ? collect(p) : []
+function sample_simplex(dim::Integer,deg::Integer,
+    rtol::Real=sqrt(eps(1.0)),
+    atol::Real=0.0)::AbstractArray{<:Real,2}
+    reduce(hcat,filter(x->length(x)>0, 
+        [isapprox(sum(p),1,rtol=rtol,atol=atol) ? collect(p) : [] 
         for p=collect(product([0:1/deg:1 for i=0:dim]...))]))
 end
 
@@ -109,6 +112,33 @@ Convert points as colums on an array from barycentric to Cartesian coordinates.
 function barytocart(barypts::AbstractArray{<:Real,2},
     simplex::AbstractArray{<:Real,2})::AbstractArray{<:Real,2}
     mapslices(x->barytocart(x,simplex),barypts,dims=1)
+end
+
+"""
+    carttobary(pt,simplex)
+
+Transform a point from Cartesian to barycentric coordinates.
+
+# Arguments
+- `pt::AbstractArray{<:Real,1}`: the point in Cartesian coordinates
+- `simplex::AbstractArray{<:Real,2}`: the corners of the simplex as columns of an array.
+"""
+function carttobary(pt::AbstractArray{<:Real,1},
+        simplex::AbstractArray{<:Real,2})::AbstractArray{<:Real,1}
+    inv(vcat(simplex,ones(Int,(1,size(simplex,2)))))*vcat(pt[:,1],1)
+end
+
+"""
+    carttobary(pt,simplex)
+
+Transform an array of points from Cartesian to barycentric coordinates.
+
+# Arguments
+- `pts::AbstractArray{<:Real,2}`: the points in Cartesian coordinates as columns of an array.
+"""
+function carttobary(pts::AbstractArray{<:Real,2},
+        simplex::AbstractArray{<:Real,2})::AbstractArray{<:Real,2}
+    mapslices(x->carttobary(x,simplex),pts,dims=1)
 end
 
 """
