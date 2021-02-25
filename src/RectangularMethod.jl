@@ -3,10 +3,12 @@ module RectangularMethod
 import SymmetryReduceBZ.Symmetry: mapto_unitcell, make_primitive,
     calc_spacegroup
 import SymmetryReduceBZ.Lattices: get_recip_latvecs
-import Pebsi.EPMs: eval_epm, RytoeV, eVtoRy
 import Base.Iterators: product
 import LinearAlgebra: det, diag, dot
 import AbstractAlgebra: ZZ, matrix, snf_with_transform, hnf_with_transform, hnf
+
+include("EPMs.jl")
+import .EPMs: eval_epm,RytoeV,eVtoRy
 
 
 """

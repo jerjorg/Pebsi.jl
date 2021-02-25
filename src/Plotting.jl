@@ -3,8 +3,11 @@ module Plotting
 import PyPlot: subplots, figure, PyObject, figaspect
 import QHull: chull
 
-import Pebsi.RectangularMethod: sample_unitcell
-import Pebsi.Polynomials: carttobary, eval_poly
+include("RectangularMethod.jl")
+include("Polynomials.jl")
+
+import .RectangularMethod: sample_unitcell
+import .Polynomials: carttobary, eval_poly
 
 import SymmetryReduceBZ.Plotting: plot_2Dconvexhull
 
