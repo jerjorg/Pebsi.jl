@@ -11,9 +11,6 @@ import .Polynomials: carttobary, eval_poly
 
 import SymmetryReduceBZ.Plotting: plot_2Dconvexhull
 
-include("Polynomials.jl")
-import .Polynomials: carttobary, eval_poly
-
 @doc """
     plotmesh(meshpts,ax,color)
 
