@@ -11,7 +11,7 @@ include("EPMs.jl")
 import .EPMs: eval_epm,RytoeV,eVtoRy
 
 
-"""
+@doc """
     sample_unitcell(latvecs,N,grid_offset,rtol,atol)
 
 Create a generalized regular grid over the unit cell.
@@ -70,7 +70,7 @@ function sample_unitcell(latvecs::AbstractArray{<:Real,2},
     mapto_unitcell(grid,latvecs,inv_latvecs,"Cartesian",rtol,atol)
 end
 
-"""
+@doc """
     rectangular_method(real_latvecs,atom_types,atom_pos,rules,electrons,cutoff,
         sheets,N,grid_offset,convention,coordinates,energy_factor,rtol,atol)
 
@@ -186,7 +186,7 @@ function rectangular_method(real_latvecs::AbstractArray{<:Real,2},
     (num_unique,fermilevel,bandenergy)
 end
 
-"""
+@doc """
     rectangular_method(recip_latvecs,rules,electrons,cutoff,sheets,N,
         grid_offset,energy_factor,rtol,atol)
 
@@ -220,7 +220,7 @@ function rectangular_method(recip_latvecs::AbstractArray{<:Real,2},
     (num_kpoints,fermi_level,band_energy)
 end
 
-"""
+@doc """
     symreduce_grid(recip_latvecs,N,grid_offset,pointgroup,rtol,atol)
 
 Calculate the symmetrically unique points and their weights in a GR grid.
@@ -342,7 +342,7 @@ function symreduce_grid(recip_latvecs::AbstractArray{<:Real,2},
     (kpoint_weights, unique_kpoints, orbits)
 end
 
-"""
+@doc """
     convert_mixedradix(dials,dial_sizes)
 
 Convert a mixed-radix number to an integer.
@@ -375,7 +375,7 @@ function convert_mixedradix(dial::AbstractArray{<:Integer,1},
     val
 end
 
-"""
+@doc """
     kpoint_index(point,offset,invK,A,snf_diag)
 
 Calculate the index of a point in a generalized regular grid.
@@ -414,7 +414,7 @@ function kpoint_index(point::AbstractArray{<:Real,1},
     convert_mixedradix(dial,snf_diag)
 end
 
-"""
+@doc """
     kpoint_index(points,offset,invK,A,snf_diag)
 
 Calculate the indices of points in an array as columns.
@@ -427,7 +427,7 @@ function kpoint_index(points::AbstractArray{<:Real,2},
     [kpoint_index(points[:,i],offset,invK,A,snf_diag) for i=1:size(points,2)]
 end
 
-"""
+@doc """
     calculate_orbits(grid,pointgroup,latvecs)
 
 Calculate the points of the grid in each orbit the hard way.
