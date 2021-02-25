@@ -3,7 +3,9 @@ module Polynomials
 import Base.Iterators: product
 import LinearAlgebra: dot, det
 import Statistics: mean
-"""
+
+
+@doc """
     sample_simplex(dim,deg)
 
 Get the sample points of a simplex for a polynomial approximation.
@@ -36,7 +38,7 @@ function sample_simplex(dim::Integer,deg::Integer,
         for p=collect(product([0:1/deg:1 for i=0:dim]...))]))
 end
 
-"""
+@doc """
     bernstein_basis(bpt,dim,deg)
 
 Evaluate the Bernstein polynomials at a point of a given degree and for a given dimension.
@@ -74,7 +76,7 @@ function bernstein_basis(bpt::AbstractArray,dim::Integer,
     [factorial(deg)/prod(factorial.(index))*prod(bpt.^index) for index=indices]
 end
 
-"""
+@doc """
     barytocart(barypt,simplex)
 
 Convert a point from barycentric to Cartesian coordinates.
@@ -104,7 +106,7 @@ function barytocart(barypt::AbstractArray{<:Real,1},
     [sum(reduce(hcat,[simplex[:,i]*barypt[i] for i=1:length(barypt)]),dims=2)...]
 end
 
-"""
+@doc """
     barytocart(barypts,simplex)
 
 Convert points as colums on an array from barycentric to Cartesian coordinates.
@@ -114,7 +116,7 @@ function barytocart(barypts::AbstractArray{<:Real,2},
     mapslices(x->barytocart(x,simplex),barypts,dims=1)
 end
 
-"""
+@doc """
     carttobary(pt,simplex)
 
 Transform a point from Cartesian to barycentric coordinates.
@@ -128,7 +130,7 @@ function carttobary(pt::AbstractArray{<:Real,1},
     inv(vcat(simplex,ones(Int,(1,size(simplex,2)))))*vcat(pt[:,1],1)
 end
 
-"""
+@doc """
     carttobary(pt,simplex)
 
 Transform an array of points from Cartesian to barycentric coordinates.
@@ -141,7 +143,7 @@ function carttobary(pts::AbstractArray{<:Real,2},
     mapslices(x->carttobary(x,simplex),pts,dims=1)
 end
 
-"""
+@doc """
     getpoly_coeffs(values,simplex_bpts,dim,deg)
 
 Calculate the coefficients of a polynomial interpolation over a simplex.
@@ -179,7 +181,7 @@ function getpoly_coeffs(values::AbstractArray{<:Real,1},
     inv(mapslices(x->bernstein_basis(x,dim,deg),simplex_bpts,dims=1)')*values
 end
 
-"""
+@doc """
     eval_poly(barypt,coeffs,dim,deg)
 
 Evaluate a polynomial at a point.
@@ -209,7 +211,7 @@ function eval_poly(barypt::AbstractArray{<:Real,1},
     dot(coeffs,bernstein_basis(barypt,dim,deg))
 end
 
-"""
+@doc """
     eval_poly(barypt,coeffs,dim,deg)
 
 Evaluate a polynomial for each point in an array (points are columns).
@@ -237,7 +239,7 @@ function eval_poly(barypts::AbstractArray{<:Real,2},
     mapslices(x->eval_poly(x,coeffs,dim,deg),barypts,dims=1)[:]
 end
 
-"""
+@doc """
     simplex_size(simplex)
 
 Calculate the size of the region within a simplex.
@@ -263,7 +265,7 @@ function simplex_size(simplex::AbstractArray{<:Real,2})::Real
     abs(1/factorial(size(simplex,1))*det(vcat(simplex,ones(1,size(simplex,2)))))
 end
 
-"""
+@doc """
     shadow_size(coeff,simplex,val,rtol,atol)
 
 Calculate the size of the shadow of a linear or quadratic Bezier triangle.
@@ -304,7 +306,7 @@ function shadow_size(coeffs::AbstractArray{<:Real,1},
     end
 end
 
-"""
+@doc """
     bezsimplex_size(coeff,simplex,val,rtol,atol)
 
 Calculate the size of the shadow of a linear or quadratic Bezier triangle.

@@ -3,12 +3,13 @@ module Plotting
 import PyPlot: subplots, figure, PyObject, figaspect
 import QHull: chull
 
-import Pebsi.RectangularMethod: sample_unitcell
-import Pebsi.Polynomials: carttobary, eval_poly
-
+import SymmetryReduceBZ.Symmetry: get_recip_latvecs, minkowski_reduce
 import SymmetryReduceBZ.Plotting: plot_2Dconvexhull
 
-"""
+include("Polynomials.jl")
+import .Polynomials: carttobary, eval_poly
+
+@doc """
     plotmesh(meshpts,ax,color)
 
 Plot the points within a mesh in 2D or 3D.
@@ -53,7 +54,7 @@ function plotmesh(meshpts::AbstractArray{<:Real,2},
 end
 
 
-"""
+@doc """
     contourplot(coeffs,simplex)
 
 Plot the level curves of a polynomial surface.
@@ -83,8 +84,6 @@ function contourplot(coeffs::AbstractArray{<:Real,1},
     X=reshape(plotpts[1,:],(ndivs,ndivs))
     Y=reshape(plotpts[2,:],(ndivs,ndivs))
     Z=reshape(plotvals,(ndivs,ndivs));
-
-    shull = chull(Array(simplex'))
 
     (fig,ax)=subplots()
     ax=plot_2Dconvexhull(shull,ax,"none")

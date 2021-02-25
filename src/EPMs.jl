@@ -18,7 +18,7 @@ import SymmetryReduceBZ.Lattices: get_recip_latvecs
 import SymmetryReduceBZ.Utilities: sample_circle, sample_sphere
 import LinearAlgebra: norm, Symmetric, eigvals, dot
 
-# The lattice types of the EPMs (follows of the naming convention
+# The lattice types of the EPMs (follows the naming convention
 # of High-throughput electronic band structure calculations:
 # Challenges and tools by Wahyu Setyawan and Stefano Curtarolo).
 Ag_type = "FCC"
@@ -128,7 +128,6 @@ Zn_electrons = 2
 eVtoRy = 0.07349864435130871395
 RytoeV = 13.6056931229942343775
 
-
 # 2D "toy" empirical pseudopotentials (the form factors are chosen at random)
 
 # Model 1 - square symmetry
@@ -230,7 +229,7 @@ m5bandenergy3 = 2.8258962133639556
     eval_epm(kpoint,rbasis,rules,cutoff,sheets,energy_conversion_factor,rtol,
         atol)
 
-Evaluate an empirical pseudopotential.
+Evaluate an empirical pseudopotential at a k-point.
 
 # Arguments
 - `kpoint::AbstractArray{<:Real,1}:` a point at which the EPM is evaluated.
@@ -277,7 +276,8 @@ eval_epm(kpoint, rlatvecs, rules, cutoff, sheets)
 function eval_epm(kpoint::AbstractArray{<:Real,1},
     rbasis::AbstractArray{<:Real,2}, rules::Dict{Float64,Float64}, cutoff::Real,
     sheets::UnitRange{<:Int},energy_conversion_factor::Real=RytoeV,
-    rtol::Real=sqrt(eps(float(maximum(rbasis)))),atol::Real=0.0)
+    rtol::Real=sqrt(eps(float(maximum(rbasis)))),
+    atol::Real=0.0)::AbstractArray{<:Real,1}
 
     if length(kpoint) == 3
         rlatpts = sample_sphere(rbasis,cutoff,kpoint,rtol,atol)
@@ -309,7 +309,28 @@ function eval_epm(kpoint::AbstractArray{<:Real,1},
     eigvals(Symmetric(ham))[sheets]*energy_conversion_factor
 end
 
+
+@doc """
+    eval_epm(kpoints,rbasis,rules,cutoff,sheets,energy_conversion_factor,rtol,
+        atol)
+
+Evaluate an empirical pseudopotential at each point in an array.
+
+# Arguments
+- `kpoints::AbstractArray{<:Real,2}`: an array of k-points as columns of an
+    array.
 """
+function eval_epm(kpoints::AbstractArray{<:Real,2},
+    rbasis::AbstractArray{<:Real,2}, rules::Dict{Float64,Float64}, cutoff::Real,
+    sheets::UnitRange{<:Int},energy_conversion_factor::Real=RytoeV,
+    rtol::Real=sqrt(eps(float(maximum(rbasis)))),
+    atol::Real=0.0)::AbstractArray{<:Real,2}
+
+    mapslices(x->eval_epm(x,rbasis,rules,cutoff,sheets,energy_conversion_factor,
+        rtol,atol),kpoints,dims=1)
+end
+
+@doc """
 A dictionary whose keys are the labels of high symmetry points from the Python
 package `seekpath`. The the values are the same labels but in a better-looking
 format.
@@ -318,7 +339,7 @@ labels_dict=Dict("GAMMA"=>"Γ","X"=>"X","U"=>"U","L"=>"L","W"=>"W","X"=>"X","K"=
                  "H"=>"H","N"=>"N","P"=>"P","Y"=>"Y","M"=>"M","A"=>"A","L_2"=>"L₂",
                  "V_2"=>"V₂","I_2"=>"I₂","I"=>"I","M_2"=>"M₂","Y"=>"Y")
 
-"""
+@doc """
     plot_bandstructure(name,basis,rules,expansion_size,sheets,kpoint_dist,
         convention,coordinates)
 
