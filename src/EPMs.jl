@@ -18,6 +18,8 @@ import SymmetryReduceBZ.Lattices: get_recip_latvecs
 import SymmetryReduceBZ.Utilities: sample_circle, sample_sphere
 import LinearAlgebra: norm, Symmetric, eigvals, dot
 
+epm_names = ["Ag","Al","Au","Cs","Cu","In","K","Li","Na","Pb","Rb","Sn","Zn"]
+
 # The lattice types of the EPMs (follows the naming convention
 # of High-throughput electronic band structure calculations:
 # Challenges and tools by Wahyu Setyawan and Stefano Curtarolo).
@@ -125,6 +127,39 @@ Rb_electrons = 1
 Sn_electrons = 4
 Zn_electrons = 2
 
+# Cutoffs were compared to a cutoff that had at least 10,000 terms in the 
+# expansion at the origin. Cutoffs are such that the difference between the 10th
+# eigenvalues is less than 1e-9.
+# Ag_cutoff = 8.15
+# Al_cutoff = 6.8
+# Au_cutoff = 8.12
+# Cs_cutoff = 3.98
+# Cu_cutoff = 9.9
+# In_cutoff = 7.1
+# K_cutoff = 3.85
+# Li_cutoff = 7.46
+# Na_cutoff = 4.78
+# Pb_cutoff = 5.54
+# Rb_cutoff = 2.7
+# Sn_cutoff = 9.9
+# Zn_cutoff = 5.24
+
+# Cutoffs are chosen so that there are at least 1000 terms in the expansion at
+# the origin.
+Ag_cutoff = 8.1
+Al_cutoff = 8.2
+Au_cutoff = 8.2
+Cs_cutoff = 4.3
+Cu_cutoff = 7.3
+In_cutoff = 7.1
+K_cutoff = 5.0
+Li_cutoff = 7.5
+Na_cutoff = 6.2
+Pb_cutoff = 6.7
+Rb_cutoff = 4.7
+Sn_cutoff = 5.5
+Zn_cutoff = 6.6
+
 eVtoRy = 0.07349864435130871395
 RytoeV = 13.6056931229942343775
 
@@ -187,7 +222,7 @@ m3electrons3 = 8
 m3fermilevel3 = 1.1117071929086504
 m3bandenergy3 = 1.1860046687293682
 
-# # Model 4 - rectangular symmetry
+# Model 4 - rectangular symmetry
 convention = "ordinary"
 m4recip_latvecs = [1 0; 0 2]
 m4real_latvecs = get_recip_latvecs(m4recip_latvecs,convention)

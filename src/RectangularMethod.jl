@@ -148,8 +148,8 @@ function rectangular_method(real_latvecs::AbstractArray{<:Real,2},
     recip_latvecs = get_recip_latvecs(real_latvecs,convention)
     (kpoint_weights,unique_kpoints,orbits) = symreduce_grid(recip_latvecs,N,
         grid_offset,pointgroup,rtol,atol)
-    eigenvalues = mapslices(x->eval_epm(x,recip_latvecs,rules,cutoff,sheets,
-        energy_factor,rtol,atol),unique_kpoints,dims=1)
+    eigenvalues = eval_epm(unique_kpoints,recip_latvecs,rules,cutoff,sheets,
+        energy_factor,rtol,atol)
 
     num_unique = size(unique_kpoints,2)
     num_kpoints = sum(kpoint_weights)
