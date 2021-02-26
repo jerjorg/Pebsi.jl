@@ -37,6 +37,32 @@ Rb_type = "BCC"
 Sn_type = "BCT₁"
 Zn_type = "HEX"
 
+# The lattice type of the reciprocal lattice
+Ag_rtype = "BCC"
+Al_rtype = "BCC"
+Au_rtype = "BCC"
+Cs_rtype = "FCC"
+Cu_rtype = "FCC"
+#In_rtype = "BCT₂"
+K_rtype = "FCC"
+Li_rtype = "FCC"
+Na_rtype = "FCC"
+Pb_rtype = "BCC"
+Rb_rtype = "FCC"
+#Sn_rtype = "BCT₁"
+Zn_rtype = "HEX"
+
+#= 
+Symmetry preserving offset for each reciprocal lattice type in terms of 
+fractions of the grid generating vectors. These were taken from a table from 
+"Generalized regular k-point grid generation on the fly" by Wiley Morgan et al.
+or resulted from tests for the given models since the reciprocal lattice of a 
+body-centered tetragonal lattice may be different lattice types depending on the
+lattice parameters. 
+=#
+sym_offset = Dict("BCC" => [0,0,0],"FCC" => [0.5,0.5,0.5],
+    "HEX" => [0,0,0.5], "BCT₁" => [0.5,0.5,0.5], "BCT₂" => [0.5,0.5,0.5])
+
 # The lattice angles of the EPMs in radians
 Ag_αβγ = [π/2, π/2, π/2]
 Al_αβγ = [π/2, π/2, π/2]
