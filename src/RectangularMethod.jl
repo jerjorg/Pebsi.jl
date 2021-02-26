@@ -7,8 +7,10 @@ import Base.Iterators: product
 import LinearAlgebra: det, diag, dot
 import AbstractAlgebra: ZZ, matrix, snf_with_transform, hnf_with_transform, hnf
 
-include("EPMs.jl")
-import .EPMs: eval_epm,RytoeV,eVtoRy
+import Pebsi.EPMs: eval_epm,RytoeV,eVtoRy
+
+#include("EPMs.jl")
+#import .EPMs: eval_epm,RytoeV,eVtoRy
 
 
 @doc """
@@ -148,15 +150,15 @@ function rectangular_method(real_latvecs::AbstractArray{<:Real,2},
     recip_latvecs = get_recip_latvecs(real_latvecs,convention)
     (kpoint_weights,unique_kpoints,orbits) = symreduce_grid(recip_latvecs,N,
         grid_offset,pointgroup,rtol,atol)
-    eigenvalues = mapslices(x->eval_epm(x,recip_latvecs,rules,cutoff,sheets,
-        energy_factor,rtol,atol),unique_kpoints,dims=1)
-
+    eigenvalues = eval_epm(unique_kpoints,recip_latvecs,rules,cutoff,sheets,
+        energy_factor,rtol,atol)
+    
     num_unique = size(unique_kpoints,2)
     num_kpoints = sum(kpoint_weights)
 
     maxoccupied_state = ceil(Int,round(electrons*num_kpoints/2,sigdigits=12))
     rectangle_size = abs(det(recip_latvecs))/num_kpoints
-
+    
     eigenweights = zeros(sheets[end],num_unique)
     for i=1:num_unique
         eigenweights[:,i] .= kpoint_weights[i]
@@ -168,7 +170,7 @@ function rectangular_method(real_latvecs::AbstractArray{<:Real,2},
     order = sortperm(eigenvalues)
     eigenvalues = eigenvalues[order]
     eigenweights = eigenweights[order]
-
+    
     totalstates = sheets[end]*num_kpoints
     counter = maxoccupied_state
     index = 0
@@ -179,7 +181,7 @@ function rectangular_method(real_latvecs::AbstractArray{<:Real,2},
             break
         end
     end
-
+    
     fermilevel = eigenvalues[index]
     bandenergy = rectangle_size*dot(eigenweights[1:index],eigenvalues[1:index])
 
