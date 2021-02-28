@@ -266,7 +266,7 @@ function simplex_size(simplex::AbstractArray{<:Real,2})::Real
 end
 
 @doc """
-    shadow_size(coeff,simplex,val,rtol,atol)
+    shadow_size(coeff,simplex,val;rtol,atol)
 
 Calculate the size of the shadow of a linear or quadratic Bezier triangle.
 
@@ -276,7 +276,7 @@ Calculate the size of the shadow of a linear or quadratic Bezier triangle.
 - `val::Real`: the value of a cutting plane.
 - `rtol::Real=sqrt(eps(float(maximum(coeffs))))`: a relative tolerance for 
     floating point comparisons.
-- `atol::Real=0.0`: an absolute tolerance for floating point comparisons.
+- `atol::Real=1e-9`: an absolute tolerance for floating point comparisons.
 
 # Returns
 - `::Real`: the size of the shadow of the Bezier triangle within `simplex` and 
@@ -293,9 +293,9 @@ shadow_size(coeffs,simplex,val)
 ```
 """
 function shadow_size(coeffs::AbstractArray{<:Real,1},
-    simplex::AbstractArray{<:Real,2},val::Real,
+    simplex::AbstractArray{<:Real,2},val::Real;
     rtol::Real=sqrt(eps(float(maximum(coeffs)))),
-    atol::Real=0.0)::Real
+    atol::Real=1e-9)::Real
     
     if minimum(coeffs) > val|| isapprox(minimum(coeffs),val,rtol=rtol,atol=atol)
         0
@@ -307,7 +307,7 @@ function shadow_size(coeffs::AbstractArray{<:Real,1},
 end
 
 @doc """
-    bezsimplex_size(coeff,simplex,val,rtol,atol)
+    bezsimplex_size(coeff,simplex,val;rtol,atol)
 
 Calculate the size of the shadow of a linear or quadratic Bezier triangle.
 
@@ -317,7 +317,7 @@ Calculate the size of the shadow of a linear or quadratic Bezier triangle.
 - `val::Real`: the value of a cutting plane.
 - `rtol::Real=sqrt(eps(float(maximum(coeffs))))`: a relative tolerance for 
     floating point comparisons.
-- `atol::Real=0.0`: an absolute tolerance for floating point comparisons.
+- `atol::Real=1e-9`: an absolute tolerance for floating point comparisons.
 
 # Returns
 - `::Real`: the size of the shadow of the Bezier triangle within `simplex` and 
@@ -334,9 +334,9 @@ bezsimplex_size(coeffs,simplex,100)
 ```
 """
 function bezsimplex_size(coeffs::AbstractArray{<:Real,1},
-    simplex::AbstractArray{<:Real,2},val::Real,
+    simplex::AbstractArray{<:Real,2},val::Real;
     rtol::Real=sqrt(eps(float(maximum(coeffs)))),
-    atol::Real=0.0)::Real
+    atol::Real=1e-9)::Real
     
     if maximum(coeffs) < val || isapprox(maximum(coeffs),val,rtol=rtol,atol=atol)
         simplex_size(simplex)*mean(coeffs)
