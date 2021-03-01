@@ -47,7 +47,7 @@ sample_unitcell(recip_latvecs,N,grid_offset)
 """
 function sample_unitcell(latvecs::AbstractArray{<:Real,2},
     N::AbstractArray{<:Integer,2},
-    grid_offset::AbstractArray{<:Real,1}=[0,0],
+    grid_offset::AbstractArray{<:Real,1}=[0,0];
     rtol::Real=sqrt(eps(float(maximum(latvecs)))),
     atol::Real=1e-9)::Array{Float64,2}
 
@@ -69,12 +69,13 @@ function sample_unitcell(latvecs::AbstractArray{<:Real,2},
         throw(ArgumentError("The lattice vectors and offset are incompatible."))
     end
 
-    mapto_unitcell(grid,latvecs,inv_latvecs,"Cartesian",rtol,atol)
+    mapto_unitcell(grid,latvecs,inv_latvecs,"Cartesian",rtol=rtol,atol=atol)
 end
 
 @doc """
     rectangular_method(real_latvecs,atom_types,atom_pos,rules,electrons,cutoff,
-        sheets,N,grid_offset,convention,coordinates,energy_factor,rtol,atol)
+        sheets,N,grid_offset,convention,coordinates,energy_factor;rtol,atol,
+        func)
 
 # Arguments
 - `real_latvecs::AbstractArray{<:Real,2}`: the basis of the lattice as columns
@@ -103,7 +104,8 @@ end
     from the energy unit used for `rules` to an alternative energy unit.
 - `rtol::Real=sqrt(eps(float(maximum(real_latvecs))))` a relative tolerance for
     floating point comparisons.
-- `atol::Real=0.0`: an absolute tolerance for floating point comparisons.
+- `atol::Real=1e-9`: an absolute tolerance for floating point comparisons.
+- `func::Union{Nothing,Function}=nothing)`: a k-point independent EPM.
 
 # Returns
 - `num_unique::Integer`: the number of symmetrically unique points in the grid.
@@ -138,20 +140,25 @@ function rectangular_method(real_latvecs::AbstractArray{<:Real,2},
     rules::Dict{Float64,Float64}, electrons::Integer, cutoff::Real,
     sheets::UnitRange{<:Int}, N::AbstractArray{<:Integer,2},
     grid_offset::AbstractArray{<:Real,1}=[0,0], convention::String="ordinary",
-    coordinates::String="Cartesian", energy_factor::Real=RytoeV,
+    coordinates::String="Cartesian", energy_factor::Real=RytoeV;
     rtol::Real=sqrt(eps(float(maximum(real_latvecs)))),
-    atol::Real=0.0)::Tuple{Int64,Float64,Float64}
+    atol::Real=0.0,
+    func::Union{Nothing,Function}=nothing)::Tuple{Int64,Float64,Float64}
 
     (atom_types,atom_pos,real_latvecs)=make_primitive(real_latvecs,atom_types,
-        atom_pos,coordinates,rtol,atol)
+        atom_pos,coordinates,rtol=rtol,atol=atol)
     (frac_trans,pointgroup) = calc_spacegroup(real_latvecs,atom_types,atom_pos,
-        coordinates,rtol,atol)
+        coordinates,rtol=rtol,atol=atol)
 
     recip_latvecs = get_recip_latvecs(real_latvecs,convention)
     (kpoint_weights,unique_kpoints,orbits) = symreduce_grid(recip_latvecs,N,
-        grid_offset,pointgroup,rtol,atol)
-    eigenvalues = eval_epm(unique_kpoints,recip_latvecs,rules,cutoff,sheets,
-        energy_factor,rtol,atol)
+        grid_offset,pointgroup,rtol=rtol,atol=atol)
+    if func == nothing
+        eigenvalues = eval_epm(unique_kpoints,recip_latvecs,rules,cutoff,sheets,
+            energy_factor,rtol=rtol,atol=atol)
+    else
+        eigenvalues = eval_epm(func,unique_kpoints,sheets[end])
+    end
     
     num_unique = size(unique_kpoints,2)
     num_kpoints = sum(kpoint_weights)
@@ -190,16 +197,17 @@ end
 
 @doc """
     rectangular_method(recip_latvecs,rules,electrons,cutoff,sheets,N,
-        grid_offset,energy_factor,rtol,atol)
+        grid_offset,energy_factor;rtol,atol)
 
 Calculate the Fermi level and band energy with the rectangular method without symmetry.
 """
 function rectangular_method(recip_latvecs::AbstractArray{<:Real,2},
     rules::Dict{Float64,Float64}, electrons::Integer, cutoff::Real,
     sheets::UnitRange{<:Int}, N::AbstractArray{<:Real,2},
-    grid_offset::AbstractArray{<:Real,1}=[0,0], energy_factor::Real=RytoeV,
+    grid_offset::AbstractArray{<:Real,1}=[0,0], energy_factor::Real=RytoeV;
     rtol::Real=sqrt(eps(float(maximum(recip_latvecs)))),
-    atol::Real=0.0)::Tuple{Int64,Float64,Float64}
+    atol::Real=1e-9,
+    func::Union{Nothing,Function}=nothing)::Tuple{Int64,Float64,Float64}
 
     integration_points = sample_unitcell(recip_latvecs, N, grid_offset,rtol,
         atol)
@@ -208,9 +216,14 @@ function rectangular_method(recip_latvecs::AbstractArray{<:Real,2},
     eigenvalues = zeros(num_states)
 
     for i=1:num_kpoints
+        if func == nothing
         eigenvalues[1+(i-1)*sheets[end]:(sheets[end]*i)] = eval_epm(
             integration_points[:,i],recip_latvecs,rules,cutoff,sheets,
-            energy_factor,rtol,atol)
+            energy_factor,rtol=rtol,atol=atol)
+        else
+            eigenvalues[1+(i-1)*sheets[end]:(sheets[end]*i)] = eval_epm(
+                func,integration_points[])    
+        end
     end
 
     sort!(eigenvalues)
@@ -223,7 +236,7 @@ function rectangular_method(recip_latvecs::AbstractArray{<:Real,2},
 end
 
 @doc """
-    symreduce_grid(recip_latvecs,N,grid_offset,pointgroup,rtol,atol)
+    symreduce_grid(recip_latvecs,N,grid_offset,pointgroup;rtol,atol)
 
 Calculate the symmetrically unique points and their weights in a GR grid.
 
@@ -264,7 +277,7 @@ symreduce_grid(recip_latvecs,N,grid_offset,pointgroup)
 """
 function symreduce_grid(recip_latvecs::AbstractArray{<:Real,2},
     N::AbstractArray{<:Integer,2}, grid_offset::AbstractArray{<:Real,1},
-    pointgroup::AbstractArray,
+    pointgroup::AbstractArray;
     rtol::Real=sqrt(eps(float(maximum(recip_latvecs)))),
     atol::Real=1e-9)
 
@@ -281,8 +294,8 @@ function symreduce_grid(recip_latvecs::AbstractArray{<:Real,2},
     K = inv(H)*recip_latvecs
     invK = inv_rlatvecs*H
     offset = mapto_unitcell(K*grid_offset,recip_latvecs,inv(recip_latvecs),
-        "Cartesian",rtol,atol)
-    grid = sample_unitcell(recip_latvecs,N,grid_offset,rtol,atol)
+        "Cartesian",rtol=rtol,atol=atol)
+    grid = sample_unitcell(recip_latvecs,N,grid_offset,rtol=rtol,atol=atol)
     num_kpoints = size(grid,2)
     unique_count = 0
 
@@ -314,8 +327,9 @@ function symreduce_grid(recip_latvecs::AbstractArray{<:Real,2},
         keep[i] = 1
         for (j,op) in enumerate(pointgroup)
             rot_point = mapto_unitcell(op*grid[:,i],recip_latvecs,inv_rlatvecs,
-                "Cartesian",rtol,atol)
-            test = mapto_unitcell(rot_point-offset,K,invK,"Cartesian",rtol,atol)
+                "Cartesian",rtol=rtol,atol=atol)
+            test = mapto_unitcell(rot_point-offset,K,invK,"Cartesian",
+                rtol=rtol,atol=atol)
             if !(isapprox(test,origin,rtol=rtol,atol=atol))
                 continue
             end
@@ -430,7 +444,7 @@ function kpoint_index(points::AbstractArray{<:Real,2},
 end
 
 @doc """
-    calculate_orbits(grid,pointgroup,latvecs)
+    calculate_orbits(grid,pointgroup,latvecs;rtol,atol)
 
 Calculate the points of the grid in each orbit the hard way.
 
@@ -441,6 +455,8 @@ Calculate the points of the grid in each orbit the hard way.
     array. They operator on points in Cartesian coordinates.
 - `latvecs::AbstractArray{<:Real,2}`: the lattice vectors as columns of an
     array.
+- `rtol::Real=sqrt(eps(float(maximum(grid))))`: relative tolerance.
+- `atol::Real=1e-9`: absolute tolerance.
 
 # Returns
 - `orbits::AbstractArray`: the points of the grid in each orbit in a nested
@@ -463,13 +479,14 @@ calculate_orbits(grid,pointgroup,recip_latvecs)
 ```
 """
 function calculate_orbits(grid::AbstractArray{<:Real,2},
-    pointgroup,latvecs::AbstractArray{<:Real,2},
+    pointgroup,latvecs::AbstractArray{<:Real,2};
     rtol::Real=sqrt(eps(float(maximum(grid)))),atol::Real=1e-9)::AbstractArray
 
     inv_latvecs = inv(latvecs)
     coordinates = "Cartesian"
     dim = size(grid,1)
-    uc_grid = mapto_unitcell(grid,latvecs,inv_latvecs,coordinates,rtol,atol)
+    uc_grid = mapto_unitcell(grid,latvecs,inv_latvecs,coordinates,
+        rtol=rtol,atol=atol)
     numpts = 0
     orbits = [zeros(dim,length(pointgroup)) for i=1:size(uc_grid,2)]
     orbit = zeros(dim,length(pointgroup))
