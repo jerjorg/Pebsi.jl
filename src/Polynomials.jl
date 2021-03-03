@@ -1,7 +1,7 @@
 module Polynomials
 
 import Base.Iterators: product
-import LinearAlgebra: dot, det
+import LinearAlgebra: dot,det,norm
 import Statistics: mean
 
 
@@ -68,13 +68,25 @@ bernstein_basis([s,t,u],2,2)
  2.0⋅s⋅u
  2.0⋅t⋅u
  1.0*u^2
+```
 """
 function bernstein_basis(bpt::AbstractArray,dim::Integer,
     deg::Integer)::AbstractArray
-    indices = filter(x->length(x)>0, [[sum(p)==deg ? p : []
-        for p=collect(product([0:deg for i=0:dim]...))]...])
+    indices = [p for p=collect(product([0:deg for i=0:dim]...)) if 
+        sum(p) == deg]
     [factorial(deg)/prod(factorial.(index))*prod(bpt.^index) for index=indices]
 end
+
+"""
+    bernstein_basis(bpts,dim,deg)
+
+Evaluate the Bernstein basis functions at each point in an array (points are columns).
+"""
+function bernstein_basis(bpts::AbstractArray{<:Real,2},dim::Integer,
+    deg::Integer)::AbstractArray{<:Real,2}
+    mapslices(x->bernstein_basis(x,dim,deg),bpts,dims=1)
+end
+
 
 @doc """
     barytocart(barypt,simplex)
@@ -117,6 +129,67 @@ function barytocart(barypts::AbstractArray{<:Real,2},
 end
 
 @doc """
+    carttobary1D(pt,simplex)
+
+Transform a point from Cartesian to barycentric coordinates in 1D.
+
+# Arguments
+- `pt::Real`: the point in Cartesian coordinates.
+- `interval::AbstractArray{<:Real,1}`: an interval that the point `pt` lies on.
+
+# Returns
+- `::AbstractArray{<:Real,1}`: the point in Barycentric coordinates.
+
+# Examples
+```jldoctest
+import Pebis.Polynomials: carttobary1D
+interval = [0,1]
+x = 0.3
+carttobary1D(x,interval)
+# output
+2-element Array{Float64,1}:
+ 0.3
+ 0.7
+```
+"""
+function carttobary1D(pt::Real,
+    interval::AbstractArray{<:Real,1})::AbstractArray{<:Real,1}
+    (a,b) = interval
+    [(pt - a)/(b-a), (b - pt)/(b-a)]
+end
+
+@doc """
+    carttobary1D(pt,simplex)
+
+Transform a point from Cartesian to barycentric coordinates in 1D.
+
+# Arguments
+- `pt::AbstractArray{<:Real,1}`: the point in Cartesian coordinates.
+- `interval::AbstractArray{<:Real,2}`: an interval as two points as columns of 
+    an array. The point `pt` must lie on the line connecting the interval.
+
+# Returns
+- `::AbstractArray{<:Real,1}`: the point in Barycentric coordinates.
+
+# Examples
+```jldoctest
+import Pebis.Polynomials: carttobary1D
+interval = [0 0; 1 2]
+x = [0,1.3]
+carttobary1D(x,interval)
+# output
+2-element Array{Float64,1}:
+ 0.30000000000000004
+ 0.7
+```
+"""
+function carttobary1D(pt::AbstractArray{<:Real,1},
+    interval::AbstractArray{<:Real,2})::AbstractArray{<:Real,1}
+    (a,b) = [interval[:,i] for i=1:2]
+    [norm(pt - a)/norm(b-a), norm(b - pt)/norm(b-a)]
+end
+
+@doc """
     carttobary(pt,simplex)
 
 Transform a point from Cartesian to barycentric coordinates.
@@ -127,7 +200,8 @@ Transform a point from Cartesian to barycentric coordinates.
 """
 function carttobary(pt::AbstractArray{<:Real,1},
         simplex::AbstractArray{<:Real,2})::AbstractArray{<:Real,1}
-    inv(vcat(simplex,ones(Int,(1,size(simplex,2)))))*vcat(pt[:,1],1)
+
+    inv(vcat(simplex,ones(Int,(1,size(simplex,2)))))*vcat(pt,1)
 end
 
 @doc """
@@ -160,6 +234,7 @@ Calculate the coefficients of a polynomial interpolation over a simplex.
 - `::AbstractArray{<:Real,1}`: the coefficients of the polynomial approximation.
 
 # Examples
+```jldoctest
 import Pebsi.Polynomials: getpoly_coeffs
 simplex_bpts = [1.0 0.5 0.0 0.5 0.0 0.0; 0.0 0.5 1.0 0.0 0.5 0.0; 0.0 0.0 0.0 0.5 0.5 1.0]
 values = [0.4, 0.5, 0.3, -0.4, -0.1, -0.2]
@@ -174,6 +249,7 @@ getpoly_coeffs(values,simplex_bpts,dim,deg)
  -0.9
  -0.25
  -0.2
+```
 """
 function getpoly_coeffs(values::AbstractArray{<:Real,1},
     simplex_bpts::AbstractArray{<:Real,2},dim::Integer,
@@ -193,7 +269,7 @@ Evaluate a polynomial at a point.
 - `deg::Integer`: the degree of the polynomial.
 
 # Returns
-` `::Real`: the value of the polynomial approximation an `barypt`.
+` `::Any`: the value of the polynomial approximation an `barypt`.
 
 # Examples
 ```jldoctest
@@ -206,13 +282,13 @@ eval_poly(barypt,coeffs,dim,deg)
 0.4
 ```
 """
-function eval_poly(barypt::AbstractArray{<:Real,1},
-    coeffs::AbstractArray{<:Real,1},dim::Integer,deg::Integer)::Real
+function eval_poly(barypt::AbstractArray,
+    coeffs::AbstractArray{<:Real,1},dim::Integer,deg::Integer)::Any
     dot(coeffs,bernstein_basis(barypt,dim,deg))
 end
 
 @doc """
-    eval_poly(barypt,coeffs,dim,deg)
+    eval_poly(barypts,coeffs,dim,deg)
 
 Evaluate a polynomial for each point in an array (points are columns).
 

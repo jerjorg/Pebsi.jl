@@ -1,7 +1,8 @@
 using Test
 
 import Pebsi.Polynomials: sample_simplex, bernstein_basis, barytocart, 
-    getpoly_coeffs, eval_poly, shadow_size, simplex_size, bezsimplex_size
+    getpoly_coeffs, eval_poly, shadow_size, simplex_size, bezsimplex_size,
+    carttobary, carttobary1D
 
 import PyCall: pyimport
 sympy=pyimport("sympy")
@@ -163,5 +164,22 @@ import QHull: chull
         val = 0.9
         bezsimplex_size(coeffs,simplex,val)
     
+    end
+
+    @testset "carttobary" begin
+        simplex = [0 0 1; 0 1 1]
+        pt = [0,1]
+        carttobary(pt,simplex) ≈ [0,1,0]
+        carttobary(simplex,simplex) ≈ [1.0 0.0 0.0; 0.0 1.0 0.0; 0.0 0.0 1.0]
+    end
+
+    @testset "carttobary1D" begin
+        interval = [0,1]
+        x = 0.3
+        carttobary1D(x,interval) ≈ [0.3,0.7]
+        
+        interval = [0 0; 1 2]
+        x = [0,1.3]
+        carttobary1D(x,interval) ≈ [0.3,0.7]
     end
 end

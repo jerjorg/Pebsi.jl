@@ -57,7 +57,7 @@ end
 
 
 @doc """
-    contourplot(coeffs,simplex)
+    contourplot(coeffs,simplex,ax)
 
 Plot the level curves of a polynomial surface.
 
@@ -79,13 +79,14 @@ function contourplot(coeffs::AbstractArray{<:Real,1},
     basis = [simplex[:,2] - simplex[:,1] simplex[:,3] - simplex[:,1]]
     grid_offset = [0.5,0.5]
     plotpts = 2 .* sample_unitcell(basis,N,grid_offset)
-    plotpts = mapslices(x->x-basis*[1/2,1/2],plotpts,dims=1)
+    plotpts = mapslices(x->x-basis*[1/2,1/2]+simplex[:,1],plotpts,dims=1)
     bplotpts = carttobary(plotpts,simplex)
-    plotvals= eval_poly(bplotpts,coeffs,dim,deg);
+    plotvals= eval_poly(bplotpts,coeffs,dim,deg)
 
     X=reshape(plotpts[1,:],(ndivs,ndivs))
     Y=reshape(plotpts[2,:],(ndivs,ndivs))
-    Z=reshape(plotvals,(ndivs,ndivs));
+    Z=reshape(plotvals,(ndivs,ndivs))
+    shull = chull(Array(simplex'))
 
     (fig,ax)=subplots()
     ax=plot_2Dconvexhull(shull,ax,"none")
