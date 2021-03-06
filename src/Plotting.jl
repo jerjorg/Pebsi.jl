@@ -7,16 +7,16 @@ include("RectangularMethod.jl")
 include("Polynomials.jl")
 
 import .RectangularMethod: sample_unitcell
-import .Polynomials: carttobary, eval_poly
+import .Polynomials: carttobary,barytocart,eval_poly,sample_simplex
 
 import SymmetryReduceBZ.Plotting: plot_2Dconvexhull
 
 @doc """
-    plotmesh(meshpts,ax,color)
+    meshplot(meshpts,ax,color)
 
 Plot the points within a mesh in 2D or 3D.
 """
-function plotmesh(meshpts::AbstractArray{<:Real,2},
+function meshplot(meshpts::AbstractArray{<:Real,2},
     ax::Union{PyObject,Nothing}=nothing; color::String="blue", alpha=0.5)
 
     dim = size(meshpts,1)
@@ -28,9 +28,6 @@ function plotmesh(meshpts::AbstractArray{<:Real,2},
 
         (xs,ys)=[meshpts[i,:] for i=1:dim]
         ax.scatter(xs,ys,color=color,alpha=alpha)
-
-        plotrange=[[minimum(meshpts[:,i])-ϵ,
-            maximum(meshpts[:,i])+ϵ] for i=1:2]
         ax.set_aspect(1)
 
     elseif dim == 3
@@ -39,7 +36,7 @@ function plotmesh(meshpts::AbstractArray{<:Real,2},
             ax = fig.add_subplot(111, projection="3d")
         end
         (xs,ys,zs)=[meshpts[i,:] for i=1:dim]
-        ax.scatter(xs,ys,color=color,alpha=alpha)
+        ax.scatter3D(xs,ys,zs,color=color,alpha=alpha)
 
         ϵ=0.1*max(meshpts...)
         plotrange=[[minimum(meshpts[:,i])-ϵ,
@@ -51,7 +48,7 @@ function plotmesh(meshpts::AbstractArray{<:Real,2},
             rows. Each mesh point is a column of the array in Cartesian
             coordinates."))
     end
-
+    
     ax
 end
 
@@ -71,7 +68,8 @@ Plot the level curves of a polynomial surface.
 
 """
 function contourplot(coeffs::AbstractArray{<:Real,1},
-        simplex::AbstractArray{<:Real,2},ax)
+        simplex::AbstractArray{<:Real,2},ax::Union{PyObject,Nothing}=nothing,
+        filled::Bool=false)
     dim = 2
     deg = 2
     ndivs = 1000
@@ -88,9 +86,38 @@ function contourplot(coeffs::AbstractArray{<:Real,1},
     Z=reshape(plotvals,(ndivs,ndivs))
     shull = chull(Array(simplex'))
 
-    (fig,ax)=subplots()
+    if ax == nothing; (fig,ax)=subplots() end
     ax=plot_2Dconvexhull(shull,ax,"none")
-    ax.contour(X,Y,Z,[0])    
+    if filled 
+        ax.contourf(X,Y,Z,[-1e10,0])
+    else
+        ax.contour(X,Y,Z,[0])            
+    end
+    ax
+end
+
+"""
+    bezplot(bezpts)
+
+Plot a quadratic Bezier curve and its Bezier points.
+"""
+function bezplot(bezpts::AbstractArray{<:Real,2},
+        ax::Union{PyObject,Nothing}=nothing)
+    
+    dim = 1
+    deg = 2
+    simplex = [bezpts[1,1] bezpts[1,end]]
+    s = 0.1*abs(simplex[2]-simplex[1]) 
+    pts = Array(collect(simplex[1]-s:0.01:simplex[2]+s)')
+    bpts = carttobary(pts,simplex)
+    vals = eval_poly(bpts,bezpts[end,:],dim,deg)
+    fvals = zeros(length(pts))
+    if ax == nothing
+        (fig,ax)=subplots()
+    end
+    ax.plot(pts[:],vals,pts[:],fvals)
+    ax.plot(bezpts[1,:],bezpts[2,:],"bo")
+    ax
 end
 
 end # module

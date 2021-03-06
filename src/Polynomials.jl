@@ -307,7 +307,7 @@ eval_poly(simplex_bpts,coeffs,dim,deg)
  -0.075
  -0.024999999999999994
  -0.3
-````
+```
 """
 function eval_poly(barypts::AbstractArray{<:Real,2},
     coeffs::AbstractArray{<:Real,1},dim::Integer,
