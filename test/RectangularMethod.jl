@@ -2,6 +2,7 @@ using Test
 
 import Pebsi.RectangularMethod: sample_unitcell, symreduce_grid,
     calculate_orbits, convert_mixedradix, rectangular_method
+import Pebsi.EPMs: free,free_fl,free_be
 
 import Base.Iterators: product
 import SymmetryReduceBZ.Symmetry: calc_pointgroup, calc_ibz, mapto_ibz,
@@ -42,7 +43,7 @@ import SymmetryReduceBZ.Utilities: contains
             (ftrans,pointgroup) = calc_spacegroup(real_latvecs,atom_types,
                 atom_pos,coordinates)
             (kpoint_weights,unique_kpoints,orbits) = symreduce_grid(
-                recip_latvecs,N,grid_offset,pointgroup,rtol,atol)
+                recip_latvecs,N,grid_offset,pointgroup,rtol=rtol,atol=atol)
 
             test_orbits = calculate_orbits(gridpts,pointgroup,recip_latvecs)
 
@@ -56,7 +57,8 @@ import SymmetryReduceBZ.Utilities: contains
                 [size(x) for x=orbits])
             @test same_size
             for j=1:length(orbits)
-                @test all([contains(orbits[j][:,i],test_orbits[j],rtol,atol)
+                @test all([contains(orbits[j][:,i],test_orbits[j],rtol=rtol,
+                    atol=atol)
                     for i=1:size(orbits[j],2)])
             end
         end
@@ -81,7 +83,7 @@ import SymmetryReduceBZ.Utilities: contains
             (ftrans,pointgroup) = calc_spacegroup(real_latvecs,atom_types,
                 atom_pos,coordinates)
             (kpoint_weights,unique_kpoints,orbits) = symreduce_grid(
-                recip_latvecs,N,grid_offset,pointgroup,rtol,atol)
+                recip_latvecs,N,grid_offset,pointgroup,rtol=rtol,atol=atol)
 
             test_orbits = calculate_orbits(gridpts,pointgroup,recip_latvecs)
 
@@ -95,7 +97,8 @@ import SymmetryReduceBZ.Utilities: contains
                 for x=orbits])
             @test same_size
             for j=1:length(orbits)
-                test = all([contains(orbits[j][:,i],test_orbits[j],rtol,atol)
+                test = all([contains(orbits[j][:,i],test_orbits[j],rtol=rtol,
+                    atol=atol)
                     for i=1:size(orbits[j],2)])
                 @test test
             end
@@ -160,7 +163,31 @@ import SymmetryReduceBZ.Utilities: contains
             @test abs(fermilevel - fermilevel_sol) < 1e-2
             @test abs(bandenergy - bandenergy_sol) < 1e-3
         end
+        
+        rtol=1e-9
+        atol=1e-9
+        real_latvecs = [1 0 0; 0 1 0; 0 0 1]
+        atom_types = [0]
+        atom_pos = Array([0 0 0]')
+        electrons = 3
+        cutoff = 1
+        sheets = 1:7
+        rules = Dict(0.0 => 0.0)
+        grid_offset = [0.5,0.5,0.5]
+        convention = "ordinary"
+        coordinates = "Cartesian"
+        energy_factor = 1
+        n = 80
+        N = [n 0 0; 0 n 0; 0 0 n]
+        tmp = rectangular_method(real_latvecs,atom_types,atom_pos,rules,electrons,cutoff,
+            sheets,N,grid_offset,convention,coordinates,energy_factor,rtol=rtol,atol=atol,func=free)
 
+        fl = free_fl(electrons)
+        be = free_be(electrons)
 
+        @test abs(fl-tmp[2]) < 1e-3
+        @test abs(be - tmp[3]) < 1e-4
+        
+    
     end
 end

@@ -55,11 +55,18 @@ edge_intersects(bezpts) == [0.5]
 1-element Array{Float64,1}:
  0.5
 """
-function edge_intersects(bezpts::AbstractArray{<:Real,2})::AbstractArray{<:Real,1}
+function edge_intersects(bezpts::AbstractArray{<:Real,2};
+    atol=1e-12)::AbstractArray{<:Real,1}
     
     # Cases where the curve is above zero, below zero, or at zero.
     coeffs = bezpts[end,:]
-    if all(coeffs.==0) || all(coeffs .> 0) || all(coeffs .< 0)
+    if all(isapprox.(coeffs,0,atol=atol))
+        return Array{Float64}([])
+    elseif !any(isapprox.(coeffs,0,atol=atol)) && all(coeffs .> 0)
+        print("no intersections 1")
+        return Array{Float64}([])
+    elseif !any(isapprox.(coeffs,0,atol=atol)) && all(coeffs .< 0)
+        print("no intersections 2")
         return Array{Float64}([])
     end
     
@@ -81,11 +88,21 @@ function edge_intersects(bezpts::AbstractArray{<:Real,2})::AbstractArray{<:Real,
     elseif γ==0
         x = [-α/β]
     else
-        x = [(-β-sqrt(β^2-4α*γ))/(2γ),(-β+sqrt(β^2-4α*γ))/(2γ)]
+        arg = β^2-4α*γ
+        if isapprox(arg,0,atol=atol)
+            # There are two solutions at the same point if arg == 0 but we only
+            # keep one of them.
+            x = [-β/(2γ)]
+        elseif arg < 0
+            # Ignore solutions with imaginary components.
+            x = Array{Float64}[]
+        else
+            x = [(-β-sqrt(arg))/(2γ),(-β+sqrt(arg))/(2γ)]
+        end
     end
-    
+
     # Only keep non-complex intersections between [0,1).
-    real.(filter(y -> imag(y)==0 && real(y)>=0 && real(y)<1 ,x)) |> sort
+    filter(y -> (y>0 || isapprox(y,0,atol=atol)) && y<1 ,x) |> sort
 end
 
 
@@ -136,7 +153,98 @@ function simplex_intersects(bezpts::AbstractArray{<:Real,2})::Array
                 i*(edge_bezpts[1:2,end] .- edge_bezpts[1:2,1]) for i=edge_ints])
         end
     end
-    intersects
+    num_intersects = sum([size(i,2) for i=intersects if i!=[]])
+    if num_intersects == 1
+        Array{Array,1}([[],[],[]])
+    else
+        intersects
+    end
+end
+
+"""
+    conicsection(coeffs)
+
+Classify the conic section of a level curve of a quadratic surface.
+
+# Arguments
+- `coeffs::AbstractArray{<:Real,1}`: the coefficients of the quadratic polynomial.
+
+# Returns
+- `::String`: the type of the conic section.
+
+# Examples
+```jldoctest
+import Pebsi.QuadraticIntegration: conicsection
+coeffs = [0.36, -1.64, 0.36, -0.64, -0.64, 0.36]
+# output
+"elipse"
+```
+"""
+function conicsection(coeffs::AbstractArray{<:Real,1})::String
+    (z₀₀₂, z₁₀₁, z₂₀₀, z₀₁₁, z₁₁₀, z₀₂₀)=coeffs
+    a = z₀₀₂ - 2z₁₀₁ + z₂₀₀
+    b = 2z₀₀₂ - 2z₀₁₁ - 2z₁₀₁ + 2z₁₁₀
+    c = z₀₀₂ - 2z₀₁₁ + z₀₂₀
+    d = b^2 - 4*a*c
+    m = -8*(-2*z₀₁₁*z₁₀₁*z₁₁₀+z₀₀₂*z₁₁₀^2+z₀₁₁^2*z₂₀₀+z₀₂₀*(z₁₀₁^2-z₀₀₂*z₂₀₀))
+
+    @show (a,b,c,d,m)
+
+    if a == 0 && b == 0 && c == 0
+        "line"
+    elseif m == 0
+        if d == 0
+            "parallel lines"
+        elseif d > 0
+            "rectangular hyperbola"
+        else # d < 0
+            "point"
+        end
+    else
+        if d == 0
+            "parabola"
+        elseif d < 0
+            "elipse"
+        else # d > 0
+            "hyperbola"
+        end
+    end
+end
+
+"""
+    saddlepoint(coeffs)
+
+Calculate the saddle point of a quadratic Bezier surface.
+
+# Arguments
+- `coeffs::AbstractArray{<:Real,1}`: the coefficients of the quadratic polynomial.
+
+# Returns
+- `::AbstractArray{<:Real,1}`: the coordinates of the saddle point in Barycentric coordinates.
+
+# Examples
+```jldoctest
+import Pebsi.QuadraticIntegration: saddlepoint
+coeffs = [0.36, -1.64, 0.36, -0.64, -0.64, 0.36]
+saddlepoint(coeffs)
+# output
+3-element Array{Float64,1}:
+ 0.5000000000000001
+ 4.163336342344338e-17
+ 0.5000000000000001
+```
+"""
+function saddlepoint(coeffs::AbstractArray{<:Real,1})::AbstractArray{<:Real,1}
+    (z₀₀₂, z₁₀₁, z₂₀₀, z₀₁₁, z₁₁₀, z₀₂₀)=coeffs
+    denom = z₀₁₁^2+(z₁₀₁-z₁₁₀)^2+z₀₂₀*(2z₁₀₁-z₂₀₀)-2z₀₁₁*(z₁₀₁+z₁₁₀-z₂₀₀)-z₀₀₂*(z₀₂₀-2z₁₁₀+z₂₀₀)
+    
+    if denom == 0
+        return [Inf,Inf,Inf]
+    end
+    sₑ = z₀₁₁^2+z₀₂₀*z₁₀₁+z₀₀₂*(-z₀₂₀+z₁₁₀)-z₀₁₁*(z₁₀₁+z₁₁₀)
+    tₑ = -z₁₀₁*(z₀₁₁-z₁₀₁+z₁₁₀)+z₀₀₂*(z₁₁₀-z₂₀₀)+z₀₁₁*z₂₀₀
+    uₑ = -(z₀₁₁+z₁₀₁-z₁₁₀)*z₁₁₀+z₀₂₀*(z₁₀₁-z₂₀₀)+z₀₁₁*z₂₀₀
+    [sₑ,tₑ,uₑ]/denom
 end
 
 end # module

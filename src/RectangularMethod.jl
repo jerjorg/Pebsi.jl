@@ -1,10 +1,10 @@
 module RectangularMethod
 
 import SymmetryReduceBZ.Symmetry: mapto_unitcell, make_primitive,
-    calc_spacegroup
+    calc_spacegroup, mapto_bz
 import SymmetryReduceBZ.Lattices: get_recip_latvecs
 import Base.Iterators: product
-import LinearAlgebra: det, diag, dot
+import LinearAlgebra: det, diag, dot, inv
 import AbstractAlgebra: ZZ, matrix, snf_with_transform, hnf_with_transform, hnf
 
 import Pebsi.EPMs: eval_epm,RytoeV,eVtoRy
@@ -153,6 +153,10 @@ function rectangular_method(real_latvecs::AbstractArray{<:Real,2},
     recip_latvecs = get_recip_latvecs(real_latvecs,convention)
     (kpoint_weights,unique_kpoints,orbits) = symreduce_grid(recip_latvecs,N,
         grid_offset,pointgroup,rtol=rtol,atol=atol)
+
+    inv_latvecs = inv(recip_latvecs)
+    unique_kpoints = mapto_bz(unique_kpoints, recip_latvecs, inv_latvecs, coordinates)
+
     if func == nothing
         eigenvalues = eval_epm(unique_kpoints,recip_latvecs,rules,cutoff,sheets,
             energy_factor,rtol=rtol,atol=atol)
