@@ -7,7 +7,8 @@ include("RectangularMethod.jl")
 include("Polynomials.jl")
 
 import .RectangularMethod: sample_unitcell
-import .Polynomials: carttobary,barytocart,eval_poly,sample_simplex
+import .Polynomials: carttobary,barytocart,eval_poly,sample_simplex,
+    eval_bezcurve
 
 import SymmetryReduceBZ.Plotting: plot_2Dconvexhull
 
@@ -117,6 +118,40 @@ function bezplot(bezpts::AbstractArray{<:Real,2},
     end
     ax.plot(pts[:],vals,pts[:],fvals)
     ax.plot(bezpts[1,:],bezpts[2,:],"bo")
+    ax
+end
+
+"""
+    bezcurve_plot(bezptsᵣ,bezwtsᵣ,ax)
+
+Plot a rational, quadratic, Bezier curve and its Bezier points
+
+# Arguments
+- `bezptsᵣ::AbstractArray{<:Real,2}`: the Bezier control points as columns of an
+    array in Cartesian coordinates.
+- `bezwtsᵣ::AbstractArray{<:Real,1}`: the weights of the control points.
+- `ax::Union{PyObject,Nothing}=nothing`: the figure's axes.
+
+# Returns
+- `ax::PyObject`: the axes of the figure.
+
+# Examples
+```jldoctest
+bezpts = [0.0 0.0 1.0; 1.0 1/3 0.0]
+bezwts = [1.0, 1.5, 1.0]
+bezcurve_plot(bezpts,bezwts)
+# output
+PyObject <AxesSubplot:>
+```
+"""
+function bezcurve_plot(bezptsᵣ::AbstractArray{<:Real,2},
+    bezwtsᵣ::AbstractArray{<:Real,1},
+    ax::Union{PyObject,Nothing}=nothing)::PyObject
+    if ax == nothing; (fig,ax)=subplots(); end
+    
+    data = eval_bezcurve(collect(0:1/1000:1),bezptsᵣ,bezwtsᵣ)
+    ax = meshplot(bezptsᵣ,ax)
+    ax.plot(data[1,:],data[2,:])
     ax
 end
 

@@ -129,67 +129,6 @@ function barytocart(barypts::AbstractArray{<:Real,2},
 end
 
 @doc """
-    carttobary1D(pt,simplex)
-
-Transform a point from Cartesian to barycentric coordinates in 1D.
-
-# Arguments
-- `pt::Real`: the point in Cartesian coordinates.
-- `interval::AbstractArray{<:Real,1}`: an interval that the point `pt` lies on.
-
-# Returns
-- `::AbstractArray{<:Real,1}`: the point in Barycentric coordinates.
-
-# Examples
-```jldoctest
-import Pebis.Polynomials: carttobary1D
-interval = [0,1]
-x = 0.3
-carttobary1D(x,interval)
-# output
-2-element Array{Float64,1}:
- 0.3
- 0.7
-```
-"""
-function carttobary1D(pt::Real,
-    interval::AbstractArray{<:Real,1})::AbstractArray{<:Real,1}
-    (a,b) = interval
-    [(pt - a)/(b-a), (b - pt)/(b-a)]
-end
-
-@doc """
-    carttobary1D(pt,simplex)
-
-Transform a point from Cartesian to barycentric coordinates in 1D.
-
-# Arguments
-- `pt::AbstractArray{<:Real,1}`: the point in Cartesian coordinates.
-- `interval::AbstractArray{<:Real,2}`: an interval as two points as columns of 
-    an array. The point `pt` must lie on the line connecting the interval.
-
-# Returns
-- `::AbstractArray{<:Real,1}`: the point in Barycentric coordinates.
-
-# Examples
-```jldoctest
-import Pebis.Polynomials: carttobary1D
-interval = [0 0; 1 2]
-x = [0,1.3]
-carttobary1D(x,interval)
-# output
-2-element Array{Float64,1}:
- 0.30000000000000004
- 0.7
-```
-"""
-function carttobary1D(pt::AbstractArray{<:Real,1},
-    interval::AbstractArray{<:Real,2})::AbstractArray{<:Real,1}
-    (a,b) = [interval[:,i] for i=1:2]
-    [norm(pt - a)/norm(b-a), norm(b - pt)/norm(b-a)]
-end
-
-@doc """
     carttobary(pt,simplex)
 
 Transform a point from Cartesian to barycentric coordinates.
@@ -315,113 +254,118 @@ function eval_poly(barypts::AbstractArray{<:Real,2},
     mapslices(x->eval_poly(x,coeffs,dim,deg),barypts,dims=1)[:]
 end
 
-@doc """
-    simplex_size(simplex)
 
-Calculate the size of the region within a simplex.
+@doc """
+    getbez_pts₋wts(bezpts,p₀,p₂)
+
+Calculate the Bezier points and weights of a level curve of a Quadratic surface passing through two points.
 
 # Arguments
-- `simplex::AbstractArray{<:Real,2}`: the vertices of the simplex as columns of 
-    an array.
+- `bezpts::AbstractArray{<:Real,1}`: the Bezier points of the quadratic surface.
+- `p₀::AbstractArray{<:Real,1}`: a point a level curve of the quadratic surface passes
+    through. The level curve is taken at an isovalue of zero.
+- `p₂::AbstractArray{<:Real,1}`: a point a level curve of the quadratic surface passes
+    through. The level curve is taken at an isovalue of zero.
 
 # Returns
-- `::Real`: the size of the region within the simplex. For example, the area
-    within a triangle in 2D.
+- `::::Array{Array{<:Real,N} where N,1}`: the Bezier points and weights in a 1D array.
 
 # Examples
 ```jldoctest
-import Pebsi.Polynomials: simplex_size
-simplex = [0 0 1; 0 1 0]
-simplex_size(simplex)
-# output
-0.5
+import Pebsi.getbez_pts₋wts(bezpts,p₀,p₁)
+bezpts = [-1.0 0.0 1.0 -0.5 0.5 0.0; 0.0 0.0 0.0 0.5 0.5 1.0; 0.0 1.0 0.0 1.0 -1.0 0.0]
+p₀ = [1,0]
+p₂ = [0,1]
+getbez_pts₋wts(bezpts,p₀,p₂)
+# output 
+2-element Array{Array{Float64,N} where N,1}:
+ [1.0 0.0 0.0; 0.0 0.3333333333333333 1.0]
+ [1.0, 1.6770509831248424, 1.0]
 ```
 """
-function simplex_size(simplex::AbstractArray{<:Real,2})::Real
-    abs(1/factorial(size(simplex,1))*det(vcat(simplex,ones(1,size(simplex,2)))))
+function getbez_pts₋wts(bezpts::AbstractArray{<:Real,2},
+        p₀::AbstractArray{<:Real,1},
+        p₂::AbstractArray{<:Real,1})#::Array{Array{<:Real,N} where N,1}
+
+    triangle = bezpts[1:2,[1,3,6]]
+    coeffs = bezpts[3,:]
+    (z₂₀₀,z₁₀₁,z₀₀₂,z₁₁₀,z₀₁₁,z₀₂₀) = coeffs
+    (s₀,t₀,u₀) = carttobary(p₀,triangle)
+    (s₂,t₂,u₂) = carttobary(p₂,triangle)
+
+    A₀ = z₂₀₀*s₀ + z₁₁₀*t₀ + z₁₀₁*u₀
+    A₂ = z₂₀₀*s₂ + z₁₁₀*t₂ + z₁₀₁*u₂
+    B₀ = z₁₁₀*s₀ + z₀₂₀*t₀ + z₀₁₁*u₀
+    B₂ = z₁₁₀*s₂ + z₀₂₀*t₂ + z₀₁₁*u₂
+    C₀ = z₁₀₁*s₀ + z₀₁₁*t₀ + z₀₀₂*u₀
+    C₂ = z₁₀₁*s₂ + z₀₁₁*t₂ + z₀₀₂*u₂
+
+    a₀ = (s₀ + 2t₀ + 2u₀)*A₀ - t₀*B₀ - u₀*C₀
+    a₂ = (s₂ + 2t₂ + 2u₂)*A₂ - t₂*B₂ - u₂*C₂
+    b₀ = -s₀*A₀ + (2s₀+t₀+2u₀)*B₀ - u₀*C₀
+    b₂ = -s₂*A₂ + (2s₂+t₂+2u₂)*B₂ - u₂*C₂
+    c₀ = -s₀*A₀ - t₀*B₀ + (2s₀+2t₀+u₀)*C₀
+    c₂ = -s₂*A₂ - t₂*B₂ + (2s₂+2t₂+u₂)*C₂
+
+    cₓb = c₀*b₂-c₂*b₀
+    aₓc = a₀*c₂-a₂*c₀
+    bₓa = b₀*a₂-b₂*a₀
+    d = cₓb + aₓc + bₓa
+    p₁ = [cₓb,aₓc,bₓa]/d
+
+    (w₀,w₂)=(1,1)
+    h₀₀₂ = eval_poly(p₁,coeffs,2,2)
+    h₁₁₀ = 2*eval_poly(carttobary((p₀+p₂)/2,triangle),coeffs,2,2)
+    w₁ = √(-h₁₁₀/2h₀₀₂)
+
+    bezwtsᵣ = [w₀,w₁,w₂]
+    bezptsᵣ = [p₀ barytocart(p₁,triangle) p₂]
+    [bezptsᵣ,bezwtsᵣ]
 end
 
-@doc """
-    shadow_size(coeff,simplex,val;rtol,atol)
 
-Calculate the size of the shadow of a linear or quadratic Bezier triangle.
+@doc """
+    eval_bezcurve(t,bezpts,bezwts)
+
+Evaluate a rational Bezier curve at a point.
 
 # Arguments
-- `coeffs::AbstractArray{<:Real,1}`: the coefficients of the Bezier triangle.
-- `simplex::AbstractArray{<:Real,2}`: the domain of the Bezier triangle.
-- `val::Real`: the value of a cutting plane.
-- `rtol::Real=sqrt(eps(float(maximum(coeffs))))`: a relative tolerance for 
-    floating point comparisons.
-- `atol::Real=1e-9`: an absolute tolerance for floating point comparisons.
+- `t::Real`: the parametric variable.
+- `bezpts::AbstractArray{<:Real,2}`: the Bezier points in Cartesian coordinates
+    as columes of an array.
+- `bezwts::AbstractArray{<:Real,1}`: the weights of the Bezier points.
 
 # Returns
-- `::Real`: the size of the shadow of the Bezier triangle within `simplex` and 
-    below a cutting plane of height `val`.
+- `::AbstractArray{<:Real,1}`: a point along the Bezier curve.
 
 # Examples
 ```jldoctest
-coeffs = [0.4, 0.5, 0.3, -0.2, -0.1, -0.3, 0.7, -0.6, 0.9, -0.7]
-simplex = [0.0 0.5 0.5 0.0; 1.0 1.0 0.0 0.0; 0.0 0.0 0.0 1.0]
-val = 0.9
-shadow_size(coeffs,simplex,val)
+import Pebsi.Polynomials: eval_bezcurve
+t = 0.5
+bezpts = [0.0 0.0 1.0; 1.0 1/3 0.0]
+bezwts = [1.0, 1.5, 1.0]
+eval_bezcurve(t,bezpts,bezwts)
 # output
-0.08333333333333333
+2-element Array{Float64,1}:
+ 0.2
+ 0.4
 ```
 """
-function shadow_size(coeffs::AbstractArray{<:Real,1},
-    simplex::AbstractArray{<:Real,2},val::Real;
-    rtol::Real=sqrt(eps(float(maximum(coeffs)))),
-    atol::Real=1e-9)::Real
-    
-    if minimum(coeffs) > val|| isapprox(minimum(coeffs),val,rtol=rtol,atol=atol)
-        0
-    elseif maximum(coeffs) < val || isapprox(maximum(coeffs),val,rtol=rtol,atol=atol)
-        simplex_size(simplex)
-    else
-        1e10
-    end
+function eval_bezcurve(t::Real,bezpts::AbstractArray{<:Real,2},
+        bezwts::AbstractArray{<:Real,1})::AbstractArray{<:Real,1}
+    (sum((bernstein_basis([1-t,t],1,2).*bezwts)' .* 
+        bezpts,dims=2)/dot(bezwts,bernstein_basis([1-t,t],1,2)))[:]
 end
 
 @doc """
-    bezsimplex_size(coeff,simplex,val;rtol,atol)
+    eval_bezcurve(t,bezpts,bezwts)
 
-Calculate the size of the shadow of a linear or quadratic Bezier triangle.
-
-# Arguments
-- `coeffs::AbstractArray{<:Real,1}`: the coefficients of the Bezier triangle.
-- `simplex::AbstractArray{<:Real,2}`: the domain of the Bezier triangle.
-- `val::Real`: the value of a cutting plane.
-- `rtol::Real=sqrt(eps(float(maximum(coeffs))))`: a relative tolerance for 
-    floating point comparisons.
-- `atol::Real=1e-9`: an absolute tolerance for floating point comparisons.
-
-# Returns
-- `::Real`: the size of the shadow of the Bezier triangle within `simplex` and 
-    below a cutting plane of height `val`.
-
-# Examples
-```jldoctest
-import Pebsi.Polynomials: bezsimplex_size
-coeffs = [0.4, 0.5, 0.3, -0.2, -0.2, -0.3]
-simplex = [0.0 0.5 0.5; 1.0 1.0 0.0]
-bezsimplex_size(coeffs,simplex,100)
-# output
-0.020833333333333332
-```
+Evaluate a rational Bezier curve at each point in an array.
 """
-function bezsimplex_size(coeffs::AbstractArray{<:Real,1},
-    simplex::AbstractArray{<:Real,2},val::Real;
-    rtol::Real=sqrt(eps(float(maximum(coeffs)))),
-    atol::Real=1e-9)::Real
-    
-    if maximum(coeffs) < val || isapprox(maximum(coeffs),val,rtol=rtol,atol=atol)
-        simplex_size(simplex)*mean(coeffs)
-    elseif minimum(coeffs) > val || isapprox(minimum(coeffs),val,rtol=rtol,atol=atol)
-        0
-    else
-       1e10
-    end
-    
+function eval_bezcurve(t::AbstractArray{<:Real,1},
+    bezpts::AbstractArray{<:Real,2},
+    bezwts::AbstractArray{<:Real,1})::AbstractArray{<:Real,2}
+    reduce(hcat,map(x->eval_bezcurve(x,bezpts,bezwts),t))
 end
 
-end
+end # module
