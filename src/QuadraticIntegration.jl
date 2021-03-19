@@ -513,4 +513,77 @@ function split_bezsurf(bezpts::AbstractArray{<:Real,2},atol=1e-12)::AbstractArra
     sub_bezpts
 end
 
+@doc """
+    analytic_area(w::Real)
+
+Calculate the area within a triangle and a canonical, rational, Bezier curve.
+
+# Arguments
+- `w::Real`: the weight of the middle Bezier point of a rational, quadratic, Bezier curve.
+# Returns
+- `::Real`: the area within the triangle and Bezier curve.
+
+# Examples
+```jldoctest
+w = 1.0
+analytic_area(w)
+# output
+0.6666666666666666
+```
+"""
+function analytic_area(w::Real)::Real
+    
+    # Use the Taylor expansion of the analytic expression if the weight is close to 1.
+    if isapprox(w,1,atol=1e-2)
+        2/3+4/15*(-1+w)-6/35*(-1+w)^2+32/315*(-1+w)^3-40/693*(-1+w)^4+(32*(-1+w)^5)/1001-
+        (112*(-1+w)^6)/6435+ (1024*(-1+w)^7)/109395-(1152*(-1+w)^8)/230945+
+        (2560*(-1+w)^9)/969969-(2816*(-1+w)^10)/2028117
+    else
+        a = sqrt(Complex(-1-w))
+        b = sqrt(Complex(-1+w))
+        abs(real((w*(w+(2*atan(b/a)/(a*b)))/(-1+w^2))))
+    end
+end
+
+@doc """
+    analytic_coeffs(coeffs::AbstractArray{<:Real,1}, w::Real)
+
+Calculate the volume within a canonical triangle and Bezier curve of a quadratic surface.
+
+# Arguments
+- `w::Real`: the weight of the middle Bezier point of a rational, quadratic, Bezier curve.
+# Returns
+- `::Real`: the area within the triangle and Bezier curve.
+
+# Examples
+```jldoctest
+import Pebsi.QuadraticIntegration: analytic_volume
+coeffs = [0.2,0.2,0.3,-0.3,0.4,-0.4]
+w = 0.3
+analytic_volume(coeffs,w)
+# output
+0.4426972170733675
+```
+"""
+function analytic_volume(coeffs::AbstractArray{<:Real,1},w::Real)::Real
+    
+    (c₀,c₁,c₂,c₃,c₄,c₅) = coeffs
+    d = c₀+c₁+c₂+c₃+c₄+c₅
+    # Use the Taylor expansion of the analytic solution if the weight is close to 1.
+    if isapprox(w,1,atol=1e-2)
+        (6/7+(2*(-11*c₀-5*(c₁+c₃)+c₄))/(35*d))+4/105*(5+(3*c₀+5*(c₁+c₃)-c₄)/d)*(w-1)+(-(2/11)+(2*(81*c₀+
+        5*(-5*(c₁+c₃)+c₄)))/(1155*d))*(w-1)^2+(32*(70+(-89*c₀+5*(-5*(c₁+c₃)+c₄))/d)*(w-1)^3)/15015+
+        (8*(17*c₀-7*(c₁+6*c₂+c₃+7*c₄+6*c₅))*(w-1)^4)/(3003*d)+(64*(315+(-432*c₀+77*(-5*(c₁+c₃)+c₄))/
+        d)*(w-1)^5)/255255+(224*(43*c₀+3*(30*c₁-55*c₂+30*c₃-72*c₄-55*c₅))*(w-1)^6)/(692835*d)+
+        (1024*(165-(4*(46*c₀+75*(c₁+c₃)-15*c₄))/d)*(w-1)^7)/4849845-(384*(93*c₀-55*(41*c₁-39*c₂+41*c₃-55*c₄-39*c₅))*(w-1)^8)/
+        (37182145*d)+(512*(1001+(-797*c₀+451*(-5*(c₁+c₃)+c₄))/d)*(w-1)^9)/37182145-
+        (2816*(164*c₀+13*(-50*c₁+35*c₂-50*c₃+52*c₄+35*c₅))*(w-1)^10)/(152108775*d)
+    else
+        a = sqrt(Complex(-1-w))
+        b = sqrt(Complex(-1+w))
+        sign(w)real((w*(a*b*w*(-32*c₁+33*c₂-32*c₃+46*c₄+33*c₅-2*(-26*c₀+18*c₁+13*c₂+18*c₃+12*c₄+13*c₅)*w^2+
+            8*(d)*w^4)+6*(5*c₂+6*c₄+5*c₅+4*(c₀-5*(c₁+c₃)+c₄)*w^2+16*c₀*w^4)*atan(b/a)))/(8*d*a*b*(-1+w^2)^3))
+    end
+end
+
 end # module
