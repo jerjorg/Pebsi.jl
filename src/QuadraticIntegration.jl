@@ -1,6 +1,12 @@
 module QuadraticIntegration
 
+include("Polynomials.jl")
+
+import .Polynomials: sample_simplex,eval_poly,getpoly_coeffs,barytocart,carttobary
+
+
 import LinearAlgebra: cross
+import MiniQhull: delaunay
 
 """
     order_vertices(vertices)
@@ -36,12 +42,14 @@ function quadval_vertex(bezcoeffs::AbstractArray{<:Real,1})
 end
 
 """
-    edge_intersects(bezpts)
+    edge_intersects(bezpts,atol)
 
 Calculate where a quadratic curve is equal to zero within [0,1).
 
 # Arguments
 - `bezpts::AbstractArray{<:Real,2}`: the Bezier points (columns of an array).
+- `atol::Real=1e-12`: absolute tolerance for comparisons of floating point 
+    numbers with zero.
 
 # Returns
 - `::AbstractArray{<:Real,1}`: an array of up to two intersections as real numbers.
@@ -56,17 +64,17 @@ edge_intersects(bezpts) == [0.5]
  0.5
 """
 function edge_intersects(bezpts::AbstractArray{<:Real,2};
-    atol=1e-12)::AbstractArray{<:Real,1}
+    atol::Real=1e-12)::AbstractArray{<:Real,1}
     
     # Cases where the curve is above zero, below zero, or at zero.
     coeffs = bezpts[end,:]
     if all(isapprox.(coeffs,0,atol=atol))
         return Array{Float64}([])
     elseif !any(isapprox.(coeffs,0,atol=atol)) && all(coeffs .> 0)
-        print("no intersections 1")
+        println("no intersections 1")
         return Array{Float64}([])
     elseif !any(isapprox.(coeffs,0,atol=atol)) && all(coeffs .< 0)
-        print("no intersections 2")
+        println("no intersections 2")
         return Array{Float64}([])
     end
     
@@ -102,7 +110,8 @@ function edge_intersects(bezpts::AbstractArray{<:Real,2};
     end
 
     # Only keep non-complex intersections between [0,1).
-    filter(y -> (y>0 || isapprox(y,0,atol=atol)) && y<1 ,x) |> sort
+    filter(y -> (y>0 || isapprox(y,0,atol=atol)) && y<1 && 
+        !isapprox(y,1,atol=atol),x) |> sort
 end
 
 
@@ -119,13 +128,14 @@ counterclockwise order.
 edge_indices=[[1,2,3],[3,5,6],[6,4,1]]
 
 @doc """
-    simplex_intersects(bezpts)
+    simplex_intersects(bezpts,atol)
 
 Calculate the location where a level curve intersects a triangle.
 
 # Arguments
 - `bezpts::AbstractArray{<:Real,2}`: the Bezier points of the quadratic, Bezier
     surface.
+- `atol::Real=1e-12`: absolute tolerance.
 
 # Returns
 - `intersects::Array`: the intersections organized by edge in a 1D array. Each 
@@ -143,11 +153,12 @@ simplex_intersects(bezpts)
  Any[]
 ```
 """
-function simplex_intersects(bezpts::AbstractArray{<:Real,2})::Array
+function simplex_intersects(bezpts::AbstractArray{<:Real,2},
+    atol::Real=1e-12)::Array
     intersects = Array{Array,1}([[],[],[]])
     for i=1:3
         edge_bezpts = bezpts[:,edge_indices[i]]
-        edge_ints = edge_intersects(edge_bezpts)
+        edge_ints = edge_intersects(edge_bezpts,atol=atol)
         if edge_ints != []
             intersects[i] = reduce(hcat,[edge_bezpts[1:2,1] .+ 
                 i*(edge_bezpts[1:2,end] .- edge_bezpts[1:2,1]) for i=edge_ints])
@@ -162,12 +173,13 @@ function simplex_intersects(bezpts::AbstractArray{<:Real,2})::Array
 end
 
 """
-    conicsection(coeffs)
+    conicsection(coeffs,atol)
 
 Classify the conic section of a level curve of a quadratic surface.
 
 # Arguments
 - `coeffs::AbstractArray{<:Real,1}`: the coefficients of the quadratic polynomial.
+- `atol::Real=1e-12`: absolute tolerance.
 
 # Returns
 - `::String`: the type of the conic section.
@@ -180,7 +192,8 @@ coeffs = [0.36, -1.64, 0.36, -0.64, -0.64, 0.36]
 "elipse"
 ```
 """
-function conicsection(coeffs::AbstractArray{<:Real,1})::String
+function conicsection(coeffs::AbstractArray{<:Real,1},
+    atol::Real=1e-12)::String
     (z₀₀₂, z₁₀₁, z₂₀₀, z₀₁₁, z₁₁₀, z₀₂₀)=coeffs
     a = z₀₀₂ - 2z₁₀₁ + z₂₀₀
     b = 2z₀₀₂ - 2z₀₁₁ - 2z₁₀₁ + 2z₁₁₀
@@ -190,10 +203,10 @@ function conicsection(coeffs::AbstractArray{<:Real,1})::String
 
     @show (a,b,c,d,m)
 
-    if a == 0 && b == 0 && c == 0
+    if all(isapprox.([a,b,c],0,atol=atol))
         "line"
-    elseif m == 0
-        if d == 0
+    elseif isapprox(m,0,atol=atol)
+        if isapprox(d,0,atol=atol)
             "parallel lines"
         elseif d > 0
             "rectangular hyperbola"
@@ -201,7 +214,7 @@ function conicsection(coeffs::AbstractArray{<:Real,1})::String
             "point"
         end
     else
-        if d == 0
+        if isapprox(d,0,atol=atol)
             "parabola"
         elseif d < 0
             "elipse"
@@ -218,6 +231,7 @@ Calculate the saddle point of a quadratic Bezier surface.
 
 # Arguments
 - `coeffs::AbstractArray{<:Real,1}`: the coefficients of the quadratic polynomial.
+- `atol::Real=1e-12`: absolute tolerance.
 
 # Returns
 - `::AbstractArray{<:Real,1}`: the coordinates of the saddle point in Barycentric coordinates.
@@ -234,11 +248,12 @@ saddlepoint(coeffs)
  0.5000000000000001
 ```
 """
-function saddlepoint(coeffs::AbstractArray{<:Real,1})::AbstractArray{<:Real,1}
+function saddlepoint(coeffs::AbstractArray{<:Real,1},
+    atol::Real=1e-12)::AbstractArray{<:Real,1}
     (z₀₀₂, z₁₀₁, z₂₀₀, z₀₁₁, z₁₁₀, z₀₂₀)=coeffs
     denom = z₀₁₁^2+(z₁₀₁-z₁₁₀)^2+z₀₂₀*(2z₁₀₁-z₂₀₀)-2z₀₁₁*(z₁₀₁+z₁₁₀-z₂₀₀)-z₀₀₂*(z₀₂₀-2z₁₁₀+z₂₀₀)
     
-    if denom == 0
+    if isapprox(denom,0,atol=atol)
         return [Inf,Inf,Inf]
     end
     sₑ = z₀₁₁^2+z₀₂₀*z₁₀₁+z₀₀₂*(-z₀₂₀+z₁₁₀)-z₀₁₁*(z₁₀₁+z₁₁₀)
@@ -356,4 +371,146 @@ function bezsimplex_size(coeffs::AbstractArray{<:Real,1},
     end
     
 end
+
+@doc """
+    insimplex(bpt,atol)
+
+Check if a point lie within a simplex (including the boundary).
+
+# Arguments
+- `bpt::AbstractArray{<:Real,2}`: a point in Barycentric coordinates.
+- `atol::Real=1e-12`: an absolute tolerance.
+
+# Returns
+- `::Bool`: a boolean indicating if the point is within the simplex.
+
+# Examples
+```jldoctest
+import Pebsi.QuadraticIntegration: insimplex
+bpt = Array([0 1]')
+insimplex(bpt)
+# output
+true
+```
+"""
+function insimplex(bpt::AbstractArray{<:Real,1},atol::Real=1e-12)
+    (isapprox(maximum(bpt),1,atol=atol) || maximum(bpt) < 1) &&
+    (isapprox(minimum(bpt),0,atol=atol) || minimum(bpt) > 0) &&
+    isapprox(sum(bpt),1,atol=atol)
+end
+
+@doc """
+    insimplex(bpts,atol)
+
+Check if an array of points in Barycentric coordinates lie within a simplex.
+
+# Arguments
+- `bpts::AbstractArray{<:Real,2}`: an arry of points in barycentric coordinates
+    as columns of an array.
+- `atol::Real=1e-12`: absolute tolerance.
+"""
+function insimplex(bpts::AbstractArray{<:Real,2},atol::Real=1e-12)
+    all(mapslices(x->insimplex(x,atol),bpts,dims=1))
+end
+
+@doc """
+    split_bezsurf₁(bezpts,atol)
+
+Split a Bezier surface into sub-Bezier surfaces with the Delaunay method.
+
+# Arguments
+- `bezpts::AbstractArray{<:Real,2}`: the Bezier points of the quadratic surface.
+- `atol::Real=1e-9`: absolute tolerance.
+
+# Returns
+- `sub_bezpts::AbstractArray`: the Bezier points of the sub-surfaces.
+
+# Examples
+```jldoctest
+import Pebsi.QuadraticIntegration: split_triangle
+bezpts = [-1.0 0.0 1.0 -0.5 0.5 0.0; 0.0 0.0 0.0 0.5 0.5 1.0; 0.0 1.0 0.0 1.0 -1.0 0.0]
+split_bezsurf₁(bezpts)
+# output
+3-element Array{Array{Float64,2},1}:
+ [0.0 0.5 … 0.0 -1.0; 0.6 0.3 … 0.0 0.0; 0.08000000000000002 -0.40000000000000013 … 1.0 0.0]
+ [0.0 0.0 … -0.5 -1.0; 0.6 0.8 … 0.5 0.0; 0.08000000000000002 -2.7755575615628914e-17 … 1.0 0.0]
+ [0.0 0.0 … 0.5 1.0; 0.6 0.8 … 0.5 0.0; 0.08000000000000002 -2.7755575615628914e-17 … -1.0 0.0]
+```
+"""
+function split_bezsurf₁(bezpts::AbstractArray{<:Real,2},
+    atol::Real=1e-9)::AbstractArray
+
+    dim = 2
+    deg = 2
+    triangle = bezpts[1:2,[1,3,6]]
+    coeffs = bezpts[end,:]
+    simplex_bpts = sample_simplex(dim,deg)
+    intersects = simplex_intersects(bezpts,atol)
+    allintersects = reduce(hcat,[i for i=intersects if i!=[]])
+    spt = saddlepoint(coeffs,atol)
+    if insimplex(spt)
+        allpts = [triangle barytocart(spt,triangle) allintersects]
+    else
+        allpts = [triangle allintersects]
+    end
+
+    tri_ind = delaunay(allpts)
+    subtri = [allpts[:,tri_ind[:,i]] for i=1:size(tri_ind,2)]
+    sub_pts = [barytocart(simplex_bpts,tri) for tri=subtri]
+    sub_bpts = [carttobary(pts,triangle) for pts=sub_pts]
+    sub_vals = [reduce(hcat, [eval_poly(sub_bpts[j][:,i],coeffs,dim,deg) 
+        for i=1:6]) for j=1:length(subtri)]
+    sub_coeffs = [getpoly_coeffs(v[:],simplex_bpts,dim,deg) for v=sub_vals]
+    sub_bezpts = [[sub_pts[i]; sub_coeffs[i]'] for i=1:length(sub_coeffs)]
+    sub_bezpts
+end
+
+@doc """
+    split_bezsurf(bezpts,atol)
+
+Split a Bezier surface into sub-Bezier surfaces with the Delaunay method.
+
+# Arguments
+- `bezpts::AbstractArray{<:Real,2}`: the Bezier points of the quadratic surface.
+- `atol::Real=1e-9`: absolute tolerance.
+
+# Returns
+- `sub_bezpts::AbstractArray`: the Bezier points of the sub-surfaces.
+
+# Examples
+```jldoctest
+import Pebsi.QuadraticIntegration: split_triangle
+bezpts = [-0.09385488270304788 0.12248162346376468 0.3388181296305772 0.09890589198180941 0.315242398148622 0.2916666666666667; 0.9061451172969521 0.7836634938331875 0.6611818703694228 0.6266836697595872 0.5042020462958225 0.34722222222222227; 0.0 7.949933953535975 3.9968028886505635e-15 8.042737134030771 -5.792491135426262 -11.720219017094017]
+split_bezsurf₁(bezpts)
+# output
+2-element Array{Array{Float64,2},1}:
+ [0.1291676795676943 0.23399290459913574 … 0.12248162346376468 -0.09385488270304788; 0.5828106204960847 0.6219962454327537 … 0.7836634938331875 0.9061451172969521; -5.329070518200751e-15 -4.5330445462060594e-15 … 7.9499339535359725 0.0]
+ [0.1291676795676943 0.2104171731171805 … 0.315242398148622 0.3388181296305772; 0.5828106204960847 0.46501642135915344 … 0.5042020462958225 0.6611818703694228; -5.329070518200751e-15 -3.39004820851129 … -5.792491135426261 -1.1479627341393213e-15]
+```
+"""
+function split_bezsurf(bezpts::AbstractArray{<:Real,2},atol=1e-12)::AbstractArray
+    
+    intersects = simplex_intersects(bezpts)
+    num_intersects = sum([size(i,2) for i=intersects if i!=[]])
+    if num_intersects <= 2
+        return [bezpts]
+    else
+        sub_bezpts = split_bezsurf₁(bezpts)
+        sub_intersects = [simplex_intersects(b) for b=sub_bezpts]
+        num_intersects = [sum([size(sub_intersects[i][j])[1] == 0 ? 0 : 
+            size(sub_intersects[i][j])[2] for j=1:3]) for i=1:length(sub_intersects)]
+        while any(num_intersects .> 2)
+            for i = length(num_intersects):-1:1
+                if num_intersects[i] <= 2 continue end
+                append!(sub_bezpts,split_bezsurf₁(sub_bezpts[i]))                
+                deleteat!(sub_bezpts,i)
+                sub_intersects = [simplex_intersects(b) for b=sub_bezpts]
+                num_intersects = [sum([size(sub_intersects[i][j])[1] == 0 ? 0 : 
+                    size(sub_intersects[i][j])[2] for j=1:3]) for i=1:length(sub_intersects)]
+            end
+        end
+    end
+    sub_bezpts
+end
+
 end # module

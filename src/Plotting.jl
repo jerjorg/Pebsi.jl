@@ -55,44 +55,61 @@ end
 
 
 @doc """
-    contourplot(coeffs,simplex,ax)
+    contourplot(bezpts,ax;filled=false,padded=true)
 
 Plot the level curves of a polynomial surface.
 
 # Arguments
-- `coeffs::AbstractArray{<:Real,1}`: the coefficients of the polynomial.
-- `simplex::AbstractArray{<:Real,2}`: the corners of the simplex as columns of
-    the array.
+- `bezpts::AbstractArray{<:Real,2}`: the Bezier point of the quadratic surface
+    as columns of an array.
+- `ax::Union{PyObject,Nothing}`: an axes object.
+- `filled::Bool=false`: if true, the regions below isovalue are shadded.
+- `padded::Bool=true`: if true, the region around the triangle is also plotted.
 
 # Returns
 - `ax::PyObject`: the plot axes object.
 
 """
-function contourplot(coeffs::AbstractArray{<:Real,1},
-        simplex::AbstractArray{<:Real,2},ax::Union{PyObject,Nothing}=nothing,
-        filled::Bool=false)
+function contourplot(bezpts::AbstractArray{<:Real,2},
+    ax::Union{PyObject,Nothing}=nothing; filled::Bool=false,
+    padded::Bool=true)::PyObject
+
     dim = 2
     deg = 2
-    ndivs = 1000
-    N = [ndivs 0; 0 ndivs]
-    basis = [simplex[:,2] - simplex[:,1] simplex[:,3] - simplex[:,1]]
-    grid_offset = [0.5,0.5]
-    plotpts = 2 .* sample_unitcell(basis,N,grid_offset)
-    plotpts = mapslices(x->x-basis*[1/2,1/2]+simplex[:,1],plotpts,dims=1)
-    bplotpts = carttobary(plotpts,simplex)
-    plotvals= eval_poly(bplotpts,coeffs,dim,deg)
-
-    X=reshape(plotpts[1,:],(ndivs,ndivs))
-    Y=reshape(plotpts[2,:],(ndivs,ndivs))
-    Z=reshape(plotvals,(ndivs,ndivs))
-    shull = chull(Array(simplex'))
-
+    ndivs = 100
+    # Plot triangle
+    coeffs = bezpts[3,:]
+    simplex = bezpts[1:2,[1,3,6]]
     if ax == nothing; (fig,ax)=subplots() end
+    shull = chull(Array(simplex'))
     ax=plot_2Dconvexhull(shull,ax,"none")
-    if filled 
-        ax.contourf(X,Y,Z,[-1e10,0])
+    if padded
+        N = [ndivs 0; 0 ndivs]
+        basis = [simplex[:,2] - simplex[:,1] simplex[:,3] - simplex[:,1]]
+        grid_offset = [0.5,0.5]
+        plotpts = 2 .* sample_unitcell(basis,N,grid_offset)
+        plotpts = mapslices(x->x-basis*[1/2,1/2]+simplex[:,1],plotpts,dims=1)
+        bplotpts = carttobary(plotpts,simplex)
+        plotvals= eval_poly(bplotpts,coeffs,dim,deg)
+        X=reshape(plotpts[1,:],(ndivs,ndivs))
+        Y=reshape(plotpts[2,:],(ndivs,ndivs))
+        Z=reshape(plotvals,(ndivs,ndivs))
+
+        if filled 
+            ax.contourf(X,Y,Z,[-1e10,0],colors=["black","white"],alpha=0.5)
+        else
+            ax.contour(X,Y,Z,[0],colors=["blue"])         
+        end
     else
-        ax.contour(X,Y,Z,[0])            
+        bpts = sample_simplex(2,100)
+        pts = barytocart(bpts,simplex)
+        vals = eval_poly(bpts,coeffs,dim,deg)
+        if filled
+            ax.tricontourf(pts[1,:],pts[2,:],vals,0,colors=["black","white"],
+                alpha=0.5)
+        else
+            ax.tricontour(pts[1,:],pts[2,:],vals,0,colors=["blue"])
+        end
     end
     ax
 end
@@ -151,7 +168,7 @@ function bezcurve_plot(bezptsᵣ::AbstractArray{<:Real,2},
     
     data = eval_bezcurve(collect(0:1/1000:1),bezptsᵣ,bezwtsᵣ)
     ax = meshplot(bezptsᵣ,ax)
-    ax.plot(data[1,:],data[2,:])
+    ax.plot(data[1,:],data[2,:],color="red")
     ax
 end
 
