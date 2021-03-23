@@ -2,7 +2,7 @@ using Test
 
 import Pebsi.Polynomials: sample_simplex,barytocart,getpoly_coeffs
 import Pebsi.QuadraticIntegration: order_vertices!,quadval_vertex, 
-    edge_intersects,simplex_intersects
+    edge_intersects,simplex_intersects,same_edge
 
 
 function contains_intersect(intersects,int1)
@@ -133,7 +133,7 @@ end
 
         coeffs = [1e-13,-3,1e-13]
         bezpts = vcat(cartpts,coeffs')
-        @test edge_intersects(bezpts) == [1.665334536937679e-14, 0.9999999999999831]
+        @test edge_intersects(bezpts) == [1.665334536937679e-14]
 
         coeffs = [-0.6591549430918953, -0.15915494309189532, 0.3408450569081046]
         bezpts = vcat(cartpts,coeffs')
@@ -304,7 +304,7 @@ end
         coeffs = getpoly_coeffs(vals,simplex_bpts,dim,deg)
         bezpts = [simplex_pts;coeffs']
         intersects = simplex_intersects(bezpts)
-        @test containsall(intersects,[[-0.9999999999999998; 0.0], [0.21922359359558496; 0.780776406404415], [-0.5000000000000004 -0.9999999999999996; 0.49999999999999956 4.440892098500626e-16]])
+        @test containsall(intersects,[[-0.9999999999999998; 0.0], [0.21922359359558496; 0.780776406404415], [-0.5000000000000004; 0.49999999999999956]])
 
         x₀=-0.5
         y₀=0.5
@@ -313,7 +313,7 @@ end
         coeffs = getpoly_coeffs(vals,simplex_bpts,dim,deg)
         bezpts = [simplex_pts;coeffs']
         intersects = simplex_intersects(bezpts)
-        @test containsall(intersects,[[-1.0 0.0; 0.0 0.0], [2.220446049250313e-16; 0.9999999999999998], [0.0 -0.9999999999999998; 1.0 2.220446049250313e-16]])
+        @test containsall(intersects,[[-1.0 0.0; 0.0 0.0], [0.0; 1.0]])
 
         x₀=-0.5
         y₀=-0.5
@@ -441,4 +441,15 @@ end
         intersects = simplex_intersects(bezpts)
         @test containsall(intersects, [[-0.7272474743090477 0.7272474743090478; 0.0 0.0], [0.7903769733600696; 0.20962302663993032], [-0.7903769733600696; 0.20962302663993038]])
     end
+
+    @testset "same_edge" begin
+        bezpts = [-1.0 0.0 1.0 -0.5 0.5 0.0; 0.0 0.0 0.0 0.5 0.5 1.0; -0.89 -0.08 -1.28 1.12 -0.081 -0.88]
+        @test isapprox(same_edge(bezpts,"volume"),-0.3533719907367465)
+        @test isapprox(same_edge(bezpts,"area"),0.9039504516362464)
+
+        bezpts = [-1.0 0.0 1.0 -0.5 0.5 0.0; 0.0 0.0 0.0 0.5 0.5 1.0; 0.89 0.08 1.28 -1.12 0.081 0.88]
+        @test isapprox(same_edge(bezpts,"volume"),-0.004871990736746545)
+        @test isapprox(same_edge(bezpts,"area"),0.09604954836375351)
+    end
+
 end

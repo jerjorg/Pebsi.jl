@@ -289,7 +289,7 @@ function getbez_pts₋wts(bezpts::AbstractArray{<:Real,2},
 
     triangle = bezpts[1:2,[1,3,6]]
     coeffs = bezpts[3,:]
-    (z₂₀₀,z₁₀₁,z₀₀₂,z₁₁₀,z₀₁₁,z₀₂₀) = coeffs
+    (z₂₀₀,z₁₁₀,z₀₂₀,z₁₀₁,z₀₁₁,z₀₀₂) = coeffs
     (s₀,t₀,u₀) = carttobary(p₀,triangle)
     (s₂,t₂,u₂) = carttobary(p₂,triangle)
 

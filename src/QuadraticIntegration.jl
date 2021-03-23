@@ -2,11 +2,13 @@ module QuadraticIntegration
 
 include("Polynomials.jl")
 
-import .Polynomials: sample_simplex,eval_poly,getpoly_coeffs,barytocart,carttobary
+import .Polynomials: sample_simplex,eval_poly,getpoly_coeffs,barytocart,
+    carttobary, getbez_pts₋wts
 
 
-import LinearAlgebra: cross
+import LinearAlgebra: cross,det
 import MiniQhull: delaunay
+import Statistics: mean
 
 """
     order_vertices(vertices)
@@ -153,7 +155,7 @@ simplex_intersects(bezpts)
  Any[]
 ```
 """
-function simplex_intersects(bezpts::AbstractArray{<:Real,2},
+function simplex_intersects(bezpts::AbstractArray{<:Real,2};
     atol::Real=1e-12)::Array
     intersects = Array{Array,1}([[],[],[]])
     for i=1:3
@@ -321,7 +323,7 @@ function shadow_size(coeffs::AbstractArray{<:Real,1},
     rtol::Real=sqrt(eps(float(maximum(coeffs)))),
     atol::Real=1e-9)::Real
     
-    if minimum(coeffs) > val|| isapprox(minimum(coeffs),val,rtol=rtol,atol=atol)
+    if minimum(coeffs) > val || isapprox(minimum(coeffs),val,rtol=rtol,atol=atol)
         0
     elseif maximum(coeffs) < val || isapprox(maximum(coeffs),val,rtol=rtol,atol=atol)
         simplex_size(simplex)
@@ -567,7 +569,8 @@ analytic_volume(coeffs,w)
 """
 function analytic_volume(coeffs::AbstractArray{<:Real,1},w::Real)::Real
     
-    (c₀,c₁,c₂,c₃,c₄,c₅) = coeffs
+    #(c₀,c₁,c₂,c₃,c₄,c₅) = coeffs
+    (c₅,c₃,c₀,c₄,c₁,c₂) = coeffs
     d = c₀+c₁+c₂+c₃+c₄+c₅
     # Use the Taylor expansion of the analytic solution if the weight is close to 1.
     if isapprox(w,1,atol=1e-2)
@@ -584,6 +587,84 @@ function analytic_volume(coeffs::AbstractArray{<:Real,1},w::Real)::Real
         sign(w)real((w*(a*b*w*(-32*c₁+33*c₂-32*c₃+46*c₄+33*c₅-2*(-26*c₀+18*c₁+13*c₂+18*c₃+12*c₄+13*c₅)*w^2+
             8*(d)*w^4)+6*(5*c₂+6*c₄+5*c₅+4*(c₀-5*(c₁+c₃)+c₄)*w^2+16*c₀*w^4)*atan(b/a)))/(8*d*a*b*(-1+w^2)^3))
     end
+end
+
+@doc """
+    same_edge(bezpts,quantity,atol=1e-12)
+
+Calculate the area or volume within a quadratic curve and triangle and Quadratic surface.
+
+# Arguments
+- `bezpts::AbstractArray{<:Real,2}`: the Bezier points of a quadratic surface.
+- `quantity::String`: the quantity to compute ("area" or "volume").
+- `atol::Real`: an absolute tolerance.
+
+# Returns
+- `areaₒᵣvolume::Real`: the area within the curve and triangle or the volume below the surface
+    within the curve and triangle. The area is on the side of the curve where the surface is 
+    less than zero.
+
+# Examples
+```jldoctest
+import Pebsi.QuadraticIntegration: same_edge
+bezpts = [-1.0 0.0 1.0 -0.5 0.5 0.0; 0.0 0.0 0.0 0.5 0.5 1.0; -0.89 -0.08 -1.28 1.12 -0.081 -0.88]
+same_edge(bezpts,"volume")
+# output
+-0.3533719907367465
+```
+"""
+function same_edge(bezpts::AbstractArray{<:Real,2},quantity::String;
+        atol::Real=1e-12)::Real
+
+    intersects = simplex_intersects(bezpts,atol=atol)
+    all_intersects = reduce(hcat,[i for i=intersects if i!= []])
+    if size(all_intersects,2) != 2
+        error("Can only calculate the area or volume when the curve intersects 
+            the triangle at two points.")
+    end
+
+    p₀ = all_intersects[:,1]
+    p₂ = all_intersects[:,2]
+    (bezptsᵣ,bezwtsᵣ) = getbez_pts₋wts(bezpts,p₀,p₂)
+    edgesᵢ = [i for i=1:3 if intersects[i] != []]
+    if length(edgesᵢ) == 1
+        # Determine which region to keep from the opposite corner.
+        opp_corner = [6,1,3][edgesᵢ[1]]
+    else
+        error("The intersections have to occur on the same edge.")
+    end
+
+    dim = 2
+    deg = 2
+    simplex_bpts = sample_simplex(dim,deg)
+    triangle = bezpts[1:2,[1,3,6]]
+    coeffs = bezpts[end,:]
+
+    if bezpts[end,opp_corner] < 0 || isapprox(bezpts[end,opp_corner],0,atol=atol)
+        if quantity == "area"
+            areaₒᵣvolume = simplex_size(triangle) - simplex_size(bezptsᵣ)*analytic_area(bezwtsᵣ[2])
+        elseif quantity == "volume"
+            ptsᵣ = carttobary(barytocart(simplex_bpts,bezptsᵣ),triangle)
+            valsᵣ = eval_poly(ptsᵣ,coeffs,dim,deg)
+            coeffsᵣ = getpoly_coeffs(valsᵣ,simplex_bpts,dim,deg)
+            areaₒᵣvolume = simplex_size(triangle)*mean(coeffs) - 
+                simplex_size(bezptsᵣ)*mean(coeffsᵣ)*analytic_volume(coeffsᵣ,bezwtsᵣ[2])
+        else
+            throw(ArgumentError("The quantity calculated is either \"area\" or \"volume\"."))
+        end
+    else
+        if quantity == "area"
+            areaₒᵣvolume = simplex_size(bezptsᵣ)*analytic_area(bezwtsᵣ[2])
+        elseif quantity == "volume"
+            ptsᵣ = carttobary(barytocart(simplex_bpts,bezptsᵣ),triangle)
+            valsᵣ = eval_poly(ptsᵣ,coeffs,dim,deg)
+            coeffsᵣ = getpoly_coeffs(valsᵣ,simplex_bpts,dim,deg)
+            areaₒᵣvolume= simplex_size(bezptsᵣ)*mean(coeffsᵣ)*analytic_volume(coeffsᵣ,bezwtsᵣ[2])
+        else
+            throw(ArgumentError("The quantity calculated is either \"area\" or \"volume\"."))
+        end
+    end
+    areaₒᵣvolume
 end
 
 end # module
