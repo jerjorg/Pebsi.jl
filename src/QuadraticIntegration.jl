@@ -670,15 +670,19 @@ function two₋intersects_area₋volume(bezpts::AbstractArray{<:Real,2},
     (bezptsᵣ,bezwtsᵣ) = getbez_pts₋wts(bezpts,p₀,p₂)
     edgesᵢ = [i for i=1:3 if intersects[i] != []]
     if length(edgesᵢ) == 1
+        # When intersections are on two different edges, we need to include the
+        # area or volume from a subtriangle in addition to the canonical rational
+        # Bezier triangle and the whole triangle. It has no effect when the intersections
+        # are on the same edge.
         corner = [1,2,3][edgesᵢ[1]]
         # Determine which region to keep from the opposite corner.
         opp_corner = [6,1,3][edgesᵢ[1]]
     elseif length(edgesᵢ) ==2
         corner = [3,1,2][setdiff([1,2,3],edgesᵢ)[1]]
         cornersᵢ = sort(unique([isapprox(all_intersects[:,j],triangle[:,i],
-            atol=atol) ? j : 0 for i=1:3,j=1:2]))
+            atol=atol) ? i : 0 for i=1:3,j=1:2]))
         if cornersᵢ != [0] && length(cornersᵢ) == 3
-            # Case where intersection are at two corners.
+            # Case where intersections are at two corners.
             opp_corner = [1,3,6][(setdiff([1,2,3],cornersᵢ[2:end])[1])]
         elseif (cornersᵢ != [0] && length(cornersᵢ) == 2) || cornersᵢ == [0]
             # Case where there the intersection are on adjacent edges of the
@@ -695,38 +699,48 @@ function two₋intersects_area₋volume(bezpts::AbstractArray{<:Real,2},
     simplex_bpts = sample_simplex(2,2)
     coeffs = bezpts[end,:]
     triangleₑ = order_vertices!([all_intersects triangle[:,corner]])
-    coeffsₑ = sub₋coeffs(bezpts,triangleₑ)
 
-    # Make sure the weight of the middle Bezier point has the correct sign
-    if !insimplex(carttobary(eval_bezcurve(0.5,bezptsᵣ,bezwtsᵣ),triangle),
-        atol=atol)
+    # Make sure the weight of the middle Bezier point has the correct sign.
+    ptᵣ = eval_bezcurve(0.5,bezptsᵣ,bezwtsᵣ)
+    if !insimplex(carttobary(ptᵣ,triangle),atol=atol)
         bezwtsᵣ[2] *= -1
     end
 
-    if bezpts[end,opp_corner] < 0 || isapprox(bezpts[end,opp_corner],0,atol=atol)
-        if quantity == "area"
-            areaₒᵣvolume = simplex_size(triangle) - (simplex_size(triangleₑ) + 
-                simplex_size(bezptsᵣ)*analytic_area(bezwtsᵣ[2]))
-        elseif quantity == "volume"
-            coeffsᵣ = sub₋coeffs(bezpts,bezptsᵣ)
-            areaₒᵣvolume = simplex_size(triangle)*mean(coeffs) - (mean(coeffsₑ)*simplex_size(triangleₑ) + 
-                simplex_size(bezptsᵣ)*mean(coeffsᵣ)*analytic_volume(coeffsᵣ,bezwtsᵣ[2]))
-        else
-            throw(ArgumentError("The quantity calculated is either \"area\" or \"volume\"."))
-        end
+    if quantity == "area"
+        # curve area or volume
+        areaₒᵣvolumeᵣ = simplex_size(bezptsᵣ)*analytic_area(bezwtsᵣ[2])
+    elseif quantity == "volume"
+        coeffsᵣ = sub₋coeffs(bezpts,bezptsᵣ)
+        areaₒᵣvolumeᵣ = simplex_size(bezptsᵣ)*mean(coeffsᵣ)*analytic_volume(coeffsᵣ,bezwtsᵣ[2])
     else
-        if quantity == "area"
-            areaₒᵣvolume = (simplex_size(bezptsᵣ)*analytic_area(bezwtsᵣ[2]) + 
-                simplex_size(triangleₑ))
-        elseif quantity == "volume"
-            coeffsᵣ = sub₋coeffs(bezpts,bezptsᵣ)
-            areaₒᵣvolume= (mean(coeffsₑ)*simplex_size(triangleₑ) + 
-                simplex_size(bezptsᵣ)*mean(coeffsᵣ)*analytic_volume(coeffsᵣ,bezwtsᵣ[2]))
-        else
-            throw(ArgumentError("The quantity calculated is either \"area\" or \"volume\"."))
-        end
+        throw(ArgumentError("The quantity calculated is either \"area\" or \"volume\"."))
     end
 
+    # Get the sign of the area correct (accounts for the curvature of the curve).
+    inside = false
+    # Get exception when corners of triangleₑ all lie on a straight line.
+    try
+        inside = insimplex(carttobary(ptᵣ,triangleₑ),atol=atol)
+    catch SingularException
+        inside = false
+    end
+    if length(edgesᵢ) == 2 && inside
+        areaₒᵣvolumeᵣ *= -1
+    end
+    
+    below₀ = bezpts[end,opp_corner] < 0 || isapprox(bezpts[end,opp_corner],0,atol=atol)
+    if quantity == "area"
+        areaₒᵣvolume =  areaₒᵣvolumeᵣ + simplex_size(triangleₑ)
+        if below₀
+            areaₒᵣvolume = simplex_size(triangle) - areaₒᵣvolume
+        end
+    else # quantity == "volume"
+        coeffsₑ = sub₋coeffs(bezpts,triangleₑ)
+        areaₒᵣvolume = mean(coeffsₑ)*simplex_size(triangleₑ) + areaₒᵣvolumeᵣ
+        if below₀
+            areaₒᵣvolume = simplex_size(triangle)*mean(coeffs) - areaₒᵣvolume
+        end
+    end
     areaₒᵣvolume
 end
 
