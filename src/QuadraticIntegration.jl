@@ -3,7 +3,7 @@ module QuadraticIntegration
 include("Polynomials.jl")
 
 import .Polynomials: sample_simplex,eval_poly,getpoly_coeffs,barytocart,
-    carttobary, getbez_pts₋wts
+    carttobary, getbez_pts₋wts,eval_bezcurve
 
 
 import LinearAlgebra: cross,det
@@ -203,8 +203,6 @@ function conicsection(coeffs::AbstractArray{<:Real,1},
     d = b^2 - 4*a*c
     m = -8*(-2*z₀₁₁*z₁₀₁*z₁₁₀+z₀₀₂*z₁₁₀^2+z₀₁₁^2*z₂₀₀+z₀₂₀*(z₁₀₁^2-z₀₀₂*z₂₀₀))
 
-    @show (a,b,c,d,m)
-
     if all(isapprox.([a,b,c],0,atol=atol))
         "line"
     elseif isapprox(m,0,atol=atol)
@@ -375,7 +373,7 @@ function bezsimplex_size(coeffs::AbstractArray{<:Real,1},
 end
 
 @doc """
-    insimplex(bpt,atol)
+    insimplex(bpt;atol)
 
 Check if a point lie within a simplex (including the boundary).
 
@@ -395,7 +393,7 @@ insimplex(bpt)
 true
 ```
 """
-function insimplex(bpt::AbstractArray{<:Real,1},atol::Real=1e-12)
+function insimplex(bpt::AbstractArray{<:Real,1};atol::Real=1e-12)
     (isapprox(maximum(bpt),1,atol=atol) || maximum(bpt) < 1) &&
     (isapprox(minimum(bpt),0,atol=atol) || minimum(bpt) > 0) &&
     isapprox(sum(bpt),1,atol=atol)
@@ -412,7 +410,7 @@ Check if an array of points in Barycentric coordinates lie within a simplex.
 - `atol::Real=1e-12`: absolute tolerance.
 """
 function insimplex(bpts::AbstractArray{<:Real,2},atol::Real=1e-12)
-    all(mapslices(x->insimplex(x,atol),bpts,dims=1))
+    all(mapslices(x->insimplex(x,atol=atol),bpts,dims=1))
 end
 
 @doc """
@@ -590,13 +588,52 @@ function analytic_volume(coeffs::AbstractArray{<:Real,1},w::Real)::Real
 end
 
 @doc """
-    same_edge(bezpts,quantity,atol=1e-12)
+    sub₋coeffs(bezpts,subtriangle)
+
+Calculate the coefficients of a quadratic sub-surface of a quadratic triangle.
+
+# Arguments
+- `bezpts::AbstractArray{<:Real,2}`: the Bezier points of the quadratic triangle.
+- `subtriangle::AbstractArray{<:Real,2}`: a subtriangle give by the points at
+    its corners as columns of an array.
+
+# Returns
+- `::AbstractArray{<:Real,1}`: the coefficients of the quadratic triangle over a
+    sub-surface of a quadratic triangle.
+
+# Examples
+```jldoctest
+import Pebsi.QuadraticIntegration: sub₋coeffs
+bezpts = [-1.0 0.0 1.0 -0.5 0.5 0.0; 0.0 0.0 0.0 0.5 0.5 1.0; -0.25 -0.25 3.75 -0.25 1.75 1.75]
+subtriangle = [-0.5 0.0 -0.6464466094067263; 0.0 1.0 0.35355339059327373]
+sub₋coeffs(bezpts,subtriangle)
+# output
+6-element Array{Float64,1}:
+  0.0
+  0.25
+  1.75
+ -0.07322330470336313
+  0.45710678118654746
+ -5.551115123125783e-17
+```
+"""
+function sub₋coeffs(bezpts::AbstractArray{<:Real,2},
+    subtriangle::AbstractArray{<:Real,2})::AbstractArray{<:Real,1}
+    ptsᵢ = carttobary(barytocart(sample_simplex(2,2),subtriangle),bezpts[1:2,[1,3,6]])
+    valsᵢ = eval_poly(ptsᵢ,bezpts[end,:],2,2)
+    getpoly_coeffs(valsᵢ,sample_simplex(2,2),2,2)
+end
+
+@doc """
+    two₋intersects_area₋volume(bezpts,quantity,intersects=[];atol=1e-12)
 
 Calculate the area or volume within a quadratic curve and triangle and Quadratic surface.
 
 # Arguments
 - `bezpts::AbstractArray{<:Real,2}`: the Bezier points of a quadratic surface.
 - `quantity::String`: the quantity to compute ("area" or "volume").
+- `intersects::AbstractArray=[]`: the two point where the curve intersects the 
+    triangle as columns of an array.
 - `atol::Real`: an absolute tolerance.
 
 # Returns
@@ -606,64 +643,90 @@ Calculate the area or volume within a quadratic curve and triangle and Quadratic
 
 # Examples
 ```jldoctest
-import Pebsi.QuadraticIntegration: same_edge
+import Pebsi.QuadraticIntegration: two₋intersects_area₋volume
 bezpts = [-1.0 0.0 1.0 -0.5 0.5 0.0; 0.0 0.0 0.0 0.5 0.5 1.0; -0.89 -0.08 -1.28 1.12 -0.081 -0.88]
-same_edge(bezpts,"volume")
+two₋intersects_area₋volume(bezpts,"volume")
 # output
 -0.3533719907367465
 ```
 """
-function same_edge(bezpts::AbstractArray{<:Real,2},quantity::String;
-        atol::Real=1e-12)::Real
+function two₋intersects_area₋volume(bezpts::AbstractArray{<:Real,2},
+    quantity::String,intersects::AbstractArray=[];
+    atol::Real=1e-12)::Real
 
-    intersects = simplex_intersects(bezpts,atol=atol)
+    if intersects == []
+        intersects = simplex_intersects(bezpts,atol=atol)
+    end
+
     all_intersects = reduce(hcat,[i for i=intersects if i!= []])
     if size(all_intersects,2) != 2
         error("Can only calculate the area or volume when the curve intersects 
             the triangle at two points.")
     end
 
+    triangle = bezpts[1:2,[1,3,6]]
     p₀ = all_intersects[:,1]
     p₂ = all_intersects[:,2]
     (bezptsᵣ,bezwtsᵣ) = getbez_pts₋wts(bezpts,p₀,p₂)
     edgesᵢ = [i for i=1:3 if intersects[i] != []]
     if length(edgesᵢ) == 1
+        corner = [1,2,3][edgesᵢ[1]]
         # Determine which region to keep from the opposite corner.
         opp_corner = [6,1,3][edgesᵢ[1]]
+    elseif length(edgesᵢ) ==2
+        corner = [3,1,2][setdiff([1,2,3],edgesᵢ)[1]]
+        cornersᵢ = sort(unique([isapprox(all_intersects[:,j],triangle[:,i],
+            atol=atol) ? j : 0 for i=1:3,j=1:2]))
+        if cornersᵢ != [0] && length(cornersᵢ) == 3
+            # Case where intersection are at two corners.
+            opp_corner = [1,3,6][(setdiff([1,2,3],cornersᵢ[2:end])[1])]
+        elseif (cornersᵢ != [0] && length(cornersᵢ) == 2) || cornersᵢ == [0]
+            # Case where there the intersection are on adjacent edges of the
+            # the triangle and neither are at corners or one at corner.
+            opp_corner = [1,3,6][(setdiff([1,2,3],edgesᵢ)[1])]
+            corner = [3,1,2][setdiff([1,2,3],edgesᵢ)[1]]
+        else
+            error("The intersections may only intersect at most two corners.")
+        end
     else
-        error("The intersections have to occur on the same edge.")
+        error("The curve may only intersect at most two edges.")
     end
 
-    dim = 2
-    deg = 2
-    simplex_bpts = sample_simplex(dim,deg)
-    triangle = bezpts[1:2,[1,3,6]]
+    simplex_bpts = sample_simplex(2,2)
     coeffs = bezpts[end,:]
+    triangleₑ = order_vertices!([all_intersects triangle[:,corner]])
+    coeffsₑ = sub₋coeffs(bezpts,triangleₑ)
+
+    # Make sure the weight of the middle Bezier point has the correct sign
+    if !insimplex(carttobary(eval_bezcurve(0.5,bezptsᵣ,bezwtsᵣ),triangle),
+        atol=atol)
+        bezwtsᵣ[2] *= -1
+    end
 
     if bezpts[end,opp_corner] < 0 || isapprox(bezpts[end,opp_corner],0,atol=atol)
         if quantity == "area"
-            areaₒᵣvolume = simplex_size(triangle) - simplex_size(bezptsᵣ)*analytic_area(bezwtsᵣ[2])
+            areaₒᵣvolume = simplex_size(triangle) - (simplex_size(triangleₑ) + 
+                simplex_size(bezptsᵣ)*analytic_area(bezwtsᵣ[2]))
         elseif quantity == "volume"
-            ptsᵣ = carttobary(barytocart(simplex_bpts,bezptsᵣ),triangle)
-            valsᵣ = eval_poly(ptsᵣ,coeffs,dim,deg)
-            coeffsᵣ = getpoly_coeffs(valsᵣ,simplex_bpts,dim,deg)
-            areaₒᵣvolume = simplex_size(triangle)*mean(coeffs) - 
-                simplex_size(bezptsᵣ)*mean(coeffsᵣ)*analytic_volume(coeffsᵣ,bezwtsᵣ[2])
+            coeffsᵣ = sub₋coeffs(bezpts,bezptsᵣ)
+            areaₒᵣvolume = simplex_size(triangle)*mean(coeffs) - (mean(coeffsₑ)*simplex_size(triangleₑ) + 
+                simplex_size(bezptsᵣ)*mean(coeffsᵣ)*analytic_volume(coeffsᵣ,bezwtsᵣ[2]))
         else
             throw(ArgumentError("The quantity calculated is either \"area\" or \"volume\"."))
         end
     else
         if quantity == "area"
-            areaₒᵣvolume = simplex_size(bezptsᵣ)*analytic_area(bezwtsᵣ[2])
+            areaₒᵣvolume = (simplex_size(bezptsᵣ)*analytic_area(bezwtsᵣ[2]) + 
+                simplex_size(triangleₑ))
         elseif quantity == "volume"
-            ptsᵣ = carttobary(barytocart(simplex_bpts,bezptsᵣ),triangle)
-            valsᵣ = eval_poly(ptsᵣ,coeffs,dim,deg)
-            coeffsᵣ = getpoly_coeffs(valsᵣ,simplex_bpts,dim,deg)
-            areaₒᵣvolume= simplex_size(bezptsᵣ)*mean(coeffsᵣ)*analytic_volume(coeffsᵣ,bezwtsᵣ[2])
+            coeffsᵣ = sub₋coeffs(bezpts,bezptsᵣ)
+            areaₒᵣvolume= (mean(coeffsₑ)*simplex_size(triangleₑ) + 
+                simplex_size(bezptsᵣ)*mean(coeffsᵣ)*analytic_volume(coeffsᵣ,bezwtsᵣ[2]))
         else
             throw(ArgumentError("The quantity calculated is either \"area\" or \"volume\"."))
         end
     end
+
     areaₒᵣvolume
 end
 

@@ -2,7 +2,7 @@ using Test
 
 import Pebsi.Polynomials: sample_simplex,barytocart,getpoly_coeffs
 import Pebsi.QuadraticIntegration: order_vertices!,quadval_vertex, 
-    edge_intersects,simplex_intersects,same_edge
+    edge_intersects,simplex_intersects,two₋intersects_area₋volume
 
 
 function contains_intersect(intersects,int1)
@@ -442,14 +442,67 @@ end
         @test containsall(intersects, [[-0.7272474743090477 0.7272474743090478; 0.0 0.0], [0.7903769733600696; 0.20962302663993032], [-0.7903769733600696; 0.20962302663993038]])
     end
 
-    @testset "same_edge" begin
+    @testset "two₋intersects_area₋volume" begin
+        # Intersections on same edge
         bezpts = [-1.0 0.0 1.0 -0.5 0.5 0.0; 0.0 0.0 0.0 0.5 0.5 1.0; -0.89 -0.08 -1.28 1.12 -0.081 -0.88]
-        @test isapprox(same_edge(bezpts,"volume"),-0.3533719907367465)
-        @test isapprox(same_edge(bezpts,"area"),0.9039504516362464)
+        @test isapprox(two₋intersects_area₋volume(bezpts,"volume"),-0.3533719907367465)
+        @test isapprox(two₋intersects_area₋volume(bezpts,"area"),0.9039504516362464)
 
-        bezpts = [-1.0 0.0 1.0 -0.5 0.5 0.0; 0.0 0.0 0.0 0.5 0.5 1.0; 0.89 0.08 1.28 -1.12 0.081 0.88]
-        @test isapprox(same_edge(bezpts,"volume"),-0.004871990736746545)
-        @test isapprox(same_edge(bezpts,"area"),0.09604954836375351)
+        bezpts[end,:] *= -1
+        @test isapprox(two₋intersects_area₋volume(bezpts,"volume"),-0.004871990736746545)
+        @test isapprox(two₋intersects_area₋volume(bezpts,"area"),0.09604954836375351)
+
+        # Intersections at corners
+        simplex_pts = [-1.0 0.0 1.0 -0.5 0.5 0.0; 0.0 0.0 0.0 0.5 0.5 1.0]
+        coeffs = [0, -1.0, 0, 1.0, 1.0, 3.0]
+        bezpts = [simplex_pts;coeffs']
+        @test isapprox(two₋intersects_area₋volume(bezpts,"area"),0.2175055439664219)
+        @test isapprox(two₋intersects_area₋volume(bezpts,"volume"),-0.04376385991606404)
+
+        bezpts[end,:] *= -1
+        @test isapprox(two₋intersects_area₋volume(bezpts,"area"),0.782494456033578)
+        @test isapprox(two₋intersects_area₋volume(bezpts,"volume"),-0.7104305265827225)
+        
+        # Intesections on adjacent edges
+        coeffs = -[-0.25, -0.25, 3.75, -0.25, 1.75, 1.75]
+        bezpts = [simplex_pts;coeffs']
+        isapprox(two₋intersects_area₋volume(bezpts,"area"),0.9018252295753189)
+        isapprox(two₋intersects_area₋volume(bezpts,"volume"),-1.0956051796364183)
+
+        bezpts[end,:] *= -1
+        @test isapprox(two₋intersects_area₋volume(bezpts,"area"),0.09817477042468103)
+        @test isapprox(two₋intersects_area₋volume(bezpts,"volume"),-0.012271846303085152)
+
+        # Intersection through one corner
+        coeffs = [0.25, 0.25, 0, 0.25, -1.75, -1.75]
+        bezpts = [simplex_pts;coeffs']
+        @test isapprox(two₋intersects_area₋volume(bezpts,"area"),0.7728223042192478)
+        @test isapprox(two₋intersects_area₋volume(bezpts,"volume"),-0.4867305453059273)
+
+        bezpts[end,:] *= -1
+        @test isapprox(two₋intersects_area₋volume(bezpts,"area"),0.2271776957807522)
+        @test isapprox(two₋intersects_area₋volume(bezpts,"volume"),-0.028397212201880247)
+
+        # One intersection through corner, same edge
+        simplex_pts = [-1.0 0.0 1.0 -0.5 0.5 0.0; 0.0 0.0 0.0 0.5 0.5 1.0]
+        coeffs = [0.6, -1.0, 0, 1.0, 1.0, 3.0]
+        bezpts = [simplex_pts;coeffs']
+        @test isapprox(two₋intersects_area₋volume(bezpts,"area"),0.1391071149681362)
+        @test isapprox(two₋intersects_area₋volume(bezpts,"volume"),-0.021543960069967342)
+
+        bezpts[end,:] *= -1
+        @test isapprox(two₋intersects_area₋volume(bezpts,"area"),0.8608928850318638)
+        @test isapprox(two₋intersects_area₋volume(bezpts,"volume"),-0.788210626736634)
+
+        # One intersection through corner, same edge
+        simplex_pts = [-1.0 0.0 1.0 -0.5 0.5 0.0; 0.0 0.0 0.0 0.5 0.5 1.0]
+        coeffs = [0, -1.0, 0.6, 1.0, 1.0, 3.0]
+        bezpts = [simplex_pts;coeffs']
+        @test isapprox(two₋intersects_area₋volume(bezpts,"area"),0.1391071149681362)
+        @test isapprox(two₋intersects_area₋volume(bezpts,"volume"),-0.021543960069958863)
+
+        bezpts[end,:] *= -1
+        @test isapprox(two₋intersects_area₋volume(bezpts,"area"),0.8608928850318638)
+        @test isapprox(two₋intersects_area₋volume(bezpts,"volume"),-0.7882106267366255)
     end
-
 end
