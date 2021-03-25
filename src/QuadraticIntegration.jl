@@ -2,15 +2,17 @@ module QuadraticIntegration
 
 include("Polynomials.jl")
 
+import SymmetryReduceBZ.Utilities: remove_duplicates
+
 import .Polynomials: sample_simplex,eval_poly,getpoly_coeffs,barytocart,
     carttobary, getbez_pts₋wts,eval_bezcurve
-
 
 import LinearAlgebra: cross,det
 import MiniQhull: delaunay
 import Statistics: mean
+import Base.Iterators: flatten
 
-"""
+@doc """
     order_vertices(vertices)
 
 Put the vertices of a triangle (columns of an array) in counterclockwise order.
@@ -30,7 +32,7 @@ function order_vertices!(vertices::AbstractArray{<:Real,2})
 end
 
 
-"""
+@doc """
     quadval_vertex(bezcoeffs)
 
 Calculate the value of a quadratic curve at its vertex.
@@ -43,7 +45,7 @@ function quadval_vertex(bezcoeffs::AbstractArray{<:Real,1})
     (-b^2+a*c)/(a-2b+c)
 end
 
-"""
+@doc """
     edge_intersects(bezpts,atol)
 
 Calculate where a quadratic curve is equal to zero within [0,1).
@@ -73,10 +75,8 @@ function edge_intersects(bezpts::AbstractArray{<:Real,2};
     if all(isapprox.(coeffs,0,atol=atol))
         return Array{Float64}([])
     elseif !any(isapprox.(coeffs,0,atol=atol)) && all(coeffs .> 0)
-        println("no intersections 1")
         return Array{Float64}([])
     elseif !any(isapprox.(coeffs,0,atol=atol)) && all(coeffs .< 0)
-        println("no intersections 2")
         return Array{Float64}([])
     end
     
@@ -117,13 +117,13 @@ function edge_intersects(bezpts::AbstractArray{<:Real,2};
 end
 
 
-"""
+@doc """
 The locations of quadratic Bezier points at the corners of the triangle in
 counterclockwise order.
 """
 corner_indices = [1,3,6]
 
-"""
+@doc """
 The locations of quadratic Bezier points along each edge of the triangle in
 counterclockwise order.
 """
@@ -174,57 +174,7 @@ function simplex_intersects(bezpts::AbstractArray{<:Real,2};
     end
 end
 
-"""
-    conicsection(coeffs,atol)
-
-Classify the conic section of a level curve of a quadratic surface.
-
-# Arguments
-- `coeffs::AbstractArray{<:Real,1}`: the coefficients of the quadratic polynomial.
-- `atol::Real=1e-12`: absolute tolerance.
-
-# Returns
-- `::String`: the type of the conic section.
-
-# Examples
-```jldoctest
-import Pebsi.QuadraticIntegration: conicsection
-coeffs = [0.36, -1.64, 0.36, -0.64, -0.64, 0.36]
-# output
-"elipse"
-```
-"""
-function conicsection(coeffs::AbstractArray{<:Real,1},
-    atol::Real=1e-12)::String
-    (z₀₀₂, z₁₀₁, z₂₀₀, z₀₁₁, z₁₁₀, z₀₂₀)=coeffs
-    a = z₀₀₂ - 2z₁₀₁ + z₂₀₀
-    b = 2z₀₀₂ - 2z₀₁₁ - 2z₁₀₁ + 2z₁₁₀
-    c = z₀₀₂ - 2z₀₁₁ + z₀₂₀
-    d = b^2 - 4*a*c
-    m = -8*(-2*z₀₁₁*z₁₀₁*z₁₁₀+z₀₀₂*z₁₁₀^2+z₀₁₁^2*z₂₀₀+z₀₂₀*(z₁₀₁^2-z₀₀₂*z₂₀₀))
-
-    if all(isapprox.([a,b,c],0,atol=atol))
-        "line"
-    elseif isapprox(m,0,atol=atol)
-        if isapprox(d,0,atol=atol)
-            "parallel lines"
-        elseif d > 0
-            "rectangular hyperbola"
-        else # d < 0
-            "point"
-        end
-    else
-        if isapprox(d,0,atol=atol)
-            "parabola"
-        elseif d < 0
-            "elipse"
-        else # d > 0
-            "hyperbola"
-        end
-    end
-end
-
-"""
+@doc """
     saddlepoint(coeffs)
 
 Calculate the saddle point of a quadratic Bezier surface.
@@ -264,7 +214,6 @@ end
 
 @doc """
     simplex_size(simplex)
-
 Calculate the size of the region within a simplex.
 
 # Arguments
@@ -286,90 +235,6 @@ simplex_size(simplex)
 """
 function simplex_size(simplex::AbstractArray{<:Real,2})::Real
     abs(1/factorial(size(simplex,1))*det(vcat(simplex,ones(1,size(simplex,2)))))
-end
-
-@doc """
-    shadow_size(coeff,simplex,val;rtol,atol)
-
-Calculate the size of the shadow of a linear or quadratic Bezier triangle.
-
-# Arguments
-- `coeffs::AbstractArray{<:Real,1}`: the coefficients of the Bezier triangle.
-- `simplex::AbstractArray{<:Real,2}`: the domain of the Bezier triangle.
-- `val::Real`: the value of a cutting plane.
-- `rtol::Real=sqrt(eps(float(maximum(coeffs))))`: a relative tolerance for 
-    floating point comparisons.
-- `atol::Real=1e-9`: an absolute tolerance for floating point comparisons.
-
-# Returns
-- `::Real`: the size of the shadow of the Bezier triangle within `simplex` and 
-    below a cutting plane of height `val`.
-
-# Examples
-```jldoctest
-import Pebsi.QuadraticIntegration: shadow_size
-coeffs = [0.4, 0.5, 0.3, -0.2, -0.1, -0.3, 0.7, -0.6, 0.9, -0.7]
-simplex = [0.0 0.5 0.5 0.0; 1.0 1.0 0.0 0.0; 0.0 0.0 0.0 1.0]
-val = 0.9
-shadow_size(coeffs,simplex,val)
-# output
-0.08333333333333333
-```
-"""
-function shadow_size(coeffs::AbstractArray{<:Real,1},
-    simplex::AbstractArray{<:Real,2},val::Real;
-    rtol::Real=sqrt(eps(float(maximum(coeffs)))),
-    atol::Real=1e-9)::Real
-    
-    if minimum(coeffs) > val || isapprox(minimum(coeffs),val,rtol=rtol,atol=atol)
-        0
-    elseif maximum(coeffs) < val || isapprox(maximum(coeffs),val,rtol=rtol,atol=atol)
-        simplex_size(simplex)
-    else
-        1e10
-    end
-end
-
-@doc """
-    bezsimplex_size(coeff,simplex,val;rtol,atol)
-
-Calculate the size of the shadow of a linear or quadratic Bezier triangle.
-
-# Arguments
-- `coeffs::AbstractArray{<:Real,1}`: the coefficients of the Bezier triangle.
-- `simplex::AbstractArray{<:Real,2}`: the domain of the Bezier triangle.
-- `val::Real`: the value of a cutting plane.
-- `rtol::Real=sqrt(eps(float(maximum(coeffs))))`: a relative tolerance for 
-    floating point comparisons.
-- `atol::Real=1e-9`: an absolute tolerance for floating point comparisons.
-
-# Returns
-- `::Real`: the size of the shadow of the Bezier triangle within `simplex` and 
-    below a cutting plane of height `val`.
-
-# Examples
-```jldoctest
-import Pebsi.QuadraticIntegration: bezsimplex_size
-coeffs = [0.4, 0.5, 0.3, -0.2, -0.2, -0.3]
-simplex = [0.0 0.5 0.5; 1.0 1.0 0.0]
-bezsimplex_size(coeffs,simplex,100)
-# output
-0.020833333333333332
-```
-"""
-function bezsimplex_size(coeffs::AbstractArray{<:Real,1},
-    simplex::AbstractArray{<:Real,2},val::Real;
-    rtol::Real=sqrt(eps(float(maximum(coeffs)))),
-    atol::Real=1e-9)::Real
-    
-    if maximum(coeffs) < val || isapprox(maximum(coeffs),val,rtol=rtol,atol=atol)
-        simplex_size(simplex)*mean(coeffs)
-    elseif minimum(coeffs) > val || isapprox(minimum(coeffs),val,rtol=rtol,atol=atol)
-        0
-    else
-       1e10
-    end
-    
 end
 
 @doc """
@@ -416,11 +281,11 @@ end
 @doc """
     split_bezsurf₁(bezpts,atol)
 
-Split a Bezier surface into sub-Bezier surfaces with the Delaunay method.
+Split a Bezier surface once into sub-Bezier surfaces with the Delaunay method.
 
 # Arguments
 - `bezpts::AbstractArray{<:Real,2}`: the Bezier points of the quadratic surface.
-- `atol::Real=1e-9`: absolute tolerance.
+- `atol::Real=1e-12`: absolute tolerance.
 
 # Returns
 - `sub_bezpts::AbstractArray`: the Bezier points of the sub-surfaces.
@@ -438,22 +303,24 @@ split_bezsurf₁(bezpts)
 ```
 """
 function split_bezsurf₁(bezpts::AbstractArray{<:Real,2},
-    atol::Real=1e-9)::AbstractArray
+    allpts::AbstractArray=[]; atol::Real=1e-12)::AbstractArray
 
     dim = 2
     deg = 2
-    triangle = bezpts[1:2,[1,3,6]]
+    triangle = bezpts[1:2,corner_indices]
     coeffs = bezpts[end,:]
+    pts = bezpts[1:2,:]
     simplex_bpts = sample_simplex(dim,deg)
-    intersects = simplex_intersects(bezpts,atol)
+    intersects = simplex_intersects(bezpts,atol=atol)
     allintersects = reduce(hcat,[i for i=intersects if i!=[]])
     spt = saddlepoint(coeffs,atol)
     if insimplex(spt)
-        allpts = [triangle barytocart(spt,triangle) allintersects]
+        allpts = [pts barytocart(spt,triangle) allintersects]
     else
-        allpts = [triangle allintersects]
+        allpts = [pts allintersects]
     end
-
+    allpts = remove_duplicates(allpts,atol=atol)
+    
     tri_ind = delaunay(allpts)
     subtri = [allpts[:,tri_ind[:,i]] for i=1:size(tri_ind,2)]
     sub_pts = [barytocart(simplex_bpts,tri) for tri=subtri]
@@ -466,13 +333,13 @@ function split_bezsurf₁(bezpts::AbstractArray{<:Real,2},
 end
 
 @doc """
-    split_bezsurf(bezpts,atol)
+    split_bezsurf(bezpts;atol)
 
 Split a Bezier surface into sub-Bezier surfaces with the Delaunay method.
 
 # Arguments
 - `bezpts::AbstractArray{<:Real,2}`: the Bezier points of the quadratic surface.
-- `atol::Real=1e-9`: absolute tolerance.
+- `atol::Real=1e-12`: absolute tolerance.
 
 # Returns
 - `sub_bezpts::AbstractArray`: the Bezier points of the sub-surfaces.
@@ -488,9 +355,9 @@ split_bezsurf₁(bezpts)
  [0.1291676795676943 0.2104171731171805 … 0.315242398148622 0.3388181296305772; 0.5828106204960847 0.46501642135915344 … 0.5042020462958225 0.6611818703694228; -5.329070518200751e-15 -3.39004820851129 … -5.792491135426261 -1.1479627341393213e-15]
 ```
 """
-function split_bezsurf(bezpts::AbstractArray{<:Real,2},atol=1e-12)::AbstractArray
+function split_bezsurf(bezpts::AbstractArray{<:Real,2};atol=1e-12)::AbstractArray
     
-    intersects = simplex_intersects(bezpts)
+    intersects = simplex_intersects(bezpts,atol=atol)
     num_intersects = sum([size(i,2) for i=intersects if i!=[]])
     if num_intersects <= 2
         return [bezpts]
@@ -619,7 +486,7 @@ sub₋coeffs(bezpts,subtriangle)
 """
 function sub₋coeffs(bezpts::AbstractArray{<:Real,2},
     subtriangle::AbstractArray{<:Real,2})::AbstractArray{<:Real,1}
-    ptsᵢ = carttobary(barytocart(sample_simplex(2,2),subtriangle),bezpts[1:2,[1,3,6]])
+    ptsᵢ = carttobary(barytocart(sample_simplex(2,2),subtriangle),bezpts[1:2,corner_indices])
     valsᵢ = eval_poly(ptsᵢ,bezpts[end,:],2,2)
     getpoly_coeffs(valsᵢ,sample_simplex(2,2),2,2)
 end
@@ -651,23 +518,58 @@ two₋intersects_area₋volume(bezpts,"volume")
 ```
 """
 function two₋intersects_area₋volume(bezpts::AbstractArray{<:Real,2},
-    quantity::String,intersects::AbstractArray=[];
-    atol::Real=1e-12)::Real
+    quantity::String; atol::Real=1e-12)::Real
 
-    if intersects == []
-        intersects = simplex_intersects(bezpts,atol=atol)
+    # Calculate the bezier curve and weights make sure the curve passes through
+    # the triangle
+    triangle = bezpts[1:2,corner_indices]
+    coeffs = bezpts[end,:]
+    intersects = simplex_intersects(bezpts,atol=atol)
+    if intersects != [[],[],[]]
+        all_intersects = reduce(hcat,[i for i=intersects if i!= []])
+        if size(all_intersects,2) != 2
+            error("Can only calculate the area or volume when the curve intersects 
+                the triangle at two points or doesn't intersect the triangle.")
+        end
+        p₀ = all_intersects[:,1]
+        p₂ = all_intersects[:,2]
+        (bezptsᵣ,bezwtsᵣ) = getbez_pts₋wts(bezpts,p₀,p₂)
+        ptᵣ = eval_bezcurve(0.5,bezptsᵣ,bezwtsᵣ)
+        # Make sure the weight of the middle Bezier point has the correct sign.
+        if !insimplex(carttobary(ptᵣ,triangle),atol=atol)
+            bezwtsᵣ[2] *= -1
+            ptᵣ = eval_bezcurve(0.5,bezptsᵣ,bezwtsᵣ)
+            if !insimplex(carttobary(ptᵣ,triangle),atol=atol)
+                intersects = [[],[],[]]
+            end
+        end
     end
 
-    all_intersects = reduce(hcat,[i for i=intersects if i!= []])
-    if size(all_intersects,2) != 2
-        error("Can only calculate the area or volume when the curve intersects 
-            the triangle at two points.")
+    # No intersections
+    if intersects == [[],[],[]]
+        if all(bezpts[end,corner_indices] .< 0 .| 
+            isapprox.(bezpts[end,corner_indices],0,atol=atol))
+            if quantity == "area"
+                areaₒᵣvolume = simplex_size(triangle)
+            elseif quantity == "volume"
+                areaₒᵣvolume = mean(coeffs)*simplex_size(triangle)
+            else
+                throw(ArgumentError("The quantity calculated is either \"area\" or \"volume\"."))
+            end
+        else
+            areaₒᵣvolume = 0
+        end
+        return areaₒᵣvolume
     end
 
-    triangle = bezpts[1:2,[1,3,6]]
-    p₀ = all_intersects[:,1]
-    p₂ = all_intersects[:,2]
-    (bezptsᵣ,bezwtsᵣ) = getbez_pts₋wts(bezpts,p₀,p₂)
+    # If the tangent lines are close to parallel, the middle Bezier point of the
+    # curve will be vary far away, which introduces numerical errors. We handle
+    # this by splitting the surface up and recalculating.
+    if maximum(abs.(bezptsᵣ)) > 1e6
+        bezptsᵤ = [split_bezsurf(b,atol=atol) for b=split_bezsurf₁(bezpts)] |> flatten |> collect
+        return sum([two₋intersects_area₋volume(b,quantity,atol=atol) for b=bezptsᵤ])
+    end
+
     edgesᵢ = [i for i=1:3 if intersects[i] != []]
     if length(edgesᵢ) == 1
         # When intersections are on two different edges, we need to include the
@@ -697,14 +599,7 @@ function two₋intersects_area₋volume(bezpts::AbstractArray{<:Real,2},
     end
 
     simplex_bpts = sample_simplex(2,2)
-    coeffs = bezpts[end,:]
     triangleₑ = order_vertices!([all_intersects triangle[:,corner]])
-
-    # Make sure the weight of the middle Bezier point has the correct sign.
-    ptᵣ = eval_bezcurve(0.5,bezptsᵣ,bezwtsᵣ)
-    if !insimplex(carttobary(ptᵣ,triangle),atol=atol)
-        bezwtsᵣ[2] *= -1
-    end
 
     if quantity == "area"
         # curve area or volume
@@ -722,12 +617,13 @@ function two₋intersects_area₋volume(bezpts::AbstractArray{<:Real,2},
     try
         inside = insimplex(carttobary(ptᵣ,triangleₑ),atol=atol)
     catch SingularException
-        inside = false
+        nothing
     end
+
     if length(edgesᵢ) == 2 && inside
         areaₒᵣvolumeᵣ *= -1
     end
-    
+
     below₀ = bezpts[end,opp_corner] < 0 || isapprox(bezpts[end,opp_corner],0,atol=atol)
     if quantity == "area"
         areaₒᵣvolume =  areaₒᵣvolumeᵣ + simplex_size(triangleₑ)
@@ -742,6 +638,36 @@ function two₋intersects_area₋volume(bezpts::AbstractArray{<:Real,2},
         end
     end
     areaₒᵣvolume
+end
+
+@doc """
+    quad_area₋volume(bezpts,quantity;atol=1e-12)
+
+Calculate the area of the shadow of a quadric or the volume beneath the quadratic.
+
+# Arguments
+- `bezpts::AbstractArray{<:Real,2}`: the Bezier points of the quadratic surface.
+- `quantity::String`: the quantity to calculate ("area" or "volume").
+- `atol::Real=1e-12`: an absolute tolerance for floating point comparisons.
+
+# Returns
+- `::Real`: the area of the shadow of a quadratic polynomial within a triangle
+    and below the plane `z=0` or the volume of the quadratic polynomial under the 
+    same constraints.
+
+# Examples
+```jldoctest
+import Pebsi.QuadraticIntegration: quad_area₋volume
+bezpts = [-1.0 0.0 1.0 -0.5 0.5 0.0; 0.0 0.0 0.0 0.5 0.5 1.0; 2/3 -4/3 2/3 -2/3 -2/3 0]
+quad_area₋volume(bezpts,"area")
+# output
+0.869605101106897
+```
+"""
+function quad_area₋volume(bezpts::AbstractArray{<:Real,2},
+        quantity::String;atol::Real=1e-12)::Real
+    sum([two₋intersects_area₋volume(b,quantity,atol=atol) for 
+        b=split_bezsurf(bezpts,atol=atol)])    
 end
 
 end # module

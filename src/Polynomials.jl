@@ -4,7 +4,6 @@ import Base.Iterators: product
 import LinearAlgebra: dot,det,norm
 import Statistics: mean
 
-
 @doc """
     sample_simplex(dim,deg)
 
@@ -285,7 +284,7 @@ getbez_pts₋wts(bezpts,p₀,p₂)
 """
 function getbez_pts₋wts(bezpts::AbstractArray{<:Real,2},
         p₀::AbstractArray{<:Real,1},
-        p₂::AbstractArray{<:Real,1})#::Array{Array{<:Real,N} where N,1}
+        p₂::AbstractArray{<:Real,1}; atol::Real=1e-12)
 
     triangle = bezpts[1:2,[1,3,6]]
     coeffs = bezpts[3,:]
@@ -316,13 +315,18 @@ function getbez_pts₋wts(bezpts::AbstractArray{<:Real,2},
     (w₀,w₂)=(1,1)
     h₀₀₂ = eval_poly(p₁,coeffs,2,2)
     h₁₁₀ = 2*eval_poly(carttobary((p₀+p₂)/2,triangle),coeffs,2,2)
-    w₁ = √(-h₁₁₀/2h₀₀₂)
 
-    bezwtsᵣ = [w₀,w₁,w₂]
-    bezptsᵣ = [p₀ barytocart(p₁,triangle) p₂]
+    # The weight is negative for a straight line.
+    if isapprox(d,0,atol=atol) && conicsection(bezpts[end,:],atol=atol) == "line"
+        bezwtsᵣ = [w₀,0,w₂]
+        bezptsᵣ = [p₀ (p₀+p₂)/2 p₂]
+    else
+        w₁ = √(-h₁₁₀/2h₀₀₂)
+        bezwtsᵣ = [w₀,w₁,w₂]
+        bezptsᵣ = [p₀ barytocart(p₁,triangle) p₂]
+    end
     [bezptsᵣ,bezwtsᵣ]
 end
-
 
 @doc """
     eval_bezcurve(t,bezpts,bezwts)
@@ -366,6 +370,56 @@ function eval_bezcurve(t::AbstractArray{<:Real,1},
     bezpts::AbstractArray{<:Real,2},
     bezwts::AbstractArray{<:Real,1})::AbstractArray{<:Real,2}
     reduce(hcat,map(x->eval_bezcurve(x,bezpts,bezwts),t))
+end
+
+@doc """
+    conicsection(coeffs;atol=1e-12)
+
+Classify the conic section of a level curve of a quadratic surface.
+
+# Arguments
+- `coeffs::AbstractArray{<:Real,1}`: the coefficients of the quadratic polynomial.
+- `atol::Real=1e-12`: absolute tolerance.
+
+# Returns
+- `::String`: the type of the conic section.
+
+# Examples
+```jldoctest
+import Pebsi.QuadraticIntegration: conicsection
+coeffs = [0.36, -1.64, 0.36, -0.64, -0.64, 0.36]
+# output
+"elipse"
+```
+"""
+function conicsection(coeffs::AbstractArray{<:Real,1};
+    atol::Real=1e-12)::String
+    (z₀₀₂, z₁₀₁, z₂₀₀, z₀₁₁, z₁₁₀, z₀₂₀)=coeffs
+    a = z₀₀₂ - 2z₁₀₁ + z₂₀₀
+    b = 2z₀₀₂ - 2z₀₁₁ - 2z₁₀₁ + 2z₁₁₀
+    c = z₀₀₂ - 2z₀₁₁ + z₀₂₀
+    d = b^2 - 4*a*c
+    m = -8*(-2*z₀₁₁*z₁₀₁*z₁₁₀+z₀₀₂*z₁₁₀^2+z₀₁₁^2*z₂₀₀+z₀₂₀*(z₁₀₁^2-z₀₀₂*z₂₀₀))
+
+    if all(isapprox.([a,b,c],0,atol=atol))
+        "line"
+    elseif isapprox(m,0,atol=atol)
+        if isapprox(d,0,atol=atol)
+            "parallel lines"
+        elseif d > 0
+            "rectangular hyperbola"
+        else # d < 0
+            "point"
+        end
+    else
+        if isapprox(d,0,atol=atol)
+            "parabola"
+        elseif d < 0
+            "elipse"
+        else # d > 0
+            "hyperbola"
+        end
+    end
 end
 
 end # module

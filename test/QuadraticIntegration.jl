@@ -4,7 +4,6 @@ import Pebsi.Polynomials: sample_simplex,barytocart,getpoly_coeffs
 import Pebsi.QuadraticIntegration: order_vertices!,quadval_vertex, 
     edge_intersects,simplex_intersects,two₋intersects_area₋volume
 
-
 function contains_intersect(intersects,int1)
 contained = false
 if int1 == []
@@ -223,7 +222,6 @@ end
         bezpts = [simplex_pts;coeffs']
         intersects = simplex_intersects(bezpts)
         @test containsall(intersects,[[-0.8 0.8; 0.0 0.0],[0.7645751311064592 0.23542486889354075; 0.2354248688935408 0.7645751311064592], [-0.2354248688935408 -0.7645751311064592; 0.7645751311064592 0.23542486889354075]])
-
 
         x₀=0
         y₀=0
@@ -630,5 +628,14 @@ end
         bezpts[end,:] *= -1
         @test isapprox(two₋intersects_area₋volume(bezpts,"area"),0.9272607612669023)
         @test isapprox(two₋intersects_area₋volume(bezpts,"volume"),-4.409053126076289)
+
+        # Case where the tangent lines to the curve at the intersections on the
+        # triangle are parallel.
+        bezpts = [-1.0 0.0 1.0 -0.5 0.5 0.0; 0.0 0.0 0.0 0.5 0.5 1.0; 0.96 -1.04 0.96 -0.04 -0.04 0.96]
+        @test isapprox(two₋intersects_area₋volume(bezpts,"area"),0.06283185301964875)
+        @test isapprox(two₋intersects_area₋volume(bezpts,"volume"),-0.0012803833607820747)
+        bezpts[end,:] *= -1
+        @test isapprox(two₋intersects_area₋volume(bezpts,"area"),0.9371681469282042)
+        @test isapprox(two₋intersects_area₋volume(bezpts,"volume"),-0.2946137166941154)
     end
 end
