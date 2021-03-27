@@ -125,8 +125,9 @@ function bezplot(bezpts::AbstractArray{<:Real,2},
     dim = 1
     deg = 2
     simplex = [bezpts[1,1] bezpts[1,end]]
-    s = 0.1*abs(simplex[2]-simplex[1]) 
-    pts = Array(collect(simplex[1]-s:0.01:simplex[2]+s)')
+    s = 0.1*abs(simplex[2]-simplex[1])
+    sgn = sign(simplex[2]-simplex[1])
+    pts = Array(collect(simplex[1]-s:sgn*0.01:simplex[2]+s)')
     bpts = carttobary(pts,simplex)
     vals = eval_poly(bpts,bezpts[end,:],dim,deg)
     fvals = zeros(length(pts))

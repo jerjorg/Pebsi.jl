@@ -5,7 +5,7 @@ include("Polynomials.jl")
 import SymmetryReduceBZ.Utilities: remove_duplicates
 
 import .Polynomials: sample_simplex,eval_poly,getpoly_coeffs,barytocart,
-    carttobary, getbez_pts₋wts,eval_bezcurve
+    carttobary, getbez_pts₋wts,eval_bezcurve,conicsection
 
 import LinearAlgebra: cross,det
 import MiniQhull: delaunay
@@ -46,7 +46,7 @@ function quadval_vertex(bezcoeffs::AbstractArray{<:Real,1})
 end
 
 @doc """
-    edge_intersects(bezpts,atol)
+    edge_intersects(bezpts;atol)
 
 Calculate where a quadratic curve is equal to zero within [0,1).
 
@@ -69,14 +69,14 @@ edge_intersects(bezpts) == [0.5]
 """
 function edge_intersects(bezpts::AbstractArray{<:Real,2};
     atol::Real=1e-12)::AbstractArray{<:Real,1}
-    
+   
     # Cases where the curve is above zero, below zero, or at zero.
     coeffs = bezpts[end,:]
     if all(isapprox.(coeffs,0,atol=atol))
         return Array{Float64}([])
-    elseif !any(isapprox.(coeffs,0,atol=atol)) && all(coeffs .> 0)
+    elseif all(.!isapprox.(coeffs,0,atol=atol) .& (coeffs .> 0))
         return Array{Float64}([])
-    elseif !any(isapprox.(coeffs,0,atol=atol)) && all(coeffs .< 0)
+    elseif all(.!isapprox.(coeffs,0,atol=atol) .& (coeffs .< 0))
         return Array{Float64}([])
     end
     
@@ -86,16 +86,20 @@ function edge_intersects(bezpts::AbstractArray{<:Real,2};
     α = a
     β = -2a+2b
     γ = a-2b+c
-    
+   
     # Quadratic curve entirely above or below zero.
     v = quadval_vertex(coeffs)
-    if all([γ,v].>=0) || all([γ,v].<=0) && abs(v) != Inf
+    if (all([γ,v].>0) && all(isapprox.([γ,v],0,atol=atol))) ||
+       (all([γ,v].<0) && all(isapprox.([γ,v],0,atol=atol))) && abs(v) != Inf
         return Array{Float64}([])
     end
-    
-    if γ==0 && β==0
-        x = Array{Float64}([])
-    elseif γ==0
+    #if all([γ,v].>0) || all([γ,v].<0) && abs(v) != Inf
+    #     return Array{Float64}([])
+    #end
+
+    if isapprox(γ,0,atol=atol) && isapprox(β,0,atol=atol)
+        return Array{Float64}([])
+    elseif isapprox(γ,0,atol=atol)
         x = [-α/β]
     else
         arg = β^2-4α*γ
@@ -105,17 +109,18 @@ function edge_intersects(bezpts::AbstractArray{<:Real,2};
             x = [-β/(2γ)]
         elseif arg < 0
             # Ignore solutions with imaginary components.
-            x = Array{Float64}[]
+            return Array{Float64}([])
         else
             x = [(-β-sqrt(arg))/(2γ),(-β+sqrt(arg))/(2γ)]
         end
     end
 
-    # Only keep non-complex intersections between [0,1).
-    filter(y -> (y>0 || isapprox(y,0,atol=atol)) && y<1 && 
-        !isapprox(y,1,atol=atol),x) |> sort
+    # Only keep intersections between [0,1).
+    filter(y -> (
+        (y>0 || isapprox(y,0,atol=atol)) && 
+        (y<1 && !isapprox(y,1,atol=atol))
+        ),x) |> sort
 end
-
 
 @doc """
 The locations of quadratic Bezier points at the corners of the triangle in
@@ -132,7 +137,7 @@ edge_indices=[[1,2,3],[3,5,6],[6,4,1]]
 @doc """
     simplex_intersects(bezpts,atol)
 
-Calculate the location where a level curve intersects a triangle.
+Calculate the location where a level curve of a quadratic surfage at z=0 intersects a triangle.
 
 # Arguments
 - `bezpts::AbstractArray{<:Real,2}`: the Bezier points of the quadratic, Bezier
@@ -198,7 +203,7 @@ saddlepoint(coeffs)
  0.5000000000000001
 ```
 """
-function saddlepoint(coeffs::AbstractArray{<:Real,1},
+function saddlepoint(coeffs::AbstractArray{<:Real,1};
     atol::Real=1e-12)::AbstractArray{<:Real,1}
     (z₀₀₂, z₁₀₁, z₂₀₀, z₀₁₁, z₁₁₀, z₀₂₀)=coeffs
     denom = z₀₁₁^2+(z₁₀₁-z₁₁₀)^2+z₀₂₀*(2z₁₀₁-z₂₀₀)-2z₀₁₁*(z₁₀₁+z₁₁₀-z₂₀₀)-z₀₀₂*(z₀₂₀-2z₁₁₀+z₂₀₀)
@@ -312,17 +317,26 @@ function split_bezsurf₁(bezpts::AbstractArray{<:Real,2},
     pts = bezpts[1:2,:]
     simplex_bpts = sample_simplex(dim,deg)
     intersects = simplex_intersects(bezpts,atol=atol)
-    allintersects = reduce(hcat,[i for i=intersects if i!=[]])
-    spt = saddlepoint(coeffs,atol)
-    if insimplex(spt)
-        allpts = [pts barytocart(spt,triangle) allintersects]
+    spt = saddlepoint(coeffs,atol=atol)
+
+    if intersects == [[],[],[]]
+        if insimplex(spt)
+            allpts = [pts barytocart(spt,triangle)]
+        else
+            allpts = [pts]
+        end
     else
-        allpts = [pts allintersects]
+        allintersects = reduce(hcat,[i for i=intersects if i!=[]])
+        if insimplex(spt)
+            allpts = [pts barytocart(spt,triangle) allintersects]
+        else
+            allpts = [pts allintersects]
+        end
     end
     allpts = remove_duplicates(allpts,atol=atol)
     
     tri_ind = delaunay(allpts)
-    subtri = [allpts[:,tri_ind[:,i]] for i=1:size(tri_ind,2)]
+    subtri = [order_vertices!(allpts[:,tri_ind[:,i]]) for i=1:size(tri_ind,2)]
     sub_pts = [barytocart(simplex_bpts,tri) for tri=subtri]
     sub_bpts = [carttobary(pts,triangle) for pts=sub_pts]
     sub_vals = [reduce(hcat, [eval_poly(sub_bpts[j][:,i],coeffs,dim,deg) 
@@ -413,12 +427,15 @@ function analytic_area(w::Real)::Real
 end
 
 @doc """
-    analytic_coeffs(coeffs::AbstractArray{<:Real,1}, w::Real)
+    analytic_coeffs(coeffs,w;atol=1e-12)
 
 Calculate the volume within a canonical triangle and Bezier curve of a quadratic surface.
 
 # Arguments
+- `coeffs::AbstractArray{<:Real,1}`: the coefficients of the quadratica surface.
 - `w::Real`: the weight of the middle Bezier point of a rational, quadratic, Bezier curve.
+- `atol::Real=1e-12`: an absolute tolerance for finite precision tolerances.
+
 # Returns
 - `::Real`: the area within the triangle and Bezier curve.
 
@@ -432,25 +449,31 @@ analytic_volume(coeffs,w)
 0.4426972170733675
 ```
 """
-function analytic_volume(coeffs::AbstractArray{<:Real,1},w::Real)::Real
+function analytic_volume(coeffs::AbstractArray{<:Real,1},w::Real;
+        atol::Real=1e-12)::Real
     
-    #(c₀,c₁,c₂,c₃,c₄,c₅) = coeffs
     (c₅,c₃,c₀,c₄,c₁,c₂) = coeffs
     d = c₀+c₁+c₂+c₃+c₄+c₅
+    #if isapprox(d,0,atol=atol)
+    #    return 0
+    #end
     # Use the Taylor expansion of the analytic solution if the weight is close to 1.
     if isapprox(w,1,atol=1e-2)
-        (6/7+(2*(-11*c₀-5*(c₁+c₃)+c₄))/(35*d))+4/105*(5+(3*c₀+5*(c₁+c₃)-c₄)/d)*(w-1)+(-(2/11)+(2*(81*c₀+
+        d/6*((6/7+(2*(-11*c₀-5*(c₁+c₃)+c₄))/(35*d))+4/105*(5+(3*c₀+5*(c₁+c₃)-c₄)/d)*(w-1)+(-(2/11)+(2*(81*c₀+
         5*(-5*(c₁+c₃)+c₄)))/(1155*d))*(w-1)^2+(32*(70+(-89*c₀+5*(-5*(c₁+c₃)+c₄))/d)*(w-1)^3)/15015+
         (8*(17*c₀-7*(c₁+6*c₂+c₃+7*c₄+6*c₅))*(w-1)^4)/(3003*d)+(64*(315+(-432*c₀+77*(-5*(c₁+c₃)+c₄))/
         d)*(w-1)^5)/255255+(224*(43*c₀+3*(30*c₁-55*c₂+30*c₃-72*c₄-55*c₅))*(w-1)^6)/(692835*d)+
         (1024*(165-(4*(46*c₀+75*(c₁+c₃)-15*c₄))/d)*(w-1)^7)/4849845-(384*(93*c₀-55*(41*c₁-39*c₂+41*c₃-55*c₄-39*c₅))*(w-1)^8)/
         (37182145*d)+(512*(1001+(-797*c₀+451*(-5*(c₁+c₃)+c₄))/d)*(w-1)^9)/37182145-
-        (2816*(164*c₀+13*(-50*c₁+35*c₂-50*c₃+52*c₄+35*c₅))*(w-1)^10)/(152108775*d)
+        (2816*(164*c₀+13*(-50*c₁+35*c₂-50*c₃+52*c₄+35*c₅))*(w-1)^10)/(152108775*d))
     else
         a = sqrt(Complex(-1-w))
         b = sqrt(Complex(-1+w))
+#        sign(w)real((w*(a*b*w*(-32*c₁+33*c₂-32*c₃+46*c₄+33*c₅-2*(-26*c₀+18*c₁+13*c₂+18*c₃+12*c₄+13*c₅)*w^2+
+#            8*d*w^4)+6*(5*c₂+6*c₄+5*c₅+4*(c₀-5*(c₁+c₃)+c₄)*w^2+16*c₀*w^4)*atan(b/a)))/(8*d*a*b*(-1+w^2)^3))
         sign(w)real((w*(a*b*w*(-32*c₁+33*c₂-32*c₃+46*c₄+33*c₅-2*(-26*c₀+18*c₁+13*c₂+18*c₃+12*c₄+13*c₅)*w^2+
-            8*(d)*w^4)+6*(5*c₂+6*c₄+5*c₅+4*(c₀-5*(c₁+c₃)+c₄)*w^2+16*c₀*w^4)*atan(b/a)))/(8*d*a*b*(-1+w^2)^3))
+            8*d*w^4)+6*(5*c₂+6*c₄+5*c₅+4*(c₀-5*(c₁+c₃)+c₄)*w^2+16*c₀*w^4)*atan(b/a)))/(6*8*a*b*(-1+w^2)^3))
+
     end
 end
 
@@ -525,6 +548,7 @@ function two₋intersects_area₋volume(bezpts::AbstractArray{<:Real,2},
     triangle = bezpts[1:2,corner_indices]
     coeffs = bezpts[end,:]
     intersects = simplex_intersects(bezpts,atol=atol)
+    bezptsᵣ = [0;0]
     if intersects != [[],[],[]]
         all_intersects = reduce(hcat,[i for i=intersects if i!= []])
         if size(all_intersects,2) != 2
@@ -533,7 +557,7 @@ function two₋intersects_area₋volume(bezpts::AbstractArray{<:Real,2},
         end
         p₀ = all_intersects[:,1]
         p₂ = all_intersects[:,2]
-        (bezptsᵣ,bezwtsᵣ) = getbez_pts₋wts(bezpts,p₀,p₂)
+        (bezptsᵣ,bezwtsᵣ) = getbez_pts₋wts(bezpts,p₀,p₂,atol=atol)
         ptᵣ = eval_bezcurve(0.5,bezptsᵣ,bezwtsᵣ)
         # Make sure the weight of the middle Bezier point has the correct sign.
         if !insimplex(carttobary(ptᵣ,triangle),atol=atol)
@@ -543,6 +567,18 @@ function two₋intersects_area₋volume(bezpts::AbstractArray{<:Real,2},
                 intersects = [[],[],[]]
             end
         end
+    end
+
+    # If the tangent lines are close to parallel, the middle Bezier point of the
+    # curve will be vary far away, which introduces numerical errors. We handle
+    # this by splitting the surface up and recalculating.
+    # Also, split the surface if the level curve isn't linear and the saddle point 
+    # is within the triangle.
+    cstype = conicsection(bezpts[end,:],atol=atol)
+    linear = any(cstype .== ["line","rectangular hyperbola","parallel lines"])
+    if maximum(abs.(bezptsᵣ)) > 1e6 || (insimplex(saddlepoint(bezpts[end,:],atol=atol),atol=atol) && !linear) 
+        bezptsᵤ = [split_bezsurf(b,atol=atol) for b=split_bezsurf₁(bezpts)] |> flatten |> collect
+        return sum([two₋intersects_area₋volume(b,quantity,atol=atol) for b=bezptsᵤ])
     end
 
     # No intersections
@@ -560,14 +596,6 @@ function two₋intersects_area₋volume(bezpts::AbstractArray{<:Real,2},
             areaₒᵣvolume = 0
         end
         return areaₒᵣvolume
-    end
-
-    # If the tangent lines are close to parallel, the middle Bezier point of the
-    # curve will be vary far away, which introduces numerical errors. We handle
-    # this by splitting the surface up and recalculating.
-    if maximum(abs.(bezptsᵣ)) > 1e6
-        bezptsᵤ = [split_bezsurf(b,atol=atol) for b=split_bezsurf₁(bezpts)] |> flatten |> collect
-        return sum([two₋intersects_area₋volume(b,quantity,atol=atol) for b=bezptsᵤ])
     end
 
     edgesᵢ = [i for i=1:3 if intersects[i] != []]
@@ -600,13 +628,13 @@ function two₋intersects_area₋volume(bezpts::AbstractArray{<:Real,2},
 
     simplex_bpts = sample_simplex(2,2)
     triangleₑ = order_vertices!([all_intersects triangle[:,corner]])
-
     if quantity == "area"
         # curve area or volume
         areaₒᵣvolumeᵣ = simplex_size(bezptsᵣ)*analytic_area(bezwtsᵣ[2])
     elseif quantity == "volume"
         coeffsᵣ = sub₋coeffs(bezpts,bezptsᵣ)
-        areaₒᵣvolumeᵣ = simplex_size(bezptsᵣ)*mean(coeffsᵣ)*analytic_volume(coeffsᵣ,bezwtsᵣ[2])
+        #areaₒᵣvolumeᵣ = simplex_size(bezptsᵣ)*mean(coeffsᵣ)*analytic_volume(coeffsᵣ,bezwtsᵣ[2],atol=atol)
+        areaₒᵣvolumeᵣ = simplex_size(bezptsᵣ)*analytic_volume(coeffsᵣ,bezwtsᵣ[2],atol=atol)
     else
         throw(ArgumentError("The quantity calculated is either \"area\" or \"volume\"."))
     end
@@ -637,6 +665,7 @@ function two₋intersects_area₋volume(bezpts::AbstractArray{<:Real,2},
             areaₒᵣvolume = simplex_size(triangle)*mean(coeffs) - areaₒᵣvolume
         end
     end
+
     areaₒᵣvolume
 end
 

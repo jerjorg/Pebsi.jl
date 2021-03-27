@@ -225,6 +225,11 @@ function eval_poly(barypt::AbstractArray,
     dot(coeffs,bernstein_basis(barypt,dim,deg))
 end
 
+function eval_poly(barypt::AbstractArray,
+    coeffs::AbstractArray,dim::Integer,deg::Integer)::Any
+    dot(coeffs,bernstein_basis(barypt,dim,deg))
+end
+
 @doc """
     eval_poly(barypts,coeffs,dim,deg)
 
@@ -315,9 +320,12 @@ function getbez_pts₋wts(bezpts::AbstractArray{<:Real,2},
     (w₀,w₂)=(1,1)
     h₀₀₂ = eval_poly(p₁,coeffs,2,2)
     h₁₁₀ = 2*eval_poly(carttobary((p₀+p₂)/2,triangle),coeffs,2,2)
+    cstype = conicsection(bezpts[end,:],atol=atol)    
 
     # The weight is negative for a straight line.
-    if isapprox(d,0,atol=atol) && conicsection(bezpts[end,:],atol=atol) == "line"
+    if ((isapprox(d,0,atol=atol) && 
+        any(cstype .== ["line","rectangular hyperbola","parallel lines"])) ||
+        isapprox(h₀₀₂,0,atol=atol))
         bezwtsᵣ = [w₀,0,w₂]
         bezptsᵣ = [p₀ (p₀+p₂)/2 p₂]
     else
