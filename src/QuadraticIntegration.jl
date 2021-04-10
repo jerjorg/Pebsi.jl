@@ -2,15 +2,17 @@ module QuadraticIntegration
 
 include("Polynomials.jl")
 
-import SymmetryReduceBZ.Utilities: remove_duplicates
+import SymmetryReduceBZ.Utilities: unique_points
 
 import .Polynomials: sample_simplex,eval_poly,getpoly_coeffs,barytocart,
     carttobary, getbez_pts₋wts,eval_bezcurve,conicsection
 
 import LinearAlgebra: cross,det
-import MiniQhull: delaunay
+using MiniQhull,Delaunay
+import Delaunay: Triangulation
 import Statistics: mean
 import Base.Iterators: flatten
+import SparseArrays: findnz
 
 @doc """
     order_vertices(vertices)
@@ -333,9 +335,9 @@ function split_bezsurf₁(bezpts::AbstractArray{<:Real,2},
             allpts = [pts allintersects]
         end
     end
-    allpts = remove_duplicates(allpts,atol=atol)
+    allpts = unique_points(allpts,atol=atol)
     
-    tri_ind = delaunay(allpts)
+    tri_ind = MiniQhull.delaunay(allpts)
     subtri = [order_vertices!(allpts[:,tri_ind[:,i]]) for i=1:size(tri_ind,2)]
     sub_pts = [barytocart(simplex_bpts,tri) for tri=subtri]
     sub_bpts = [carttobary(pts,triangle) for pts=sub_pts]
@@ -697,6 +699,50 @@ function quad_area₋volume(bezpts::AbstractArray{<:Real,2},
         quantity::String;atol::Real=1e-12)::Real
     sum([two₋intersects_area₋volume(b,quantity,atol=atol) for 
         b=split_bezsurf(bezpts,atol=atol)])    
+end
+
+
+@doc """
+    get₋neighbors(index,mesh,num₋neighbors=2)
+
+Calculate the nth-nearest neighbors of a point in a mesh.
+
+# Arguments
+- `index::Int`: the index of the point in the mesh. The coordinates
+    of the point are `mesh.points[index,:]`.
+- `mesh::Triangulation`: a Delaunay triangulation of the mesh from 
+    `Delaunay.delaunay`.
+- `num₋neighbors::Int=2`: the number of neighbors to find. For example,
+    if 2, find first and second nearest neighbors.
+
+# Returns
+- `indices::AbstractArray{Int,1}`: the indices of neighboring points.
+
+# Examples
+```jldoctest
+import Pebsi.QuadraticIntegration: get₋neighbors
+import Delaunay: delaunay
+pts = [0.0 0.0; 0.25 0.0; 0.5 0.0; 0.25 0.25; 0.5 0.25; 0.5 0.5]
+index = 2
+mesh = delaunay(pts)
+get₋neighbors(index,mesh)
+# output
+5-element Array{Int64,1}:
+ 4
+ 1
+ 5
+ 3
+ 6
+```
+"""
+function get₋neighbors(index::Int,mesh::Triangulation,num₋neighbors::Int=2)::AbstractArray{Int,1}
+    indices = [index]
+    for _=1:num₋neighbors
+        (rows,cols,) = findnz(mesh.vertex_neighbor_vertices)
+        first₋neighbors = rows[findall(x->any(x .== indices),cols)]
+        indices = unique([indices;first₋neighbors])
+    end
+    indices[2:end]
 end
 
 end # module
