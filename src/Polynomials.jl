@@ -120,7 +120,7 @@ end
 @doc """
     barytocart(barypts,simplex)
 
-Convert points as colums on an array from barycentric to Cartesian coordinates.
+Convert points as columns on an array from barycentric to Cartesian coordinates.
 """
 function barytocart(barypts::AbstractArray{<:Real,2},
     simplex::AbstractArray{<:Real,2})::AbstractArray{<:Real,2}

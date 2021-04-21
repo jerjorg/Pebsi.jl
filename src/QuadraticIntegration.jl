@@ -139,7 +139,7 @@ edge_indices=[[1,2,3],[3,5,6],[6,4,1]]
 @doc """
     simplex_intersects(bezpts,atol)
 
-Calculate the location where a level curve of a quadratic surfage at z=0 intersects a triangle.
+Calculate the location where a level curve of a quadratic surface at z=0 intersects a triangle.
 
 # Arguments
 - `bezpts::AbstractArray{<:Real,2}`: the Bezier points of the quadratic, Bezier
@@ -572,7 +572,7 @@ function two₋intersects_area₋volume(bezpts::AbstractArray{<:Real,2},
     end
 
     # If the tangent lines are close to parallel, the middle Bezier point of the
-    # curve will be vary far away, which introduces numerical errors. We handle
+    # curve will be very far away, which introduces numerical errors. We handle
     # this by splitting the surface up and recalculating.
     # Also, split the surface if the level curve isn't linear and the saddle point 
     # is within the triangle.
