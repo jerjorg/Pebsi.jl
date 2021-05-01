@@ -14,7 +14,7 @@ Get the sample points of a simplex for a polynomial approximation.
 - `deg::Integer`: the degree of the polynomial approximations.
 
 # Returns
-- `::AbstractArray{<:Real,2}`: the points on the simplex as columns of an array.
+- `::AbstractMatrix{<:Real}`: the points on the simplex as columns of an array.
 
 # Examples
 ```jldoctest
@@ -31,7 +31,7 @@ sample_simplex(dim,deg)
 """
 function sample_simplex(dim::Integer,deg::Integer,
     rtol::Real=sqrt(eps(1.0)),
-    atol::Real=0.0)::AbstractArray{<:Real,2}
+    atol::Real=0.0)::AbstractMatrix{<:Real}
     reduce(hcat,filter(x->length(x)>0, 
         [isapprox(sum(p),1,rtol=rtol,atol=atol) ? collect(p) : [] 
         for p=collect(product([0:1/deg:1 for i=0:dim]...))]))
@@ -81,8 +81,8 @@ end
 
 Evaluate the Bernstein basis functions at each point in an array (points are columns).
 """
-function bernstein_basis(bpts::AbstractArray{<:Real,2},dim::Integer,
-    deg::Integer)::AbstractArray{<:Real,2}
+function bernstein_basis(bpts::AbstractMatrix{<:Real},dim::Integer,
+    deg::Integer)::AbstractMatrix{<:Real}
     mapslices(x->bernstein_basis(x,dim,deg),bpts,dims=1)
 end
 
@@ -93,12 +93,12 @@ end
 Convert a point from barycentric to Cartesian coordinates.
 
 # Arguments
-- `barypt::AbstractArray{<:Real,1}`: a point in Barycentric coordinates.
-- `simplex::AbstractArray{<:Real,2}`: the vertices of a simplex as columns of
+- `barypt::AbstractVector{<:Real}`: a point in Barycentric coordinates.
+- `simplex::AbstractMatrix{<:Real}`: the vertices of a simplex as columns of
     an array.
 
 # Returns
-- `::AbstractArray{<:Real,1}`: the point in Cartesian coordinates.
+- `::AbstractVector{<:Real}`: the point in Cartesian coordinates.
 
 # Examples
 ```jldoctest
@@ -112,8 +112,8 @@ barytocart(barypt,simplex)
  0.0
 ```
 """
-function barytocart(barypt::AbstractArray{<:Real,1},
-        simplex::AbstractArray{<:Real,2})::AbstractArray{<:Real,1}
+function barytocart(barypt::AbstractVector{<:Real},
+        simplex::AbstractMatrix{<:Real})::AbstractVector{<:Real}
     [sum(reduce(hcat,[simplex[:,i]*barypt[i] for i=1:length(barypt)]),dims=2)...]
 end
 
@@ -122,8 +122,8 @@ end
 
 Convert points as columns on an array from barycentric to Cartesian coordinates.
 """
-function barytocart(barypts::AbstractArray{<:Real,2},
-    simplex::AbstractArray{<:Real,2})::AbstractArray{<:Real,2}
+function barytocart(barypts::AbstractMatrix{<:Real},
+    simplex::AbstractMatrix{<:Real})::AbstractMatrix{<:Real}
     mapslices(x->barytocart(x,simplex),barypts,dims=1)
 end
 
@@ -133,11 +133,11 @@ end
 Transform a point from Cartesian to barycentric coordinates.
 
 # Arguments
-- `pt::AbstractArray{<:Real,1}`: the point in Cartesian coordinates
-- `simplex::AbstractArray{<:Real,2}`: the corners of the simplex as columns of an array.
+- `pt::AbstractVector{<:Real}`: the point in Cartesian coordinates
+- `simplex::AbstractMatrix{<:Real}`: the corners of the simplex as columns of an array.
 """
-function carttobary(pt::AbstractArray{<:Real,1},
-        simplex::AbstractArray{<:Real,2})::AbstractArray{<:Real,1}
+function carttobary(pt::AbstractVector{<:Real},
+        simplex::AbstractMatrix{<:Real})::AbstractVector{<:Real}
 
     inv(vcat(simplex,ones(Int,(1,size(simplex,2)))))*vcat(pt,1)
 end
@@ -148,10 +148,10 @@ end
 Transform an array of points from Cartesian to barycentric coordinates.
 
 # Arguments
-- `pts::AbstractArray{<:Real,2}`: the points in Cartesian coordinates as columns of an array.
+- `pts::AbstractMatrix{<:Real}`: the points in Cartesian coordinates as columns of an array.
 """
-function carttobary(pts::AbstractArray{<:Real,2},
-        simplex::AbstractArray{<:Real,2})::AbstractArray{<:Real,2}
+function carttobary(pts::AbstractMatrix{<:Real},
+        simplex::AbstractMatrix{<:Real})::AbstractMatrix{<:Real}
     mapslices(x->carttobary(x,simplex),pts,dims=1)
 end
 
@@ -161,15 +161,15 @@ end
 Calculate the coefficients of a polynomial interpolation over a simplex.
 
 # Arguments
-- `values::AbstractArray{<:Real,1}`: the value of the approximated function at
+- `values::AbstractVector{<:Real}`: the value of the approximated function at
     samples within the simplex.
-- `simplex_bpts::AbstractArray{<:Real,2}`: the sample points in the simplex in 
+- `simplex_bpts::AbstractMatrix{<:Real}`: the sample points in the simplex in 
     barycentric coordinates as columns of an array.
 - `dim::Integer`: the number of dimensions.
 - `deg::Integer`: the degree of the polynomial.
 
 # Returns
-- `::AbstractArray{<:Real,1}`: the coefficients of the polynomial approximation.
+- `::AbstractVector{<:Real}`: the coefficients of the polynomial approximation.
 
 # Examples
 ```jldoctest
@@ -189,9 +189,9 @@ getpoly_coeffs(values,simplex_bpts,dim,deg)
  -0.2
 ```
 """
-function getpoly_coeffs(values::AbstractArray{<:Real,1},
-    simplex_bpts::AbstractArray{<:Real,2},dim::Integer,
-    deg::Integer)::AbstractArray{<:Real,1}
+function getpoly_coeffs(values::AbstractVector{<:Real},
+    simplex_bpts::AbstractMatrix{<:Real},dim::Integer,
+    deg::Integer)::AbstractVector{<:Real}
     inv(mapslices(x->bernstein_basis(x,dim,deg),simplex_bpts,dims=1)')*values
 end
 
@@ -201,8 +201,8 @@ end
 Evaluate a polynomial at a point.
 
 # Arguments
-- `barypt::AbstractArray{<:Real,1}`: a point in Barycentric coordinates.
-- `coeffs::AbstractArray{<:Real,1}`: the coefficients of the polynomial approximation
+- `barypt::AbstractVector{<:Real}`: a point in Barycentric coordinates.
+- `coeffs::AbstractVector{<:Real}`: the coefficients of the polynomial approximation
 - `dim::Integer`: the number of dimensions.
 - `deg::Integer`: the degree of the polynomial.
 
@@ -221,7 +221,7 @@ eval_poly(barypt,coeffs,dim,deg)
 ```
 """
 function eval_poly(barypt::AbstractArray,
-    coeffs::AbstractArray{<:Real,1},dim::Integer,deg::Integer)::Any
+    coeffs::AbstractVector{<:Real},dim::Integer,deg::Integer)::Any
     dot(coeffs,bernstein_basis(barypt,dim,deg))
 end
 
@@ -252,9 +252,9 @@ eval_poly(simplex_bpts,coeffs,dim,deg)
  -0.3
 ```
 """
-function eval_poly(barypts::AbstractArray{<:Real,2},
-    coeffs::AbstractArray{<:Real,1},dim::Integer,
-    deg::Integer)::AbstractArray{<:Real,1}
+function eval_poly(barypts::AbstractMatrix{<:Real},
+    coeffs::AbstractVector{<:Real},dim::Integer,
+    deg::Integer)::AbstractVector{<:Real}
     mapslices(x->eval_poly(x,coeffs,dim,deg),barypts,dims=1)[:]
 end
 
@@ -265,10 +265,10 @@ end
 Calculate the Bezier points and weights of a level curve of a Quadratic surface passing through two points.
 
 # Arguments
-- `bezpts::AbstractArray{<:Real,1}`: the Bezier points of the quadratic surface.
-- `p₀::AbstractArray{<:Real,1}`: a point a level curve of the quadratic surface passes
+- `bezpts::AbstractVector{<:Real}`: the Bezier points of the quadratic surface.
+- `p₀::AbstractVector{<:Real}`: a point a level curve of the quadratic surface passes
     through. The level curve is taken at an isovalue of zero.
-- `p₂::AbstractArray{<:Real,1}`: a point a level curve of the quadratic surface passes
+- `p₂::AbstractVector{<:Real}`: a point a level curve of the quadratic surface passes
     through. The level curve is taken at an isovalue of zero.
 
 # Returns
@@ -287,9 +287,9 @@ getbez_pts₋wts(bezpts,p₀,p₂)
  [1.0, 1.6770509831248424, 1.0]
 ```
 """
-function getbez_pts₋wts(bezpts::AbstractArray{<:Real,2},
-        p₀::AbstractArray{<:Real,1},
-        p₂::AbstractArray{<:Real,1}; atol::Real=1e-12)
+function getbez_pts₋wts(bezpts::AbstractMatrix{<:Real},
+        p₀::AbstractVector{<:Real},
+        p₂::AbstractVector{<:Real}; atol::Real=1e-12)
 
     triangle = bezpts[1:2,[1,3,6]]
     coeffs = bezpts[3,:]
@@ -343,12 +343,12 @@ Evaluate a rational Bezier curve at a point.
 
 # Arguments
 - `t::Real`: the parametric variable.
-- `bezpts::AbstractArray{<:Real,2}`: the Bezier points in Cartesian coordinates
+- `bezpts::AbstractMatrix{<:Real}`: the Bezier points in Cartesian coordinates
     as columes of an array.
-- `bezwts::AbstractArray{<:Real,1}`: the weights of the Bezier points.
+- `bezwts::AbstractVector{<:Real}`: the weights of the Bezier points.
 
 # Returns
-- `::AbstractArray{<:Real,1}`: a point along the Bezier curve.
+- `::AbstractVector{<:Real}`: a point along the Bezier curve.
 
 # Examples
 ```jldoctest
@@ -363,8 +363,8 @@ eval_bezcurve(t,bezpts,bezwts)
  0.4
 ```
 """
-function eval_bezcurve(t::Real,bezpts::AbstractArray{<:Real,2},
-        bezwts::AbstractArray{<:Real,1})::AbstractArray{<:Real,1}
+function eval_bezcurve(t::Real,bezpts::AbstractMatrix{<:Real},
+        bezwts::AbstractVector{<:Real})::AbstractVector{<:Real}
     (sum((bernstein_basis([1-t,t],1,2).*bezwts)' .* 
         bezpts,dims=2)/dot(bezwts,bernstein_basis([1-t,t],1,2)))[:]
 end
@@ -374,9 +374,9 @@ end
 
 Evaluate a rational Bezier curve at each point in an array.
 """
-function eval_bezcurve(t::AbstractArray{<:Real,1},
-    bezpts::AbstractArray{<:Real,2},
-    bezwts::AbstractArray{<:Real,1})::AbstractArray{<:Real,2}
+function eval_bezcurve(t::AbstractVector{<:Real},
+    bezpts::AbstractMatrix{<:Real},
+    bezwts::AbstractVector{<:Real})::AbstractMatrix{<:Real}
     reduce(hcat,map(x->eval_bezcurve(x,bezpts,bezwts),t))
 end
 
@@ -386,7 +386,7 @@ end
 Classify the conic section of a level curve of a quadratic surface.
 
 # Arguments
-- `coeffs::AbstractArray{<:Real,1}`: the coefficients of the quadratic polynomial.
+- `coeffs::AbstractVector{<:Real}`: the coefficients of the quadratic polynomial.
 - `atol::Real=1e-12`: absolute tolerance.
 
 # Returns
@@ -400,7 +400,7 @@ coeffs = [0.36, -1.64, 0.36, -0.64, -0.64, 0.36]
 "elipse"
 ```
 """
-function conicsection(coeffs::AbstractArray{<:Real,1};
+function conicsection(coeffs::AbstractVector{<:Real};
     atol::Real=1e-12)::String
     (z₀₀₂, z₁₀₁, z₂₀₀, z₀₁₁, z₁₁₀, z₀₂₀)=coeffs
     a = z₀₀₂ - 2z₁₀₁ + z₂₀₀

@@ -17,7 +17,7 @@ import SymmetryReduceBZ.Plotting: plot_2Dconvexhull
 
 Plot the points within a mesh in 2D or 3D.
 """
-function meshplot(meshpts::AbstractArray{<:Real,2},
+function meshplot(meshpts::AbstractMatrix{<:Real},
     ax::Union{PyObject,Nothing}=nothing; color::String="blue", alpha=0.5)
 
     dim = size(meshpts,1)
@@ -60,7 +60,7 @@ end
 Plot the level curves of a polynomial surface.
 
 # Arguments
-- `bezpts::AbstractArray{<:Real,2}`: the Bezier point of the quadratic surface
+- `bezpts::AbstractMatrix{<:Real}`: the Bezier point of the quadratic surface
     as columns of an array.
 - `ax::Union{PyObject,Nothing}`: an axes object.
 - `filled::Bool=false`: if true, the regions below isovalue are shadded.
@@ -70,7 +70,7 @@ Plot the level curves of a polynomial surface.
 - `ax::PyObject`: the plot axes object.
 
 """
-function contourplot(bezpts::AbstractArray{<:Real,2},
+function contourplot(bezpts::AbstractMatrix{<:Real},
     ax::Union{PyObject,Nothing}=nothing; filled::Bool=false,
     padded::Bool=true)::PyObject
 
@@ -119,7 +119,7 @@ end
 
 Plot an interval quadratic Bezier curve and its Bezier points.
 """
-function bezplot(bezpts::AbstractArray{<:Real,2},
+function bezplot(bezpts::AbstractMatrix{<:Real},
         ax::Union{PyObject,Nothing}=nothing)
     
     dim = 1
@@ -145,9 +145,9 @@ end
 Plot a rational, quadratic, Bezier curve and its Bezier points
 
 # Arguments
-- `bezptsᵣ::AbstractArray{<:Real,2}`: the Bezier control points as columns of an
+- `bezptsᵣ::AbstractMatrix{<:Real}`: the Bezier control points as columns of an
     array in Cartesian coordinates.
-- `bezwtsᵣ::AbstractArray{<:Real,1}`: the weights of the control points.
+- `bezwtsᵣ::AbstractVector{<:Real}`: the weights of the control points.
 - `ax::Union{PyObject,Nothing}=nothing`: the figure's axes.
 
 # Returns
@@ -162,8 +162,8 @@ bezcurve_plot(bezpts,bezwts)
 PyObject <AxesSubplot:>
 ```
 """
-function bezcurve_plot(bezptsᵣ::AbstractArray{<:Real,2},
-    bezwtsᵣ::AbstractArray{<:Real,1},
+function bezcurve_plot(bezptsᵣ::AbstractMatrix{<:Real},
+    bezwtsᵣ::AbstractVector{<:Real},
     ax::Union{PyObject,Nothing}=nothing)::PyObject
     if ax == nothing; (fig,ax)=subplots(); end
     

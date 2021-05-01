@@ -1,13 +1,16 @@
 module QuadraticIntegration
 
 include("Polynomials.jl")
+include("EPMs.jl")
 
 import SymmetryReduceBZ.Utilities: unique_points
 
 import .Polynomials: sample_simplex,eval_poly,getpoly_coeffs,barytocart,
     carttobary, getbez_pts₋wts,eval_bezcurve,conicsection
 
-import LinearAlgebra: cross,det
+import .EPMs: eval_epm, RytoeV
+
+import LinearAlgebra: cross,det,norm,dot
 using MiniQhull,Delaunay
 import Delaunay: Triangulation
 import Statistics: mean
@@ -19,7 +22,7 @@ import SparseArrays: findnz
 
 Put the vertices of a triangle (columns of an array) in counterclockwise order.
 """
-function order_vertices!(vertices::AbstractArray{<:Real,2})
+function order_vertices!(vertices::AbstractMatrix{<:Real})
     for i=1:3
         j = mod1(i+1,3)
         k = mod1(i+2,3)
@@ -40,9 +43,9 @@ end
 Calculate the value of a quadratic curve at its vertex.
 
 # Arguments
-- `bezcoeffs::AbstractArray{<:Real,1}`: the quadratic polynomial coefficients.
+- `bezcoeffs::AbstractVector{<:Real}`: the quadratic polynomial coefficients.
 """
-function quadval_vertex(bezcoeffs::AbstractArray{<:Real,1})
+function quadval_vertex(bezcoeffs::AbstractVector{<:Real})
     (a,b,c) = bezcoeffs
     (-b^2+a*c)/(a-2b+c)
 end
@@ -53,12 +56,12 @@ end
 Calculate where a quadratic curve is equal to zero within [0,1).
 
 # Arguments
-- `bezpts::AbstractArray{<:Real,2}`: the Bezier points (columns of an array).
+- `bezpts::AbstractMatrix{<:Real}`: the Bezier points (columns of an array).
 - `atol::Real=1e-12`: absolute tolerance for comparisons of floating point 
     numbers with zero.
 
 # Returns
-- `::AbstractArray{<:Real,1}`: an array of up to two intersections as real numbers.
+- `::AbstractVector{<:Real}`: an array of up to two intersections as real numbers.
 
 # Examples
 import Pebsi.QuadraticIntegration: edge_intersects
@@ -69,8 +72,8 @@ edge_intersects(bezpts) == [0.5]
 1-element Array{Float64,1}:
  0.5
 """
-function edge_intersects(bezpts::AbstractArray{<:Real,2};
-    atol::Real=1e-12)::AbstractArray{<:Real,1}
+function edge_intersects(bezpts::AbstractMatrix{<:Real};
+    atol::Real=1e-12)::AbstractVector{<:Real}
    
     # Cases where the curve is above zero, below zero, or at zero.
     coeffs = bezpts[end,:]
@@ -142,7 +145,7 @@ edge_indices=[[1,2,3],[3,5,6],[6,4,1]]
 Calculate the location where a level curve of a quadratic surface at z=0 intersects a triangle.
 
 # Arguments
-- `bezpts::AbstractArray{<:Real,2}`: the Bezier points of the quadratic, Bezier
+- `bezpts::AbstractMatrix{<:Real}`: the Bezier points of the quadratic, Bezier
     surface.
 - `atol::Real=1e-12`: absolute tolerance.
 
@@ -162,7 +165,7 @@ simplex_intersects(bezpts)
  Any[]
 ```
 """
-function simplex_intersects(bezpts::AbstractArray{<:Real,2};
+function simplex_intersects(bezpts::AbstractMatrix{<:Real};
     atol::Real=1e-12)::Array
     intersects = Array{Array,1}([[],[],[]])
     for i=1:3
@@ -187,11 +190,11 @@ end
 Calculate the saddle point of a quadratic Bezier surface.
 
 # Arguments
-- `coeffs::AbstractArray{<:Real,1}`: the coefficients of the quadratic polynomial.
+- `coeffs::AbstractVector{<:Real}`: the coefficients of the quadratic polynomial.
 - `atol::Real=1e-12`: absolute tolerance.
 
 # Returns
-- `::AbstractArray{<:Real,1}`: the coordinates of the saddle point in Barycentric coordinates.
+- `::AbstractVector{<:Real}`: the coordinates of the saddle point in Barycentric coordinates.
 
 # Examples
 ```jldoctest
@@ -205,8 +208,8 @@ saddlepoint(coeffs)
  0.5000000000000001
 ```
 """
-function saddlepoint(coeffs::AbstractArray{<:Real,1};
-    atol::Real=1e-12)::AbstractArray{<:Real,1}
+function saddlepoint(coeffs::AbstractVector{<:Real};
+    atol::Real=1e-12)::AbstractVector{<:Real}
     (z₀₀₂, z₁₀₁, z₂₀₀, z₀₁₁, z₁₁₀, z₀₂₀)=coeffs
     denom = z₀₁₁^2+(z₁₀₁-z₁₁₀)^2+z₀₂₀*(2z₁₀₁-z₂₀₀)-2z₀₁₁*(z₁₀₁+z₁₁₀-z₂₀₀)-z₀₀₂*(z₀₂₀-2z₁₁₀+z₂₀₀)
     
@@ -224,7 +227,7 @@ end
 Calculate the size of the region within a simplex.
 
 # Arguments
-- `simplex::AbstractArray{<:Real,2}`: the vertices of the simplex as columns of 
+- `simplex::AbstractMatrix{<:Real}`: the vertices of the simplex as columns of 
     an array.
 
 # Returns
@@ -240,7 +243,7 @@ simplex_size(simplex)
 0.5
 ```
 """
-function simplex_size(simplex::AbstractArray{<:Real,2})::Real
+function simplex_size(simplex::AbstractMatrix{<:Real})::Real
     abs(1/factorial(size(simplex,1))*det(vcat(simplex,ones(1,size(simplex,2)))))
 end
 
@@ -250,7 +253,7 @@ end
 Check if a point lie within a simplex (including the boundary).
 
 # Arguments
-- `bpt::AbstractArray{<:Real,2}`: a point in Barycentric coordinates.
+- `bpt::AbstractMatrix{<:Real}`: a point in Barycentric coordinates.
 - `atol::Real=1e-12`: an absolute tolerance.
 
 # Returns
@@ -265,7 +268,7 @@ insimplex(bpt)
 true
 ```
 """
-function insimplex(bpt::AbstractArray{<:Real,1};atol::Real=1e-12)
+function insimplex(bpt::AbstractVector{<:Real};atol::Real=1e-12)
     (isapprox(maximum(bpt),1,atol=atol) || maximum(bpt) < 1) &&
     (isapprox(minimum(bpt),0,atol=atol) || minimum(bpt) > 0) &&
     isapprox(sum(bpt),1,atol=atol)
@@ -277,11 +280,11 @@ end
 Check if an array of points in Barycentric coordinates lie within a simplex.
 
 # Arguments
-- `bpts::AbstractArray{<:Real,2}`: an arry of points in barycentric coordinates
+- `bpts::AbstractMatrix{<:Real}`: an arry of points in barycentric coordinates
     as columns of an array.
 - `atol::Real=1e-12`: absolute tolerance.
 """
-function insimplex(bpts::AbstractArray{<:Real,2},atol::Real=1e-12)
+function insimplex(bpts::AbstractMatrix{<:Real},atol::Real=1e-12)
     all(mapslices(x->insimplex(x,atol=atol),bpts,dims=1))
 end
 
@@ -291,7 +294,7 @@ end
 Split a Bezier surface once into sub-Bezier surfaces with the Delaunay method.
 
 # Arguments
-- `bezpts::AbstractArray{<:Real,2}`: the Bezier points of the quadratic surface.
+- `bezpts::AbstractMatrix{<:Real}`: the Bezier points of the quadratic surface.
 - `atol::Real=1e-12`: absolute tolerance.
 
 # Returns
@@ -309,7 +312,7 @@ split_bezsurf₁(bezpts)
  [0.0 0.0 … 0.5 1.0; 0.6 0.8 … 0.5 0.0; 0.08000000000000002 -2.7755575615628914e-17 … -1.0 0.0]
 ```
 """
-function split_bezsurf₁(bezpts::AbstractArray{<:Real,2},
+function split_bezsurf₁(bezpts::AbstractMatrix{<:Real},
     allpts::AbstractArray=[]; atol::Real=1e-12)::AbstractArray
 
     dim = 2
@@ -354,7 +357,7 @@ end
 Split a Bezier surface into sub-Bezier surfaces with the Delaunay method.
 
 # Arguments
-- `bezpts::AbstractArray{<:Real,2}`: the Bezier points of the quadratic surface.
+- `bezpts::AbstractMatrix{<:Real}`: the Bezier points of the quadratic surface.
 - `atol::Real=1e-12`: absolute tolerance.
 
 # Returns
@@ -371,7 +374,7 @@ split_bezsurf₁(bezpts)
  [0.1291676795676943 0.2104171731171805 … 0.315242398148622 0.3388181296305772; 0.5828106204960847 0.46501642135915344 … 0.5042020462958225 0.6611818703694228; -5.329070518200751e-15 -3.39004820851129 … -5.792491135426261 -1.1479627341393213e-15]
 ```
 """
-function split_bezsurf(bezpts::AbstractArray{<:Real,2};atol=1e-12)::AbstractArray
+function split_bezsurf(bezpts::AbstractMatrix{<:Real};atol=1e-12)::AbstractArray
     
     intersects = simplex_intersects(bezpts,atol=atol)
     num_intersects = sum([size(i,2) for i=intersects if i!=[]])
@@ -434,7 +437,7 @@ end
 Calculate the volume within a canonical triangle and Bezier curve of a quadratic surface.
 
 # Arguments
-- `coeffs::AbstractArray{<:Real,1}`: the coefficients of the quadratica surface.
+- `coeffs::AbstractVector{<:Real}`: the coefficients of the quadratica surface.
 - `w::Real`: the weight of the middle Bezier point of a rational, quadratic, Bezier curve.
 - `atol::Real=1e-12`: an absolute tolerance for finite precision tolerances.
 
@@ -451,7 +454,7 @@ analytic_volume(coeffs,w)
 0.4426972170733675
 ```
 """
-function analytic_volume(coeffs::AbstractArray{<:Real,1},w::Real;
+function analytic_volume(coeffs::AbstractVector{<:Real},w::Real;
         atol::Real=1e-12)::Real
     
     (c₅,c₃,c₀,c₄,c₁,c₂) = coeffs
@@ -485,12 +488,12 @@ end
 Calculate the coefficients of a quadratic sub-surface of a quadratic triangle.
 
 # Arguments
-- `bezpts::AbstractArray{<:Real,2}`: the Bezier points of the quadratic triangle.
-- `subtriangle::AbstractArray{<:Real,2}`: a subtriangle give by the points at
+- `bezpts::AbstractMatrix{<:Real}`: the Bezier points of the quadratic triangle.
+- `subtriangle::AbstractMatrix{<:Real}`: a subtriangle give by the points at
     its corners as columns of an array.
 
 # Returns
-- `::AbstractArray{<:Real,1}`: the coefficients of the quadratic triangle over a
+- `::AbstractVector{<:Real}`: the coefficients of the quadratic triangle over a
     sub-surface of a quadratic triangle.
 
 # Examples
@@ -509,8 +512,8 @@ sub₋coeffs(bezpts,subtriangle)
  -5.551115123125783e-17
 ```
 """
-function sub₋coeffs(bezpts::AbstractArray{<:Real,2},
-    subtriangle::AbstractArray{<:Real,2})::AbstractArray{<:Real,1}
+function sub₋coeffs(bezpts::AbstractMatrix{<:Real},
+    subtriangle::AbstractMatrix{<:Real})::AbstractVector{<:Real}
     ptsᵢ = carttobary(barytocart(sample_simplex(2,2),subtriangle),bezpts[1:2,corner_indices])
     valsᵢ = eval_poly(ptsᵢ,bezpts[end,:],2,2)
     getpoly_coeffs(valsᵢ,sample_simplex(2,2),2,2)
@@ -522,7 +525,7 @@ end
 Calculate the area or volume within a quadratic curve and triangle and Quadratic surface.
 
 # Arguments
-- `bezpts::AbstractArray{<:Real,2}`: the Bezier points of a quadratic surface.
+- `bezpts::AbstractMatrix{<:Real}`: the Bezier points of a quadratic surface.
 - `quantity::String`: the quantity to compute ("area" or "volume").
 - `intersects::AbstractArray=[]`: the two point where the curve intersects the 
     triangle as columns of an array.
@@ -542,7 +545,7 @@ two₋intersects_area₋volume(bezpts,"volume")
 -0.3533719907367465
 ```
 """
-function two₋intersects_area₋volume(bezpts::AbstractArray{<:Real,2},
+function two₋intersects_area₋volume(bezpts::AbstractMatrix{<:Real},
     quantity::String; atol::Real=1e-12)::Real
 
     # Calculate the bezier curve and weights make sure the curve passes through
@@ -677,7 +680,7 @@ end
 Calculate the area of the shadow of a quadric or the volume beneath the quadratic.
 
 # Arguments
-- `bezpts::AbstractArray{<:Real,2}`: the Bezier points of the quadratic surface.
+- `bezpts::AbstractMatrix{<:Real}`: the Bezier points of the quadratic surface.
 - `quantity::String`: the quantity to calculate ("area" or "volume").
 - `atol::Real=1e-12`: an absolute tolerance for floating point comparisons.
 
@@ -695,12 +698,140 @@ quad_area₋volume(bezpts,"area")
 0.869605101106897
 ```
 """
-function quad_area₋volume(bezpts::AbstractArray{<:Real,2},
+function quad_area₋volume(bezpts::AbstractMatrix{<:Real},
         quantity::String;atol::Real=1e-12)::Real
     sum([two₋intersects_area₋volume(b,quantity,atol=atol) for 
         b=split_bezsurf(bezpts,atol=atol)])    
 end
 
+@doc """
+    calc_mesh₋bezcoeffs(recip_latvecs,rules,cutoff,sheets,mesh,energy_conversion_factor; rtol,atol)
+
+Calculate the quadratic coefficients of a triangulation of the IBZ.
+
+# Arguments
+- `recip_latvecs::AbstractMatrix{<:Real}`: the reciprocal lattice basis as columns of
+    a square matrix.
+- `rules::Dict{Float64,Float64}`: a dictionary whose keys are distances between
+    reciprocal lattice points rounded to two decimals places and whose values
+    are the empirical pseudopotential form factors.
+- `cutoff::Real`: the Fourier expansion cutoff.
+- `sheets<:Int`: the number of sheets considered in the calculation.
+- `mesh::Delaunay.Triangulation`: a simplex tesselation of the IBZ.
+- `energy_conversion_factor::Real=RytoeV`: converts the energy eigenvalue units
+    from the energy unit for `rules` to an alternative energy unit.
+- `rtol::Real=sqrt(eps(float(maximum(recip_latvecs))))`: a relative tolerance for
+    finite precision comparisons. This is used for identifying points within a
+    circle or sphere in the Fourier expansion of the EPM.
+- `atol::Real=1e-9`: an absolute tolerance for finite precision comparisons.
+
+# Output
+- `mesh_bezcoeffs::Vector{Vector{Any}}`: the coefficients of all quadratic polynomials. The
+    array is ordered first by `simplex` and then by `sheet`: `mesh_bezcoeffs[simplex][sheet]`.
+
+# Examples
+```jldoctest
+import Pebsi.EPMs: m4recip_latvecs, m4rules, m4cutoff, m4ibz
+import Delaunay: delaunay
+sheets = 2
+mesh = delaunay(m4ibz.points)
+energy_conv = 1
+mesh_bezcoeffs = calc_mesh₋bezcoeffs(m4recip_latvecs,m4rules,m4cutoff,sheets,mesh,energy_conv)
+# output
+2-element Vector{Vector{Any}}:
+ [[0.4825655582645329, 0.46891799288429503, 0.45695660389445203, -0.20577513367855282, -0.2284287599373549, -0.319970723890622], [1.0021520603113079, 0.962567754290957, 0.9364044831997849, 0.9050494036379049, 1.5874293259883903, 1.041804108772328]]
+ [[-0.28153999982153577, -0.18566890981787773, 0.4825655582645329, -0.30280441786109924, -0.2057751336785528, -0.319970723890622], [0.5806033720376905, 0.8676008216346605, 1.0021520603113079, 0.6209049649780336, 0.905049403637905, 1.041804108772328]]
+```
+"""
+function calc_mesh₋bezcoeffs(recip_latvecs::AbstractMatrix{<:Real},
+    rules::Dict{Float64,Float64},cutoff::Real,sheets::Int,mesh::Triangulation,
+    energy_conversion_factor::Real=RytoeV; 
+    rtol::Real=sqrt(eps(float(maximum(recip_latvecs)))),atol::Real=1e-9)::Vector{Vector{Any}}
+
+    dim,deg=(2,2)
+    simplex_bpts=sample_simplex(dim,deg)
+    mesh_bezcoeffs = [Vector{Any}[] for i=1:size(mesh.simplices,1)]
+    for s = 1:size(mesh.simplices,1)
+        simplex = Array(mesh.points[mesh.simplices[s,:],:]')
+        simplex_pts = barytocart(simplex_bpts,simplex)
+        values = eval_epm(simplex_pts,recip_latvecs,rules,cutoff,sheets,
+            energy_conversion_factor,rtol=rtol,atol=atol)
+        mesh_bezcoeffs[s] = [getpoly_coeffs(values[i,:],simplex_bpts,dim,deg) for i=1:sheets]
+    end
+    mesh_bezcoeffs
+end
+
+@doc """
+    shadow₋size(recip_latvecs,rules,cutoff,sheets,mesh,fermi_level,energy_conversion_factor;rtol,atol)
+
+Calculate the size of the shadow of the band structure beneath the Fermi level.
+
+# Arguments
+- `recip_latvecs::AbstractMatrix{<:Real}`: the reciprocal lattice basis as columns of
+    a square matrix.
+- `rules::Dict{Float64,Float64}`: a dictionary whose keys are distances between
+    reciprocal lattice points rounded to two decimals places and whose values
+    are the empirical pseudopotential form factors.
+- `cutoff::Real`: the Fourier expansion cutoff.
+- `sheets<:Int`: the number of sheets considered in the calculation.
+- `mesh::Delaunay.Triangulation`: a simplex tesselation of the IBZ.
+- `fermi_level::Real`: an estimate of the value of the Fermi level.
+- `energy_conversion_factor::Real=RytoeV`: converts the energy eigenvalue units
+    from the energy unit for `rules` to an alternative energy unit.
+- `rtol::Real=sqrt(eps(float(maximum(recip_latvecs))))`: a relative tolerance for
+    finite precision comparisons. This is used for identifying points within a
+    circle or sphere in the Fourier expansion of the EPM.
+- `atol::Real=1e-9`: an absolute tolerance for finite precision comparisons.
+
+# Returns
+    `shadow_size::Real`: the size of the shadow of the sheets onto the IBZ for the 
+    estimated Fermi level.
+
+# Examples
+```jldoctest
+import Pebsi.EPMs: m5recip_latvecs, m5real_latvecs, m5rules, m5cutoff, m5ibz
+import Delaunay: delaunay
+sheets = 5
+mesh = delaunay(m5ibz.points)
+fermi_level = 0.5
+energy_conv=1
+shadow₋size(m5recip_latvecs,m5rules,m5cutoff,sheets,mesh,fermi_level,energy_conv)
+# output
+0.9257020287626774
+```
+"""
+function shadow₋size(recip_latvecs::AbstractMatrix{<:Real},rules::Dict{Float64,Float64},
+        cutoff::Real,sheets::Int,mesh::Triangulation,fermi_level::Real,
+        energy_conversion_factor::Real=RytoeV;rtol::Real=sqrt(eps(float(maximum(recip_latvecs)))),atol::Real=1e-9)::Real
+    
+    dim,deg=(2,2)
+    simplex_bpts=sample_simplex(dim,deg)
+    shadow_size = 0
+    for s = 1:size(mesh.simplices,1)
+        simplex = Array(mesh.points[mesh.simplices[s,:],:]')
+        simplex_pts = barytocart(simplex_bpts,simplex)
+        values = eval_epm(simplex_pts,recip_latvecs,rules,cutoff,sheets,energy_conversion_factor) .- fermi_level
+        sheet_bezpts = [[simplex_pts; getpoly_coeffs(values[i,:],simplex_bpts,dim,deg)'] for i=1:sheets[end]]
+        shadow_size += sum([quad_area₋volume(sheet_bezpts[i],"area") for i=1:sheets[end]])
+    end
+    shadow_size
+end
+
+
+function shadow₋size(mesh::Triangulation, mesh_bezcoeffs::Vector{Vector{Any}},fermi_level::Real)::Real
+
+    dim,deg=(2,2)
+    simplex_bpts=sample_simplex(dim,deg)
+    sheets = size(mesh_bezcoeffs[1],1)
+    shadow_size = 0
+    for s = 1:size(mesh.simplices,1)
+        simplex = Array(mesh.points[mesh.simplices[s,:],:]')
+        simplex_pts = barytocart(simplex_bpts,simplex)
+        sheet_bezpts = [Matrix{Real}([simplex_pts; mesh_bezcoeffs[s][i]']) for i=1:sheets]
+        shadow_size += sum([quad_area₋volume(sheet_bezpts[i],"area") for i=1:sheets])
+    end
+    shadow_size
+end
 
 @doc """
     get₋neighbors(index,mesh,num₋neighbors=2)
@@ -743,6 +874,45 @@ function get₋neighbors(index::Int,mesh::Triangulation,num₋neighbors::Int=2):
         indices = unique([indices;first₋neighbors])
     end
     indices[2:end]
+end
+
+@doc """
+    lineseg₋pt_dist(line_seg,pt)
+
+Calculate the shortest distance from a point to a line segment.
+
+# Arguments
+- `line_seg::Matrix{<:Real}`: a line segment given by two points. The points
+    are the columns of the matrix.
+- `p3::Vector{<:Real}`: a point in Cartesian coordinates.
+- `atol::Real=1e-9`: an absolute tolerance for floating point comparisons.
+
+# Returns
+- `d::Real`: the shortest distance from the point to the line segment.
+
+# Examples
+```jldoctest
+lineseg = [0 0; 0 1]
+pt = [0.5, 0.5]
+lineseg₋pt_dist(lineseg,pt)
+# output
+0.5000000000000001
+```
+"""
+function lineseg₋pt_dist(line_seg::Matrix{<:Real},p3::Vector{<:Real};atol::Real=1e-9)::Real
+    
+    p1 = line_seg[:,1]
+    p2 = line_seg[:,2]
+    proj = dot((p2-p1)/norm(p2 - p1),p3-p1)
+    if proj <= norm(p2 - p1) && 0 <= proj
+        if isapprox(norm(p3 - p1)^2 - proj^2,0,atol=atol)
+            d = 0
+        else
+            d = √(norm(p3 - p1)^2 - proj^2)
+        end
+    else
+        d = minimum([norm(p3 - p1),norm(p3 - p2)])
+    end 
 end
 
 end # module
