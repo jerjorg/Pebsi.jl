@@ -11,6 +11,7 @@ module EPMs
 
 import SymmetryReduceBZ.Lattices: genlat_FCC, genlat_BCC, genlat_HEX,
     genlat_BCT, get_recip_latvecs
+import SymmetryReduceBZ.Symmetry: calc_spacegroup
 
 import PyCall: pyimport
 import PyPlot: subplots
@@ -233,8 +234,14 @@ Zn_ibz = chull([0.0 0.0 0.05348680480525454; 0.0 0.0 0.0; -0.06619141232616481 0
 
 # 2D "toy" empirical pseudopotentials (the form factors are chosen at random)
 # Model 1 - square symmetry
+atom_types = [0]
+atom_pos = Array([0 0;]')
+coordinates = "Cartesian" 
+
 convention = "ordinary"
 m1real_latvecs = [1 0; 0 1]
+(m1frac_trans,m1pointgroup) = calc_spacegroup(m1real_latvecs,atom_types,atom_pos,
+    coordinates)
 m1recip_latvecs = get_recip_latvecs(m1real_latvecs,convention)
 m1rules = Dict(1.00 => -0.23, 1.41 => 0.12)
 m1electrons1 = 6
@@ -255,6 +262,8 @@ m1bandenergy3 = 2.145219996962875
 convention = "ordinary"
 m2recip_latvecs = [0.5 0.5; 0.8660254037844386 -0.8660254037844386]
 m2real_latvecs = get_recip_latvecs(m2recip_latvecs,convention)
+(m2frac_trans,m2pointgroup) = calc_spacegroup(m2real_latvecs,atom_types,atom_pos,
+    coordinates)
 m2rules = Dict(1.0 => 0.39, 1.73 => 0.23, 2.0 => -0.11)
 m2cutoff = 5.9
 
@@ -274,6 +283,8 @@ m2bandenergy3 = 0.38884262264868563
 convention = "ordinary"
 m3recip_latvecs = [0.4338837391175581 1.0; 0.9009688679024191 0.0]
 m3real_latvecs = get_recip_latvecs(m3recip_latvecs,convention)
+(m3frac_trans,m3pointgroup) = calc_spacegroup(m3real_latvecs,atom_types,atom_pos,
+    coordinates)
 m3rules = Dict(1.0 => -0.27, 1.06 => 0.2, 1.69 => -0.33)
 m3cutoff = 5.95
 
@@ -293,6 +304,8 @@ m3bandenergy3 = 1.1860046687293682
 convention = "ordinary"
 m4recip_latvecs = [1 0; 0 2]
 m4real_latvecs = get_recip_latvecs(m4recip_latvecs,convention)
+(m4frac_trans,m4pointgroup) = calc_spacegroup(m4real_latvecs,atom_types,atom_pos,
+    coordinates)
 m4rules = Dict(1.0 => 0.39, 2.0 => -0.11, 2.24 => 0.11)
 m4cutoff = 8.6
 
@@ -312,6 +325,8 @@ m4bandenergy3 = 9.555193758896971
 convention = "ordinary"
 m5recip_latvecs = [1.0 -0.4; 0.0 1.0392304845413265]
 m5real_latvecs = get_recip_latvecs(m5recip_latvecs,convention)
+(m5frac_trans,m5pointgroup) = calc_spacegroup(m5real_latvecs,atom_types,atom_pos,
+    coordinates)
 m5rules = Dict(1.0 => 0.42, 1.11 => 0.02, 1.2 => -0.18)
 m5cutoff = 6.3
 
