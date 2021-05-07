@@ -1,41 +1,11 @@
 module Polynomials
 
+include("Geometry.jl")
+import .Geometry: sample_simplex,barytocart,carttobary
+
 import Base.Iterators: product
 import LinearAlgebra: dot,det,norm
 import Statistics: mean
-
-@doc """
-    sample_simplex(dim,deg)
-
-Get the sample points of a simplex for a polynomial approximation.
-
-# Arguments
-- `dim::Integer`: the number of dimensions (2 = triangle, 3 = tetrahedron).
-- `deg::Integer`: the degree of the polynomial approximations.
-
-# Returns
-- `::AbstractMatrix{<:Real}`: the points on the simplex as columns of an array.
-
-# Examples
-```jldoctest
-import Pebsi.Polynomials: sample_simplex
-dim = 2
-deg = 1
-sample_simplex(dim,deg)
-# output
-3×3 Array{Float64,2}:
- 1.0  0.0  0.0
- 0.0  1.0  0.0
- 0.0  0.0  1.0
-```
-"""
-function sample_simplex(dim::Integer,deg::Integer,
-    rtol::Real=sqrt(eps(1.0)),
-    atol::Real=0.0)::AbstractMatrix{<:Real}
-    reduce(hcat,filter(x->length(x)>0, 
-        [isapprox(sum(p),1,rtol=rtol,atol=atol) ? collect(p) : [] 
-        for p=collect(product([0:1/deg:1 for i=0:dim]...))]))
-end
 
 @doc """
     bernstein_basis(bpt,dim,deg)
@@ -84,75 +54,6 @@ Evaluate the Bernstein basis functions at each point in an array (points are col
 function bernstein_basis(bpts::AbstractMatrix{<:Real},dim::Integer,
     deg::Integer)::AbstractMatrix{<:Real}
     mapslices(x->bernstein_basis(x,dim,deg),bpts,dims=1)
-end
-
-
-@doc """
-    barytocart(barypt,simplex)
-
-Convert a point from barycentric to Cartesian coordinates.
-
-# Arguments
-- `barypt::AbstractVector{<:Real}`: a point in Barycentric coordinates.
-- `simplex::AbstractMatrix{<:Real}`: the vertices of a simplex as columns of
-    an array.
-
-# Returns
-- `::AbstractVector{<:Real}`: the point in Cartesian coordinates.
-
-# Examples
-```jldoctest
-import Pebsi.Polynomials: barytocart
-barypt = [0,0,1]
-simplex = [0.0 0.5 0.5; 1.0 1.0 0.0]
-barytocart(barypt,simplex)
-# output
-2-element Array{Float64,1}:
- 0.5
- 0.0
-```
-"""
-function barytocart(barypt::AbstractVector{<:Real},
-        simplex::AbstractMatrix{<:Real})::AbstractVector{<:Real}
-    [sum(reduce(hcat,[simplex[:,i]*barypt[i] for i=1:length(barypt)]),dims=2)...]
-end
-
-@doc """
-    barytocart(barypts,simplex)
-
-Convert points as columns on an array from barycentric to Cartesian coordinates.
-"""
-function barytocart(barypts::AbstractMatrix{<:Real},
-    simplex::AbstractMatrix{<:Real})::AbstractMatrix{<:Real}
-    mapslices(x->barytocart(x,simplex),barypts,dims=1)
-end
-
-@doc """
-    carttobary(pt,simplex)
-
-Transform a point from Cartesian to barycentric coordinates.
-
-# Arguments
-- `pt::AbstractVector{<:Real}`: the point in Cartesian coordinates
-- `simplex::AbstractMatrix{<:Real}`: the corners of the simplex as columns of an array.
-"""
-function carttobary(pt::AbstractVector{<:Real},
-        simplex::AbstractMatrix{<:Real})::AbstractVector{<:Real}
-
-    inv(vcat(simplex,ones(Int,(1,size(simplex,2)))))*vcat(pt,1)
-end
-
-@doc """
-    carttobary(pt,simplex)
-
-Transform an array of points from Cartesian to barycentric coordinates.
-
-# Arguments
-- `pts::AbstractMatrix{<:Real}`: the points in Cartesian coordinates as columns of an array.
-"""
-function carttobary(pts::AbstractMatrix{<:Real},
-        simplex::AbstractMatrix{<:Real})::AbstractMatrix{<:Real}
-    mapslices(x->carttobary(x,simplex),pts,dims=1)
 end
 
 @doc """
@@ -329,7 +230,12 @@ function getbez_pts₋wts(bezpts::AbstractMatrix{<:Real},
         bezwtsᵣ = [w₀,0,w₂]
         bezptsᵣ = [p₀ (p₀+p₂)/2 p₂]
     else
-        w₁ = √(-h₁₁₀/2h₀₀₂)
+        arg = -h₁₁₀/2h₀₀₂
+        if !(isapprox(arg,0,atol=atol)) && arg < 0
+            w₁ = 0
+        else 
+            w₁ = √(arg)
+        end
         bezwtsᵣ = [w₀,w₁,w₂]
         bezptsᵣ = [p₀ barytocart(p₁,triangle) p₂]
     end

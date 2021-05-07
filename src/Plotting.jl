@@ -5,10 +5,11 @@ import QHull: chull
 
 include("RectangularMethod.jl")
 include("Polynomials.jl")
+include("Geometry.jl")
 
 import .RectangularMethod: sample_unitcell
-import .Polynomials: carttobary,barytocart,eval_poly,sample_simplex,
-    eval_bezcurve
+import .Polynomials: eval_poly,sample_simplex,eval_bezcurve
+import .Geometry: carttobary,barytocart
 
 import SymmetryReduceBZ.Plotting: plot_2Dconvexhull
 
@@ -82,7 +83,7 @@ function contourplot(bezpts::AbstractMatrix{<:Real},
     simplex = bezpts[1:2,[1,3,6]]
     if ax == nothing; (fig,ax)=subplots() end
     shull = chull(Array(simplex'))
-    ax=plot_2Dconvexhull(shull,ax,"none")
+    ax=plot_2Dconvexhull(shull,ax,facecolor="None")
     if padded
         N = [ndivs 0; 0 ndivs]
         basis = [simplex[:,2] - simplex[:,1] simplex[:,3] - simplex[:,1]]

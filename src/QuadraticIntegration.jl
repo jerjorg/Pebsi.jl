@@ -2,41 +2,27 @@ module QuadraticIntegration
 
 include("Polynomials.jl")
 include("EPMs.jl")
+include("Mesh.jl")
+include("Geometry.jl")
 
 import SymmetryReduceBZ.Utilities: unique_points, shoelace
 import SymmetryReduceBZ.Symmetry: calc_spacegroup
 
-import .Polynomials: sample_simplex,eval_poly,getpoly_coeffs,barytocart,
-    carttobary, getbez_pts₋wts,eval_bezcurve,conicsection
+import .Polynomials: eval_poly,getpoly_coeffs,getbez_pts₋wts,eval_bezcurve,
+    conicsection
 
 import .EPMs: eval_epm, RytoeV
 
+import .Mesh: get₋neighbors,notbox_simplices
+import .Geometry: order_vertices!,simplex_size,insimplex,barytocart,carttobary,
+    sample_simplex
+
 import QHull: chull,Chull
-import LinearAlgebra: cross,det,norm,dot
-using MiniQhull,Delaunay
+import LinearAlgebra: cross,det,norm,dot,I
 import Statistics: mean
 import Base.Iterators: flatten
 import SparseArrays: findnz
 import PyCall: PyObject, pyimport
-
-@doc """
-    order_vertices(vertices)
-
-Put the vertices of a triangle (columns of an array) in counterclockwise order.
-"""
-function order_vertices!(vertices::AbstractMatrix{<:Real})
-    for i=1:3
-        j = mod1(i+1,3)
-        k = mod1(i+2,3)
-        (v1,v2,v3) = [vertices[:,l] for l=[i,j,k]]
-        if cross(vcat(v2-v1,0),vcat(v3-v1,0))[end] < 0
-            v = vertices[:,k]
-            vertices[:,k] = vertices[:,j]
-            vertices[:,j] = v
-        end 
-    end
-    vertices
-end
 
 
 @doc """
@@ -59,7 +45,7 @@ Calculate where a quadratic curve is equal to zero within [0,1).
 
 # Arguments
 - `bezpts::AbstractMatrix{<:Real}`: the Bezier points (columns of an array).
-- `atol::Real=1e-12`: absolute tolerance for comparisons of floating point 
+- `atol::Real=1e-9`: absolute tolerance for comparisons of floating point 
     numbers with zero.
 
 # Returns
@@ -75,7 +61,7 @@ edge_intersects(bezpts) == [0.5]
  0.5
 """
 function edge_intersects(bezpts::AbstractMatrix{<:Real};
-    atol::Real=1e-12)::AbstractVector{<:Real}
+    atol::Real=1e-9)::AbstractVector{<:Real}
    
     # Cases where the curve is above zero, below zero, or at zero.
     coeffs = bezpts[end,:]
@@ -149,7 +135,7 @@ Calculate the location where a level curve of a quadratic surface at z=0 interse
 # Arguments
 - `bezpts::AbstractMatrix{<:Real}`: the Bezier points of the quadratic, Bezier
     surface.
-- `atol::Real=1e-12`: absolute tolerance.
+- `atol::Real=1e-9`: absolute tolerance.
 
 # Returns
 - `intersects::Array`: the intersections organized by edge in a 1D array. Each 
@@ -168,7 +154,7 @@ simplex_intersects(bezpts)
 ```
 """
 function simplex_intersects(bezpts::AbstractMatrix{<:Real};
-    atol::Real=1e-12)::Array
+    atol::Real=1e-9)::Array
     intersects = Array{Array,1}([[],[],[]])
     for i=1:3
         edge_bezpts = bezpts[:,edge_indices[i]]
@@ -193,7 +179,7 @@ Calculate the saddle point of a quadratic Bezier surface.
 
 # Arguments
 - `coeffs::AbstractVector{<:Real}`: the coefficients of the quadratic polynomial.
-- `atol::Real=1e-12`: absolute tolerance.
+- `atol::Real=1e-9`: absolute tolerance.
 
 # Returns
 - `::AbstractVector{<:Real}`: the coordinates of the saddle point in Barycentric coordinates.
@@ -211,7 +197,7 @@ saddlepoint(coeffs)
 ```
 """
 function saddlepoint(coeffs::AbstractVector{<:Real};
-    atol::Real=1e-12)::AbstractVector{<:Real}
+    atol::Real=1e-9)::AbstractVector{<:Real}
     (z₀₀₂, z₁₀₁, z₂₀₀, z₀₁₁, z₁₁₀, z₀₂₀)=coeffs
     denom = z₀₁₁^2+(z₁₀₁-z₁₁₀)^2+z₀₂₀*(2z₁₀₁-z₂₀₀)-2z₀₁₁*(z₁₀₁+z₁₁₀-z₂₀₀)-z₀₀₂*(z₀₂₀-2z₁₁₀+z₂₀₀)
     
@@ -225,79 +211,13 @@ function saddlepoint(coeffs::AbstractVector{<:Real};
 end
 
 @doc """
-    simplex_size(simplex)
-Calculate the size of the region within a simplex.
-
-# Arguments
-- `simplex::AbstractMatrix{<:Real}`: the vertices of the simplex as columns of 
-    an array.
-
-# Returns
-- `::Real`: the size of the region within the simplex. For example, the area
-    within a triangle in 2D.
-
-# Examples
-```jldoctest
-import Pebsi.QuadraticIntegration: simplex_size
-simplex = [0 0 1; 0 1 0]
-simplex_size(simplex)
-# output
-0.5
-```
-"""
-function simplex_size(simplex::AbstractMatrix{<:Real})::Real
-    abs(1/factorial(size(simplex,1))*det(vcat(simplex,ones(1,size(simplex,2)))))
-end
-
-@doc """
-    insimplex(bpt;atol)
-
-Check if a point lie within a simplex (including the boundary).
-
-# Arguments
-- `bpt::AbstractMatrix{<:Real}`: a point in Barycentric coordinates.
-- `atol::Real=1e-12`: an absolute tolerance.
-
-# Returns
-- `::Bool`: a boolean indicating if the point is within the simplex.
-
-# Examples
-```jldoctest
-import Pebsi.QuadraticIntegration: insimplex
-bpt = Array([0 1]')
-insimplex(bpt)
-# output
-true
-```
-"""
-function insimplex(bpt::AbstractVector{<:Real};atol::Real=1e-12)
-    (isapprox(maximum(bpt),1,atol=atol) || maximum(bpt) < 1) &&
-    (isapprox(minimum(bpt),0,atol=atol) || minimum(bpt) > 0) &&
-    isapprox(sum(bpt),1,atol=atol)
-end
-
-@doc """
-    insimplex(bpts,atol)
-
-Check if an array of points in Barycentric coordinates lie within a simplex.
-
-# Arguments
-- `bpts::AbstractMatrix{<:Real}`: an arry of points in barycentric coordinates
-    as columns of an array.
-- `atol::Real=1e-12`: absolute tolerance.
-"""
-function insimplex(bpts::AbstractMatrix{<:Real},atol::Real=1e-12)
-    all(mapslices(x->insimplex(x,atol=atol),bpts,dims=1))
-end
-
-@doc """
     split_bezsurf₁(bezpts,atol)
 
 Split a Bezier surface once into sub-Bezier surfaces with the Delaunay method.
 
 # Arguments
 - `bezpts::AbstractMatrix{<:Real}`: the Bezier points of the quadratic surface.
-- `atol::Real=1e-12`: absolute tolerance.
+- `atol::Real=1e-9`: absolute tolerance.
 
 # Returns
 - `sub_bezpts::AbstractArray`: the Bezier points of the sub-surfaces.
@@ -315,8 +235,8 @@ split_bezsurf₁(bezpts)
 ```
 """
 function split_bezsurf₁(bezpts::AbstractMatrix{<:Real},
-    allpts::AbstractArray=[]; atol::Real=1e-12)::AbstractArray
-
+    allpts::AbstractArray=[]; atol::Real=1e-9)::AbstractArray
+    spatial = pyimport("scipy.spatial")
     dim = 2
     deg = 2
     triangle = bezpts[1:2,corner_indices]
@@ -325,12 +245,11 @@ function split_bezsurf₁(bezpts::AbstractMatrix{<:Real},
     simplex_bpts = sample_simplex(dim,deg)
     intersects = simplex_intersects(bezpts,atol=atol)
     spt = saddlepoint(coeffs,atol=atol)
-
     if intersects == [[],[],[]]
         if insimplex(spt)
             allpts = [pts barytocart(spt,triangle)]
         else
-            allpts = [pts]
+            allpts = pts
         end
     else
         allintersects = reduce(hcat,[i for i=intersects if i!=[]])
@@ -340,9 +259,21 @@ function split_bezsurf₁(bezpts::AbstractMatrix{<:Real},
             allpts = [pts allintersects]
         end
     end
+
     allpts = unique_points(allpts,atol=atol)
-    
-    tri_ind = MiniQhull.delaunay(allpts)
+
+    # Had to add box points to prevent collinear triangles.
+    xmax,ymax = maximum(bezpts[1:2,:],dims=2)
+    xmin,ymin = minimum(bezpts[1:2,:],dims=2)
+    xmax += 0.2*abs(xmax - xmin)
+    xmin -= 0.2*abs(xmax - xmin)
+    ymax += 0.2*abs(ymax - ymin)
+    ymin -= 0.2*abs(ymax - ymin)
+    boxpts = [xmin xmax xmax xmin; ymin ymin ymax ymax]
+    allpts = [boxpts allpts]
+
+    del = spatial.Delaunay(Matrix(allpts'))
+    tri_ind = reduce(hcat,notbox_simplices(del))
     subtri = [order_vertices!(allpts[:,tri_ind[:,i]]) for i=1:size(tri_ind,2)]
     sub_pts = [barytocart(simplex_bpts,tri) for tri=subtri]
     sub_bpts = [carttobary(pts,triangle) for pts=sub_pts]
@@ -360,7 +291,7 @@ Split a Bezier surface into sub-Bezier surfaces with the Delaunay method.
 
 # Arguments
 - `bezpts::AbstractMatrix{<:Real}`: the Bezier points of the quadratic surface.
-- `atol::Real=1e-12`: absolute tolerance.
+- `atol::Real=1e-9`: absolute tolerance.
 
 # Returns
 - `sub_bezpts::AbstractArray`: the Bezier points of the sub-surfaces.
@@ -376,7 +307,7 @@ split_bezsurf₁(bezpts)
  [0.1291676795676943 0.2104171731171805 … 0.315242398148622 0.3388181296305772; 0.5828106204960847 0.46501642135915344 … 0.5042020462958225 0.6611818703694228; -5.329070518200751e-15 -3.39004820851129 … -5.792491135426261 -1.1479627341393213e-15]
 ```
 """
-function split_bezsurf(bezpts::AbstractMatrix{<:Real};atol=1e-12)::AbstractArray
+function split_bezsurf(bezpts::AbstractMatrix{<:Real};atol=1e-9)::AbstractArray
     
     intersects = simplex_intersects(bezpts,atol=atol)
     num_intersects = sum([size(i,2) for i=intersects if i!=[]])
@@ -434,14 +365,14 @@ function analytic_area(w::Real)::Real
 end
 
 @doc """
-    analytic_coeffs(coeffs,w;atol=1e-12)
+    analytic_coeffs(coeffs,w;atol=1e-9)
 
 Calculate the volume within a canonical triangle and Bezier curve of a quadratic surface.
 
 # Arguments
 - `coeffs::AbstractVector{<:Real}`: the coefficients of the quadratica surface.
 - `w::Real`: the weight of the middle Bezier point of a rational, quadratic, Bezier curve.
-- `atol::Real=1e-12`: an absolute tolerance for finite precision tolerances.
+- `atol::Real=1e-9`: an absolute tolerance for finite precision tolerances.
 
 # Returns
 - `::Real`: the area within the triangle and Bezier curve.
@@ -457,13 +388,10 @@ analytic_volume(coeffs,w)
 ```
 """
 function analytic_volume(coeffs::AbstractVector{<:Real},w::Real;
-        atol::Real=1e-12)::Real
+        atol::Real=1e-9)::Real
     
     (c₅,c₃,c₀,c₄,c₁,c₂) = coeffs
     d = c₀+c₁+c₂+c₃+c₄+c₅
-    #if isapprox(d,0,atol=atol)
-    #    return 0
-    #end
     # Use the Taylor expansion of the analytic solution if the weight is close to 1.
     if isapprox(w,1,atol=1e-2)
         d/6*((6/7+(2*(-11*c₀-5*(c₁+c₃)+c₄))/(35*d))+4/105*(5+(3*c₀+5*(c₁+c₃)-c₄)/d)*(w-1)+(-(2/11)+(2*(81*c₀+
@@ -476,8 +404,6 @@ function analytic_volume(coeffs::AbstractVector{<:Real},w::Real;
     else
         a = sqrt(Complex(-1-w))
         b = sqrt(Complex(-1+w))
-#        sign(w)real((w*(a*b*w*(-32*c₁+33*c₂-32*c₃+46*c₄+33*c₅-2*(-26*c₀+18*c₁+13*c₂+18*c₃+12*c₄+13*c₅)*w^2+
-#            8*d*w^4)+6*(5*c₂+6*c₄+5*c₅+4*(c₀-5*(c₁+c₃)+c₄)*w^2+16*c₀*w^4)*atan(b/a)))/(8*d*a*b*(-1+w^2)^3))
         sign(w)real((w*(a*b*w*(-32*c₁+33*c₂-32*c₃+46*c₄+33*c₅-2*(-26*c₀+18*c₁+13*c₂+18*c₃+12*c₄+13*c₅)*w^2+
             8*d*w^4)+6*(5*c₂+6*c₄+5*c₅+4*(c₀-5*(c₁+c₃)+c₄)*w^2+16*c₀*w^4)*atan(b/a)))/(6*8*a*b*(-1+w^2)^3))
 
@@ -522,7 +448,7 @@ function sub₋coeffs(bezpts::AbstractMatrix{<:Real},
 end
 
 @doc """
-    two₋intersects_area₋volume(bezpts,quantity,intersects=[];atol=1e-12)
+    two₋intersects_area₋volume(bezpts,quantity,intersects=[];atol=1e-9)
 
 Calculate the area or volume within a quadratic curve and triangle and Quadratic surface.
 
@@ -548,7 +474,7 @@ two₋intersects_area₋volume(bezpts,"volume")
 ```
 """
 function two₋intersects_area₋volume(bezpts::AbstractMatrix{<:Real},
-    quantity::String; atol::Real=1e-12)::Real
+    quantity::String; atol::Real=1e-9)::Real
 
     # Calculate the bezier curve and weights make sure the curve passes through
     # the triangle
@@ -677,14 +603,14 @@ function two₋intersects_area₋volume(bezpts::AbstractMatrix{<:Real},
 end
 
 @doc """
-    quad_area₋volume(bezpts,quantity;atol=1e-12)
+    quad_area₋volume(bezpts,quantity;atol=1e-9)
 
 Calculate the area of the shadow of a quadric or the volume beneath the quadratic.
 
 # Arguments
 - `bezpts::AbstractMatrix{<:Real}`: the Bezier points of the quadratic surface.
 - `quantity::String`: the quantity to calculate ("area" or "volume").
-- `atol::Real=1e-12`: an absolute tolerance for floating point comparisons.
+- `atol::Real=1e-9`: an absolute tolerance for floating point comparisons.
 
 # Returns
 - `::Real`: the area of the shadow of a quadratic polynomial within a triangle
@@ -701,7 +627,7 @@ quad_area₋volume(bezpts,"area")
 ```
 """
 function quad_area₋volume(bezpts::AbstractMatrix{<:Real},
-        quantity::String;atol::Real=1e-12)::Real
+        quantity::String;atol::Real=1e-9)::Real
     sum([two₋intersects_area₋volume(b,quantity,atol=atol) for 
         b=split_bezsurf(bezpts,atol=atol)])    
 end
@@ -719,7 +645,7 @@ Calculate the quadratic coefficients of a triangulation of the IBZ.
     are the empirical pseudopotential form factors.
 - `cutoff::Real`: the Fourier expansion cutoff.
 - `sheets<:Int`: the number of sheets considered in the calculation.
-- `mesh::Triangulation`: a simplex tesselation of the IBZ.
+- `mesh::PyObject`: a simplex tesselation of the IBZ.
 - `energy_conversion_factor::Real=RytoeV`: converts the energy eigenvalue units
     from the energy unit for `rules` to an alternative energy unit.
 - `rtol::Real=sqrt(eps(float(maximum(recip_latvecs))))`: a relative tolerance for
@@ -746,7 +672,7 @@ mesh_bezcoeffs = calc_mesh₋bezcoeffs(m4recip_latvecs,m4rules,m4cutoff,sheets,m
 ```
 """
 function calc_mesh₋bezcoeffs(recip_latvecs::AbstractMatrix{<:Real},
-    rules::Dict{Float64,Float64},cutoff::Real,sheets::Int,mesh::Triangulation,
+    rules::Dict{Float64,Float64},cutoff::Real,sheets::Int,mesh::PyObject,
     energy_conversion_factor::Real=RytoeV; 
     rtol::Real=sqrt(eps(float(maximum(recip_latvecs)))),atol::Real=1e-9)::Vector{Vector{Any}}
 
@@ -837,474 +763,109 @@ function shadow₋size(mesh::PyObject, mesh_bezcoeffs::Vector{Vector{Any}},fermi
 end
 
 @doc """
-    get₋neighbors(index,mesh,num₋neighbors=2)
+    get_inter₋bezpts(index,mesh,ext_mesh,sym₋unique,eigenvals,simplicesᵢ)
 
-Calculate the nth-nearest neighbors of a point in a mesh.
-
-# Arguments
-- `index::Int`: the index of the point in the mesh. The coordinates
-    of the point are `mesh.points[index,:]`.
-- `mesh::PyObject`: a Delaunay triangulation of the mesh from `Delaunay.delaunay`.
-- `num₋neighbors::Int=2`: the number of neighbors to find. For example,
-    if 2, find first and second nearest neighbors.
-
-# Returns
-- `indices::AbstractVector{Int}`: the indices of neighboring points.
-
-# Examples
-```jldoctest
-import Pebsi.QuadraticIntegration: get₋neighbors
-import PyCall: pyimport
-spatial = pyimport("scipy.spatial")
-pts = [0.0 0.0; 0.25 0.0; 0.5 0.0; 0.25 0.25; 0.5 0.25; 0.5 0.5]
-index = 2
-mesh = spatial.Delaunay(pts)
-get₋neighbors(index,mesh)
-# output
-5-element Array{Int64,1}:
- 4
- 1
- 5
- 3
-```
-"""
-function get₋neighbors(index::Int,mesh::PyObject,
-    num₋neighbors::Int=2)::AbstractVector{Int}
-    indices,indptr = mesh.vertex_neighbor_vertices
-    indices .+= 1
-    indptr .+= 1
-    neighborsᵢ = Vector{Int64}(indptr[indices[index]:indices[index+1]-1])
-    # The mesh is enclosed in a box. Don't include neighbors that are the points
-    # of the box.
-    neighborsᵢ = filter(x->!(x in [1,2,3,4,index]), unique(neighborsᵢ))
-    for _=2:num₋neighbors
-         first₋neighborsᵢ = reduce(vcat,[indptr[indices[k]:indices[k+1]-1] for k=neighborsᵢ])
-         first₋neighborsᵢ = filter(x->!(x in [1,2,3,4,index]), unique(first₋neighborsᵢ))
-         neighborsᵢ = [neighborsᵢ;first₋neighborsᵢ]
-     end
-     unique(neighborsᵢ)
-end
-
-@doc """
-    lineseg₋pt_dist(line_seg,pt)
-
-Calculate the shortest distance from a point to a line segment.
+Calculate the interval Bezier points for all sheets.
 
 # Arguments
-- `line_seg::AbstractMatrix{<:Real}`: a line segment given by two points. The points
-    are the columns of the matrix.
-- `p3::AbstractVector{<:Real}`: a point in Cartesian coordinates.
-- `line::Bool=false`: if true, calculate the distance from a line instead of a 
-    line segment.
-- `atol::Real=1e-9`: an absolute tolerance for floating point comparisons.
-
-# Returns
-- `d::Real`: the shortest distance from the point to the line segment.
-
-# Examples
-```jldoctest
-lineseg = [0 0; 0 1]
-pt = [0.5, 0.5]
-lineseg₋pt_dist(lineseg,pt)
-# output
-0.5000000000000001
-```
-"""
-function lineseg₋pt_dist(line_seg::AbstractMatrix{<:Real},p3::AbstractVector{<:Real},
-    line::Bool=false;atol::Real=1e-9)::Real
-    
-    p1 = line_seg[:,1]
-    p2 = line_seg[:,2]
-    proj = dot((p2-p1)/norm(p2 - p1),p3-p1)
-
-    if proj <= norm(p2 - p1) && 0 <= proj || line
-        if isapprox(norm(p3 - p1)^2 - proj^2,0,atol=atol)
-            d = 0
-        else
-            d = √(norm(p3 - p1)^2 - proj^2)
-        end
-    else
-        d = minimum([norm(p3 - p1),norm(p3 - p2)])
-    end 
-end
-
-# """
-#     nonzero₋simplices(mesh;atol=1e-9)
-
-# Calculate the simplices in a mesh that have non-zero area.
-
-# # Arguments
-# - `mesh::Triangulation`: an Delauney triangulation of a mesh of points.
-# - `atol::Real=1e-9`: an absolute tolerance of distance comparisons to zero.
-
-# # Returns
-# - `simplicesᵢ::Vector{Vector{Int64}}`: a vector of vectors where the elements are
-#     indices of points in each simplex.
-
-# # Examples
-# ```jldoctest
-# import Pebsi.QuadraticIntegration: nonzero₋simplices
-# import Delaunay: delaunay
-# pts = [0.0 -0.5773502691896256; 0.0357142857142857 -0.5567306167185675; 0.0714285714285714 -0.5361109642475095; 0.1071428571428571 -0.5154913117764514; 0.1428571428571428 -0.49487165930539334; 0.1785714285714285 -0.4742520068343353; 0.2142857142857142 -0.4536323543632772; 0.2499999999999999 -0.4330127018922192; 0.0 -0.49487165930539334; 0.0357142857142857 -0.4742520068343353; 0.0714285714285714 -0.4536323543632772; 0.1071428571428571 -0.4330127018922192; 0.1428571428571428 -0.4123930494211611; 0.1785714285714285 -0.3917733969501031; 0.2142857142857142 -0.371153744479045; 0.0 -0.4123930494211612; 0.0357142857142857 -0.39177339695010305; 0.0714285714285714 -0.37115374447904503; 0.1071428571428571 -0.3505340920079869; 0.1428571428571428 -0.3299144395369289; 0.1785714285714285 -0.3092947870658709; 0.0 -0.3299144395369289; 0.0357142857142857 -0.3092947870658708; 0.0714285714285714 -0.28867513459481275; 0.1071428571428571 -0.26805548212375474; 0.1428571428571428 -0.24743582965269667; 0.0 -0.24743582965269667; 0.0357142857142857 -0.2268161771816386; 0.0714285714285714 -0.20619652471058056; 0.1071428571428571 -0.1855768722395225; 0.0 -0.16495721976846445; 0.0357142857142857 -0.14433756729740638; 0.0714285714285714 -0.12371791482634834; 0.0 -0.08247860988423222; 0.0357142857142857 -0.06185895741317417; 0.0 0.0]
-# mesh = delaunay(pts)
-# nonzero₋simplices(mesh)
-# # output
-# 49-element Vector{Vector{Int64}}:
-#  [22, 16, 17]
-#  [34, 35, 36]
-#  [22, 23, 27]
-#  [9, 10, 16]
-#  [2, 9, 1]
-#  [31, 32, 34]
-#  [28, 31, 27]
-#  [3, 9, 2]
-#  [9, 3, 10]
-#  [33, 35, 34]
-#  [32, 33, 34]
-#  [11, 3, 4]
-#  [3, 11, 10]
-#  ⋮
-#  [5, 11, 4]
-#  [11, 5, 12]
-#  [13, 5, 6]
-#  [5, 13, 12]
-#  [13, 18, 12]
-#  [18, 13, 19]
-#  [20, 13, 14]
-#  [13, 20, 19]
-#  [15, 7, 8]
-#  [14, 7, 15]
-#  [7, 13, 6]
-#  [13, 7, 14]
-# ```
-# """
-# function nonzero₋simplices(mesh::Triangulation;atol::Real=1e-9)::Vector{Vector{Int64}}
-#     simplicesᵢ = [[] for _=1:size(mesh.simplices,1)]
-#     atol=1e-9
-#     n = 0
-#     for i=1:size(mesh.simplices,1)
-#         d = lineseg₋pt_dist(Matrix(mesh.points[mesh.simplices[i,:][1:2],:]'),
-#             mesh.points[mesh.simplices[i,:][3],:],true)
-#         if !isapprox(d,0,atol=atol)
-#             n+=1
-#             simplicesᵢ[n] = mesh.simplices[i,:]
-#         end
-#     end 
-#     simplicesᵢ[1:n]
-# end
-
-@doc """
-    ibz_init₋mesh(ibz,n;rtol,atol)
-
-Create a triangulation of a roughly uniform mesh over the IBZ.
-
-# Arguments
-- `ibz::Chull{<:Real}`: the irreducible Brillouin zone as a convex hull object.
-- `n::Int`: a measure of the number of points. The number of points over the IBZ
-    will be approximately `n^2/2`.
-- `rtol::Real=sqrt(eps(maximum(ibz.points)))`: a relative tolerance for finite
-    precision comparisons.
-- `atol::Real=1e-9`: an absolute tolerance for finite precision comparisons.
-
-# Returns
-- `mesh::PyObject`: a triangulation of a uniform mesh over the IBZ. To avoid
-    collinear triangles at the boundary of the IBZ, the IBZ is enclosed in a 
-    square. The first four points are the corners of the square and need to be 
-    disregarded in subsequent computations.
-
-# Examples
-```jldoctest
-import Pebsi.EPMs: m2ibz
-import Pebsi.QuadraticIntegration: ibz_init₋mesh
-n = 5
-ibz_init₋mesh(ibz,n)
-# output
-PyObject <scipy.spatial.qhull.Delaunay object at 0x19483d130>
-```
-"""
-function ibz_init₋mesh(ibz::Chull{<:Real},n::Int;
-    rtol::Real=sqrt(eps(maximum(ibz.points))),atol::Real=1e-9)::PyObject
-    spatial = pyimport("scipy.spatial")
-    dim = 2
-    # We need to enclose the IBZ in a box to prevent collinear triangles.
-    box_length = maximum(abs.(ibz.points))
-    box_pts = reduce(hcat,[[mean(ibz.points,dims=1)...] + box_length*[i,j] 
-        for i=[-1,1] for j=[-1,1]])
-    
-    mesh = spatial.Delaunay(ibz.points)
-    simplices = [Array(mesh.points[mesh.simplices[i,:].+1,:]') 
-        for i=1:size(mesh.simplices,1)]
-    
-    pt_sizes = [round(Int,sqrt(shoelace(s)/ibz.volume*n^2/2)) for s=simplices]
-    pts = unique_points(reduce(hcat,[barytocart(sample_simplex(
-        dim,pt_sizes[i]),simplices[i]) for i=1:length(pt_sizes)]),atol=atol,rtol=rtol)
-    mesh = spatial.Delaunay([box_pts'; pts'])
-end
-
-@doc """
-    get_sym₋unique(mesh,pointgroup;rtol,atol)
-
-Calculate the symmetrically unique points within the IBZ.
-
-# Arguments
-- `mesh::PyObject`: a triangulation of a mesh over the IBZ.
-- `pointgroup::Vector{Matrix{Float64}}`: the point operators of the real-space
-    lattice. They operate on points in Cartesian coordinates.
-- `rtol::Real=sqrt(eps(maximum(real_latvecs)))`: a relative tolerance.
-- `atol::Real=1e-9`: an absolute tolerance.
-
-# Returns
-- `sym₋unique::Vector{<:Int}`: a vector that gives the position of the k-point
-    that is equivalent to each k-point (except for the first 4 points or the
-    points of the box).
-
-# Examples
-```jldoctest
-import Pebsi.EPMs: m2ibz,m2pointgroup
-import Pebsi.QuadraticIntegration: ibz_init₋mesh
-n = 5
-mesh = ibz_init₋mesh(ibz,n)
-get_sym₋unique(mesh,m2pointgroup)
-# output
-19-element Vector{Int64}:
-  0
-  0
-  0
-  0
-  5
-  6
-  7
-  8
-  9
- 10
- 11
- 12
- 13
- 14
- 15
- 16
- 17
- 18
- 19
-```
-"""
-function get_sym₋unique(mesh::PyObject,pointgroup::Vector{Matrix{Float64}};
-    rtol::Real=sqrt(eps(maximum(mesh.points))),atol::Real=1e-9)::Vector{<:Int}
-
-    # Calculate the unique points of the uniform IBZ mesh.
-    sym₋unique = zeros(Int,size(mesh.points,1))
-    for i=5:size(mesh.points,1)
-        # If this point hasn't been added already, add it to the list of unique points.
-        if sym₋unique[i] == 0
-            sym₋unique[i] = i
-        end
-
-        for pg=pointgroup
-            test = [mapslices(x->isapprox(x,pg*mesh.points[i,:],atol=atol,
-                rtol=rtol),mesh.points,dims=2)...]
-            pos = findall(x->x==1,test)
-            if pos == []
-                continue
-            elseif sym₋unique[pos[1]] == 0
-                sym₋unique[pos[1]] = i
-            end
-        end
-    end
-    sym₋unique
-end
-
-@doc """
-    notbox_simplices(mesh)
-
-Determine all simplices in a triangulation that do not contain a box point.
-
-# Arguments
-- `mesh::PyObject`: a triangulation of a mesh over the IBZ enclosed in a box. It
-    is assumed that the first four points in the mesh are the box points.
-
-# Returns
-    `simplicesᵢ::Vector{Vector{Int}}`: the simplices of the triangulation without
-        box points.
-
-# Examples
-```jldoctest
-using PyCall
-spatial = pyimport("scipy.spatial")
-pts = [-0.4940169358562923 -0.9141379262169073; -0.4940169358562923 0.24056261216234398; 0.6606836025229589 -0.9141379262169073; 0.6606836025229589 0.24056261216234398; 0.0 -0.5773502691896256; 0.06249999999999997 -0.541265877365274; 0.12499999999999994 -0.5051814855409225; 0.18749999999999992 -0.4690970937165708; 0.2499999999999999 -0.4330127018922192; 0.0 -0.4330127018922192; 0.06249999999999997 -0.3969283100678676; 0.12499999999999994 -0.360843918243516; 0.18749999999999992 -0.3247595264191644; 0.0 -0.2886751345948128; 0.06249999999999997 -0.25259074277046123; 0.12499999999999994 -0.2165063509461096; 0.0 -0.1443375672974064; 0.06249999999999997 -0.1082531754730548; 0.0 0.0]
-mesh = spatial.Delaunay(pts)
-notbox_simplices(mesh)
-# output
-16-element Vector{Vector{Int64}}:
- [19, 17, 18]
- [15, 17, 14]
- [6, 10, 5]
- [10, 11, 14]
- [17, 15, 18]
- [15, 16, 18]
- [13, 15, 12]
- [15, 13, 16]
- [8, 13, 12]
- [13, 8, 9]
- [11, 8, 12]
- [8, 11, 7]
- [6, 11, 10]
- [11, 6, 7]
- [15, 11, 12]
- [11, 15, 14]
-```
-"""
-function notbox_simplices(mesh::PyObject)::Vector{Vector{Int}}
-    simplicesᵢ = Vector{Any}(zeros(size(mesh.simplices,1)))
-    n = 0
-    for i=1:size(mesh.simplices,1)
-        if !any([j in mesh.simplices[i,:] .+ 1 for j=1:4])
-            n += 1
-            simplicesᵢ[n] = mesh.simplices[i,:] .+ 1
-        end
-    end
-    Vector{Vector{Int}}(simplicesᵢ[1:n])    
-end
-
-@doc """
-    get_cvpts(mesh,ibz,atol=1e-9)
-
-Determine which points on the boundary of the IBZ (or any convex hull).
-
-# Arguments
-- `mesh::PyObject`: a triangulation of a mesh over the IBZ.
-- `ibz::Chull`: the irreducible Brillouin zone as a convex hull object.
-- `atol::Real=1e-9`: an absolute tolerance for comparing distances to zero.
-
-# Returns
-- `cv_pointsᵢ::Vector{<:Int}`: the indices of points that lie on the boundary
-    of the IBZ (or convex hull).
-
-# Examples
-```jldoctest
-import Pebsi.EPMs: m2ibz
-using PyCall
-spatial = pyimport("scipy.spatial")
-import Pebsi.QuadraticIntegration: get_cvpts
-pts = [-0.4940169358562923 -0.9141379262169073; -0.4940169358562923 0.24056261216234398; 0.6606836025229589 -0.9141379262169073; 0.6606836025229589 0.24056261216234398; 0.0 -0.5773502691896256; 0.0357142857142857 -0.5567306167185675; 0.0714285714285714 -0.5361109642475095; 0.1071428571428571 -0.5154913117764514; 0.1428571428571428 -0.49487165930539334; 0.1785714285714285 -0.4742520068343353; 0.2142857142857142 -0.4536323543632772; 0.2499999999999999 -0.4330127018922192; 0.0 -0.49487165930539334; 0.0357142857142857 -0.4742520068343353; 0.0714285714285714 -0.4536323543632772; 0.1071428571428571 -0.4330127018922192; 0.1428571428571428 -0.4123930494211611; 0.1785714285714285 -0.3917733969501031; 0.2142857142857142 -0.371153744479045; 0.0 -0.4123930494211612; 0.0357142857142857 -0.39177339695010305; 0.0714285714285714 -0.37115374447904503; 0.1071428571428571 -0.3505340920079869; 0.1428571428571428 -0.3299144395369289; 0.1785714285714285 -0.3092947870658709; 0.0 -0.3299144395369289; 0.0357142857142857 -0.3092947870658708; 0.0714285714285714 -0.28867513459481275; 0.1071428571428571 -0.26805548212375474; 0.1428571428571428 -0.24743582965269667; 0.0 -0.24743582965269667; 0.0357142857142857 -0.2268161771816386; 0.0714285714285714 -0.20619652471058056; 0.1071428571428571 -0.1855768722395225; 0.0 -0.16495721976846445; 0.0357142857142857 -0.14433756729740638; 0.0714285714285714 -0.12371791482634834; 0.0 -0.08247860988423222; 0.0357142857142857 -0.06185895741317417; 0.0 0.0]
-mesh = spatial.Delaunay(pts)
-get_cvpts(mesh,m2ibz)
-# output
-21-element Vector{Int64}:
-  5
-  6
-  7
-  8
-  9
- 10
- 11
- 12
- 13
- 19
- 20
- 25
- 26
- 30
- 31
- 34
- 35
- 37
- 38
- 39
- 40
-```
-"""
-function get_cvpts(mesh::PyObject,ibz::Chull;atol::Real=1e-9)::Vector{<:Int}
-    
-    ibz_linesegs = [Matrix(ibz.points[i,:]') for i=ibz.simplices]
-    cv_pointsᵢ = [0 for i=1:size(mesh.points,1)]
-    n = 0
-    for i=1:size(mesh.points,1)
-        if any([isapprox(lineseg₋pt_dist(line_seg,mesh.points[i,:]),0,atol=atol) 
-            for line_seg=ibz_linesegs])
-            n += 1
-            cv_pointsᵢ[n] = i
-        end
-    end
-
-    cv_pointsᵢ[1:n]
-end
-
-@doc """
-    get_extmesh(ibz,mesh,pointgroup;rtol,atol)
-
-Calculate a triangulation of points within and just outside the IBZ.
-
-# Arguments
-- `ibz::Chull`: the irreducible Brillouin zone as a convex hull object.
-- `mesh::PyObject`: a triangulation of a mesh over the IBZ.
-- `pointgroup::Vector{Matrix{Float64}}`: the point operators of the real-space
-    lattice.
-- `near_neigh::Int=1`: the number of nearest neighbors to include outside the 
-    IBZ.
-- `rtol::Real=sqrt(eps(maximum(abs.(mesh.points))))`: a relative tolerance for 
-    floating point comparisons.
-- `atol::Real=1e-9`: an absolute tolerance for floating point comparisons.
-
-# Returns
-- `::PyObject`: a triangulation of points within and without the IBZ. The points
-    outside the IBZ are rotationally or translationally equivalent to point inside
+- `index::Int`: the index of the simplex in `simplicesᵢ`.
+- `mesh::PyObject`: a triangulation of the irreducible Brillouin zone.
+- `ext_mesh::PyObject`: a triangulation of the region within and around
     the IBZ.
-- `sym₋unique::Vector{<:Int}`: a vector that gives the position of the k-point
-    that is equivalent to each k-point (except for the first 4 points or the
-    points of the box).
+- `sym₋unique::AbstractVector{<:Real}`: the index of the eigenvalues for each point
+    in the `mesh`.
+- `eigenvals::AbstractMatrix{<:Real}`: a matrix of eigenvalues for the symmetrically
+    distinc points as columns of a matrix.
+- `simplicesᵢ::Vector{Vector{Int64}}`: the simplices of `mesh` that do not
+    include the box points.
+
+# Returns
+- `inter_bezpts::Vector{Vector{Matrix{Float64}}}`: the interval Bezier points
+    for each sheet.
 
 # Examples
 ```jldoctest
-using PyCall
-spatial = pyimport("scipy.spatial")
-import Pebsi.EPMs: m2ibz,m2pointgroup,m2recip_latvecs
-pts = [-0.4940169358562923 -0.9141379262169073; -0.4940169358562923 0.24056261216234398; 0.6606836025229589 -0.9141379262169073; 0.6606836025229589 0.24056261216234398; 0.0 -0.5773502691896256; 0.0357142857142857 -0.5567306167185675; 0.0714285714285714 -0.5361109642475095; 0.1071428571428571 -0.5154913117764514; 0.1428571428571428 -0.49487165930539334; 0.1785714285714285 -0.4742520068343353; 0.2142857142857142 -0.4536323543632772; 0.2499999999999999 -0.4330127018922192; 0.0 -0.49487165930539334; 0.0357142857142857 -0.4742520068343353; 0.0714285714285714 -0.4536323543632772; 0.1071428571428571 -0.4330127018922192; 0.1428571428571428 -0.4123930494211611; 0.1785714285714285 -0.3917733969501031; 0.2142857142857142 -0.371153744479045; 0.0 -0.4123930494211612; 0.0357142857142857 -0.39177339695010305; 0.0714285714285714 -0.37115374447904503; 0.1071428571428571 -0.3505340920079869; 0.1428571428571428 -0.3299144395369289; 0.1785714285714285 -0.3092947870658709; 0.0 -0.3299144395369289; 0.0357142857142857 -0.3092947870658708; 0.0714285714285714 -0.28867513459481275; 0.1071428571428571 -0.26805548212375474; 0.1428571428571428 -0.24743582965269667; 0.0 -0.24743582965269667; 0.0357142857142857 -0.2268161771816386; 0.0714285714285714 -0.20619652471058056; 0.1071428571428571 -0.1855768722395225; 0.0 -0.16495721976846445; 0.0357142857142857 -0.14433756729740638; 0.0714285714285714 -0.12371791482634834; 0.0 -0.08247860988423222; 0.0357142857142857 -0.06185895741317417; 0.0 0.0]
-mesh = spatial.Delaunay(pts)
-get_extmesh(m2ibz,mesh,m2pointgroup,m2recip_latvecs)
+import Pebsi.EPMs: m2ibz,m2pointgroup,m2recip_latvecs,m2rules,m2cutoff,eval_epm
+import Pebsi.Mesh: ibz_init₋mesh, get_extmesh, notbox_simplices
+import Pebsi.QuadraticIntegration: get_inter₋bezpts
+
+n = 10
+mesh = ibz_init₋mesh(m2ibz,n)
+simplicesᵢ = notbox_simplices(mesh)
+
+num_neigh = 2
+ext_mesh,sym₋unique = get_extmesh(m2ibz,mesh,m2pointgroup,m2recip_latvecs,num_neigh)
+
+sheets = 7
+energy_conv = 1
+eigenvals = zeros(sheets,size(mesh.points,1))
+for i = sort(unique(sym₋unique))[2:end]
+    eigenvals[:,i] = eval_epm(mesh.points[i,:],m2recip_latvecs,m2rules,m2cutoff,sheets,energy_conv)
+end
+
+index = 1
+get_inter₋bezpts(index,mesh,ext_mesh,sym₋unique,eigenvals,simplicesᵢ)
 # output
-PyObject (<scipy.spatial.qhull.Delaunay object at 0x1802f7820>, array([ 0,  0,  0,  0,  5,  6,  7,  8,  9, 10, 11, 12, 13, 14, 15, 16, 17,
-       18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34,
-       35, 36, 37, 38, 39, 40, 13, 13,  6,  6,  7,  7, 15, 15, 14, 14, 16,
-       10, 17, 17, 11, 18, 18, 18, 19, 24, 21, 27, 22, 29, 33, 33, 35, 32,
-       32, 37, 36, 36, 38, 38, 38, 38, 38, 39, 39, 39, 39, 39],
-      dtype=int64))
+7-element Vector{Vector{Matrix{Float64}}}:
+ [[0.0357142857142857 0.01785714285714285 … 0.0 0.0; -0.3092947870658708 -0.27836530835928375 … -0.28867513459481275 -0.3299144395369289; -0.4170406590890757 -0.44894253681741786 … -0.418185036063509 -0.4087992707500061], [0.0357142857142857 0.01785714285714285 … 0.0 0.0; -0.3092947870658708 -0.27836530835928375 … -0.28867513459481275 -0.3299144395369289; -0.4170406590890757 -0.4130115291504489 … -0.38325424751903675 -0.4087992707500061]]
+ [[0.0357142857142857 0.01785714285714285 … 0.0 0.0; -0.3092947870658708 -0.27836530835928375 … -0.28867513459481275 -0.3299144395369289; -0.09968473377219263 -0.10467222688790542 … -0.16182723345176916 -0.11471023344428993], [0.0357142857142857 0.01785714285714285 … 0.0 0.0; -0.3092947870658708 -0.27836530835928375 … -0.28867513459481275 -0.3299144395369289; -0.09968473377219263 -0.03966774615259443 … -0.09724196302121388 -0.11471023344428993]]
+ [[0.0357142857142857 0.01785714285714285 … 0.0 0.0; -0.3092947870658708 -0.27836530835928375 … -0.28867513459481275 -0.3299144395369289; 0.06333883794674595 0.06176891894277915 … 0.05053770503975599 0.059530423104755405], [0.0357142857142857 0.01785714285714285 … 0.0 0.0; -0.3092947870658708 -0.27836530835928375 … -0.28867513459481275 -0.3299144395369289; 0.06333883794674595 0.07433130559535622 … 0.06321666534916602 0.059530423104755405]]
+ [[0.0357142857142857 0.01785714285714285 … 0.0 0.0; -0.3092947870658708 -0.27836530835928375 … -0.28867513459481275 -0.3299144395369289; 0.9336184268894858 0.8965079932976808 … 0.9422896105253507 0.9616264337394995], [0.0357142857142857 0.01785714285714285 … 0.0 0.0; -0.3092947870658708 -0.27836530835928375 … -0.28867513459481275 -0.3299144395369289; 0.9336184268894858 0.9442386828910152 … 0.9986202705442639 0.9616264337394995]]
+ [[0.0357142857142857 0.01785714285714285 … 0.0 0.0; -0.3092947870658708 -0.27836530835928375 … -0.28867513459481275 -0.3299144395369289; 1.0370385907264408 0.98617538886686 … 1.0192740316847344 1.025752774169218], [0.0357142857142857 0.01785714285714285 … 0.0 0.0; -0.3092947870658708 -0.27836530835928375 … -0.28867513459481275 -0.3299144395369289; 1.0370385907264408 1.0340184952232654 … 1.0650238198456579 1.025752774169218]]
+ [[0.0357142857142857 0.01785714285714285 … 0.0 0.0; -0.3092947870658708 -0.27836530835928375 … -0.28867513459481275 -0.3299144395369289; 1.243798381547987 1.1209957076784376 … 1.2392094226656643 1.2828198059158602], [0.0357142857142857 0.01785714285714285 … 0.0 0.0; -0.3092947870658708 -0.27836530835928375 … -0.28867513459481275 -0.3299144395369289; 1.243798381547987 1.255588675708819 … 1.3708953013582792 1.2828198059158602]]
+ [[0.0357142857142857 0.01785714285714285 … 0.0 0.0; -0.3092947870658708 -0.27836530835928375 … -0.28867513459481275 -0.3299144395369289; 1.7629457567764115 1.7492156915207968 … 1.586750383315745 1.7117209463142664], [0.0357142857142857 0.01785714285714285 … 0.0 0.0; -0.3092947870658708 -0.27836530835928375 … -0.28867513459481275 -0.3299144395369289; 1.7629457567764115 1.9545533797734849 … 1.7735112086457399 1.7117209463142664]]
 ```
 """
-function get_extmesh(ibz::Chull,mesh::PyObject,pointgroup::Vector{Matrix{Float64}},
-    recip_latvecs::Matrix{<:Real},near_neigh::Int=1;
-    rtol::Real=sqrt(eps(maximum(abs.(mesh.points)))),atol::Real=1e-9)::PyObject
-
-    spatial = pyimport("scipy.spatial")
-    sym₋unique = get_sym₋unique(mesh,pointgroup);
-    cv_pointsᵢ = get_cvpts(mesh,ibz)
-    neighborsᵢ = reduce(vcat,[get₋neighbors(i,mesh,near_neigh) for i=cv_pointsᵢ]) |> unique
+function get_inter₋bezpts(index::Int,mesh::PyObject,ext_mesh::PyObject,
+        sym₋unique::AbstractVector{<:Real},eigenvals::AbstractMatrix{<:Real},
+        simplicesᵢ::Vector{Vector{Int64}})::Vector{Vector{Matrix{Float64}}}
     
-    numpts = size(mesh.points,1)
-    # Calculate the maximum distance between neighboring points
-    bound_limit = 1.01*maximum(reduce(vcat,[[norm(mesh.points[i,:] - mesh.points[j,:]) 
-                    for j=get₋neighbors(i,mesh,near_neigh)] for i=cv_pointsᵢ]))
+    simplexᵢ = simplicesᵢ[index]
+    simplex = Matrix(mesh.points[simplexᵢ,:]')
+    neighborsᵢ = reduce(vcat,[get₋neighbors(s,ext_mesh,2) for s=simplexᵢ]) |> unique
+    neighborsᵢ = filter(x -> !(x in simplexᵢ),neighborsᵢ)
 
-    ibz_linesegs = [Matrix(ibz.points[i,:]') for i=ibz.simplices]
-    bztrans = [[[i,j] for i=-1:1,j=-1:1]...]
+    b = reduce(hcat,[carttobary(ext_mesh.points[i,:],simplex) for i=neighborsᵢ])
+    M = 2*Matrix(reduce(hcat,[[b[1,i]*b[2,i], b[2,i]*b[3,i], b[3,i]*b[1,i]] for i=1:size(b,2)])')
+    Zm = Matrix(b').^2
+    Dᵢ = [sum((M[i,:]/2).^2) for i=1:size(M,1)]
+    
+    # Minimum distance from the edges of the triangle.
+    # W = diagm([minimum([lineseg₋pt_dist(simplex[:,s],ext_mesh.points[i,:]) for s=[[1,2],[2,3],[3,1]]])
+    #     for i=neighborsᵢ])
+    
+    # Distance from the center of the triangle.
+    # W = diagm([norm(ext_mesh.points[i,:] - mean(simplex,dims=2)) for i=neighborsᵢ])
+    
+    W=I
+    
+    inter_bezpts = [[] for i=1:size(eigenvals,1)]
+    for sheet = 1:size(eigenvals,1)
+        fᵢ = eigenvals[sheet,sym₋unique[neighborsᵢ]]
+        q = eigenvals[sheet,sym₋unique[simplexᵢ]]
+        Z = fᵢ - Zm*q
+    
+        # Weighted least squares
+        # c = M\Z
+        c = inv(M'*W*M)*M'*W*Z
+        c1,c2,c3 = c
+        q1,q2,q3 = q
 
-    # Rotate the neighbors of the points on the boundary. Keep the points if they are within
-    # a distance of `bound_limit` of any of the interior boundaries.
-    neighbors = zeros(Float64,2,length(neighborsᵢ)*length(pointgroup)*length(bztrans))
-    sym₋unique = [sym₋unique; zeros(Int,size(neighbors,2))]
-    n = 0
-    for i=neighborsᵢ,op=pointgroup,trans=bztrans
-        pt = op*mesh.points[i,:] + recip_latvecs*trans
-        if any([lineseg₋pt_dist(line_seg,pt,false) < bound_limit for line_seg=ibz_linesegs]) &&
-            !any(mapslices(x->isapprox(x,pt,atol=atol,rtol=rtol),[mesh.points' neighbors[:,1:n]],dims=1))
-            n += 1
-            neighbors[:,n] = pt
-            sym₋unique[numpts + n] = sym₋unique[i]
-        end
+        qᵢ = [eval_poly(b[:,i],[q1,c1,q2,c2,c3,q3],2,2) for i=1:size(b,2)]
+        δᵢ = fᵢ - qᵢ;
+        ϵ = δᵢ./(2Dᵢ).*M
+        # ϵ = [minimum(test2,dims=1);maximum(test2,dims=1)]
+        ϵ = [minimum(ϵ,dims=1);maximum(ϵ,dims=1)]
+        c = [c[i] .+ ϵ[:,i] for i=1:3]
+
+        c1,c2,c3 = c
+        intercoeffs = reduce(hcat,[[q1,q1],c1,[q2,q2],c2,c3,[q3,q3]])
+
+        simplex_pts = barytocart(sample_simplex(2,2),Matrix(mesh.points[simplicesᵢ[index],:]'))
+        bezpts = [[simplex_pts; intercoeffs[i,:]'] for i=1:2]
+        inter_bezpts[sheet] = bezpts
     end
-    neighbors = neighbors[:,1:n]
-    sym₋unique = sym₋unique[1:numpts + n]
-    (spatial.Delaunay(unique_points([mesh.points; neighbors']',
-        rtol=rtol,atol=atol)'),sym₋unique)
+    Vector{Vector{Matrix{Float64}}}(inter_bezpts)
 end
 
 end # module
