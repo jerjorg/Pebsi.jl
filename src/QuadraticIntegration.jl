@@ -261,7 +261,6 @@ function split_bezsurf₁(bezpts::AbstractMatrix{<:Real},
     end
 
     allpts = unique_points(allpts,atol=atol)
-
     # Had to add box points to prevent collinear triangles.
     xmax,ymax = maximum(bezpts[1:2,:],dims=2)
     xmin,ymin = minimum(bezpts[1:2,:],dims=2)
@@ -271,13 +270,18 @@ function split_bezsurf₁(bezpts::AbstractMatrix{<:Real},
     ymin -= 0.2*abs(ymax - ymin)
     boxpts = [xmin xmax xmax xmin; ymin ymin ymax ymax]
     allpts = [boxpts allpts]
-
     del = spatial.Delaunay(Matrix(allpts'))
-    tri_ind = reduce(hcat,notbox_simplices(del))
+    tri_ind = notbox_simplices(del)
+    # For small triangles, all triangles may have a corner at a box corner.
+    # In this case, return the original points.
+    if length(tri_ind) == 0
+        return [pts]
+    end
+    tri_ind = reduce(hcat,tri_ind)
     subtri = [order_vertices!(allpts[:,tri_ind[:,i]]) for i=1:size(tri_ind,2)]
     sub_pts = [barytocart(simplex_bpts,tri) for tri=subtri]
     sub_bpts = [carttobary(pts,triangle) for pts=sub_pts]
-    sub_vals = [reduce(hcat, [eval_poly(sub_bpts[j][:,i],coeffs,dim,deg) 
+    sub_vals = [reduce(hcat, [eval_poly(sub_bpts[j][:,i],coeffs,dim,deg)
         for i=1:6]) for j=1:length(subtri)]
     sub_coeffs = [getpoly_coeffs(v[:],simplex_bpts,dim,deg) for v=sub_vals]
     sub_bezpts = [[sub_pts[i]; sub_coeffs[i]'] for i=1:length(sub_coeffs)]
@@ -321,7 +325,7 @@ function split_bezsurf(bezpts::AbstractMatrix{<:Real};atol=1e-9)::AbstractArray
         while any(num_intersects .> 2)
             for i = length(num_intersects):-1:1
                 if num_intersects[i] <= 2 continue end
-                append!(sub_bezpts,split_bezsurf₁(sub_bezpts[i]))                
+                append!(sub_bezpts,split_bezsurf₁(sub_bezpts[i]))
                 deleteat!(sub_bezpts,i)
                 sub_intersects = [simplex_intersects(b) for b=sub_bezpts]
                 num_intersects = [sum([size(sub_intersects[i][j])[1] == 0 ? 0 : 
@@ -509,11 +513,10 @@ function two₋intersects_area₋volume(bezpts::AbstractMatrix{<:Real},
     # is within the triangle.
     cstype = conicsection(bezpts[end,:],atol=atol)
     linear = any(cstype .== ["line","rectangular hyperbola","parallel lines"])
-    if maximum(abs.(bezptsᵣ)) > 1e6 || (insimplex(saddlepoint(bezpts[end,:],atol=atol),atol=atol) && !linear) 
+    if maximum(abs.(bezptsᵣ)) > 1e6 || (insimplex(saddlepoint(bezpts[end,:],atol=atol),atol=atol) && !linear)
         bezptsᵤ = [split_bezsurf(b,atol=atol) for b=split_bezsurf₁(bezpts)] |> flatten |> collect
         return sum([two₋intersects_area₋volume(b,quantity,atol=atol) for b=bezptsᵤ])
     end
-
     # No intersections
     if intersects == [[],[],[]]
         if all(bezpts[end,corner_indices] .< 0 .| 
@@ -763,7 +766,7 @@ function shadow₋size(mesh::PyObject, mesh_bezcoeffs::Vector{Vector{Any}},fermi
 end
 
 @doc """
-    get_inter₋bezpts(index,mesh,ext_mesh,sym₋unique,eigenvals,simplicesᵢ)
+    get_intercoeffs(index,mesh,ext_mesh,sym₋unique,eigenvals,simplicesᵢ)
 
 Calculate the interval Bezier points for all sheets.
 
@@ -780,7 +783,7 @@ Calculate the interval Bezier points for all sheets.
     include the box points.
 
 # Returns
-- `inter_bezpts::Vector{Vector{Matrix{Float64}}}`: the interval Bezier points
+- `inter_bezpts::Vector{Matrix{Float64}}`: the interval Bezier points
     for each sheet.
 
 # Examples
@@ -804,22 +807,22 @@ for i = sort(unique(sym₋unique))[2:end]
 end
 
 index = 1
-get_inter₋bezpts(index,mesh,ext_mesh,sym₋unique,eigenvals,simplicesᵢ)
+get_intercoeffs(index,mesh,ext_mesh,sym₋unique,eigenvals,simplicesᵢ)
 # output
-7-element Vector{Vector{Matrix{Float64}}}:
- [[0.0357142857142857 0.01785714285714285 … 0.0 0.0; -0.3092947870658708 -0.27836530835928375 … -0.28867513459481275 -0.3299144395369289; -0.4170406590890757 -0.44894253681741786 … -0.418185036063509 -0.4087992707500061], [0.0357142857142857 0.01785714285714285 … 0.0 0.0; -0.3092947870658708 -0.27836530835928375 … -0.28867513459481275 -0.3299144395369289; -0.4170406590890757 -0.4130115291504489 … -0.38325424751903675 -0.4087992707500061]]
- [[0.0357142857142857 0.01785714285714285 … 0.0 0.0; -0.3092947870658708 -0.27836530835928375 … -0.28867513459481275 -0.3299144395369289; -0.09968473377219263 -0.10467222688790542 … -0.16182723345176916 -0.11471023344428993], [0.0357142857142857 0.01785714285714285 … 0.0 0.0; -0.3092947870658708 -0.27836530835928375 … -0.28867513459481275 -0.3299144395369289; -0.09968473377219263 -0.03966774615259443 … -0.09724196302121388 -0.11471023344428993]]
- [[0.0357142857142857 0.01785714285714285 … 0.0 0.0; -0.3092947870658708 -0.27836530835928375 … -0.28867513459481275 -0.3299144395369289; 0.06333883794674595 0.06176891894277915 … 0.05053770503975599 0.059530423104755405], [0.0357142857142857 0.01785714285714285 … 0.0 0.0; -0.3092947870658708 -0.27836530835928375 … -0.28867513459481275 -0.3299144395369289; 0.06333883794674595 0.07433130559535622 … 0.06321666534916602 0.059530423104755405]]
- [[0.0357142857142857 0.01785714285714285 … 0.0 0.0; -0.3092947870658708 -0.27836530835928375 … -0.28867513459481275 -0.3299144395369289; 0.9336184268894858 0.8965079932976808 … 0.9422896105253507 0.9616264337394995], [0.0357142857142857 0.01785714285714285 … 0.0 0.0; -0.3092947870658708 -0.27836530835928375 … -0.28867513459481275 -0.3299144395369289; 0.9336184268894858 0.9442386828910152 … 0.9986202705442639 0.9616264337394995]]
- [[0.0357142857142857 0.01785714285714285 … 0.0 0.0; -0.3092947870658708 -0.27836530835928375 … -0.28867513459481275 -0.3299144395369289; 1.0370385907264408 0.98617538886686 … 1.0192740316847344 1.025752774169218], [0.0357142857142857 0.01785714285714285 … 0.0 0.0; -0.3092947870658708 -0.27836530835928375 … -0.28867513459481275 -0.3299144395369289; 1.0370385907264408 1.0340184952232654 … 1.0650238198456579 1.025752774169218]]
- [[0.0357142857142857 0.01785714285714285 … 0.0 0.0; -0.3092947870658708 -0.27836530835928375 … -0.28867513459481275 -0.3299144395369289; 1.243798381547987 1.1209957076784376 … 1.2392094226656643 1.2828198059158602], [0.0357142857142857 0.01785714285714285 … 0.0 0.0; -0.3092947870658708 -0.27836530835928375 … -0.28867513459481275 -0.3299144395369289; 1.243798381547987 1.255588675708819 … 1.3708953013582792 1.2828198059158602]]
- [[0.0357142857142857 0.01785714285714285 … 0.0 0.0; -0.3092947870658708 -0.27836530835928375 … -0.28867513459481275 -0.3299144395369289; 1.7629457567764115 1.7492156915207968 … 1.586750383315745 1.7117209463142664], [0.0357142857142857 0.01785714285714285 … 0.0 0.0; -0.3092947870658708 -0.27836530835928375 … -0.28867513459481275 -0.3299144395369289; 1.7629457567764115 1.9545533797734849 … 1.7735112086457399 1.7117209463142664]]
+7-element Vector{Matrix{Float64}}:
+ [-0.4170406590890757 -0.44894253681741786 … -0.418185036063509 -0.4087992707500061; -0.4170406590890757 -0.4130115291504489 … -0.38325424751903675 -0.4087992707500061]
+ [-0.09968473377219263 -0.10467222688790542 … -0.16182723345176916 -0.11471023344428993; -0.09968473377219263 -0.03966774615259443 … -0.09724196302121388 -0.11471023344428993]
+ [0.06333883794674595 0.06176891894277915 … 0.05053770503975599 0.059530423104755405; 0.06333883794674595 0.07433130559535622 … 0.06321666534916602 0.059530423104755405]
+ [0.9336184268894858 0.8965079932976808 … 0.9422896105253507 0.9616264337394995; 0.9336184268894858 0.9442386828910152 … 0.9986202705442639 0.9616264337394995]
+ [1.0370385907264408 0.98617538886686 … 1.0192740316847344 1.025752774169218; 1.0370385907264408 1.0340184952232654 … 1.0650238198456579 1.025752774169218]
+ [1.243798381547987 1.1209957076784376 … 1.2392094226656643 1.2828198059158602; 1.243798381547987 1.255588675708819 … 1.3708953013582792 1.2828198059158602]
+ [1.7629457567764115 1.7492156915207968 … 1.586750383315745 1.7117209463142664; 1.7629457567764115 1.9545533797734849 … 1.7735112086457399 1.7117209463142664]
 ```
 """
-function get_inter₋bezpts(index::Int,mesh::PyObject,ext_mesh::PyObject,
+function get_intercoeffs(index::Int,mesh::PyObject,ext_mesh::PyObject,
         sym₋unique::AbstractVector{<:Real},eigenvals::AbstractMatrix{<:Real},
-        simplicesᵢ::Vector{Vector{Int64}})::Vector{Vector{Matrix{Float64}}}
-    
+        simplicesᵢ::Vector{Vector{Int64}})::Vector{Matrix{Float64}}
+
     simplexᵢ = simplicesᵢ[index]
     simplex = Matrix(mesh.points[simplexᵢ,:]')
     neighborsᵢ = reduce(vcat,[get₋neighbors(s,ext_mesh,2) for s=simplexᵢ]) |> unique
@@ -839,7 +842,7 @@ function get_inter₋bezpts(index::Int,mesh::PyObject,ext_mesh::PyObject,
     
     W=I
     
-    inter_bezpts = [[] for i=1:size(eigenvals,1)]
+    inter_bezcoeffs = [zeros(2,size(eigenvals,1)) for i=1:size(eigenvals,1)]
     for sheet = 1:size(eigenvals,1)
         fᵢ = eigenvals[sheet,sym₋unique[neighborsᵢ]]
         q = eigenvals[sheet,sym₋unique[simplexᵢ]]
@@ -854,18 +857,236 @@ function get_inter₋bezpts(index::Int,mesh::PyObject,ext_mesh::PyObject,
         qᵢ = [eval_poly(b[:,i],[q1,c1,q2,c2,c3,q3],2,2) for i=1:size(b,2)]
         δᵢ = fᵢ - qᵢ;
         ϵ = δᵢ./(2Dᵢ).*M
-        # ϵ = [minimum(test2,dims=1);maximum(test2,dims=1)]
         ϵ = [minimum(ϵ,dims=1);maximum(ϵ,dims=1)]
         c = [c[i] .+ ϵ[:,i] for i=1:3]
 
         c1,c2,c3 = c
         intercoeffs = reduce(hcat,[[q1,q1],c1,[q2,q2],c2,c3,[q3,q3]])
-
-        simplex_pts = barytocart(sample_simplex(2,2),Matrix(mesh.points[simplicesᵢ[index],:]'))
-        bezpts = [[simplex_pts; intercoeffs[i,:]'] for i=1:2]
-        inter_bezpts[sheet] = bezpts
+        inter_bezcoeffs[sheet] = intercoeffs
     end
-    Vector{Vector{Matrix{Float64}}}(inter_bezpts)
+    Vector{Matrix{Float64}}(inter_bezcoeffs)
+end
+
+@doc """
+
+    bisection(mesh_intcoeffs,eigenvals,simplicesᵢ,electrons,fa_eps)
+
+Calculate the Fermi level with the bisection method.
+
+# Arguments
+- `mesh::PyObject`: a triangulation of the IBZ.
+- `mesh_intcoeffs::Vector{Vector{Matrix{Float64}}}`: the interval coefficients
+    for each triangle and sheet.
+- `eigenvals::AbstractMatrix{<:Real}`: a matrix of eigenvalues for the symmetrically
+    distinc points as columns of a matrix.
+- `fermi_area`: the sum of the areas within the Fermi curves.
+- `fa_eps::Real=1e-6`: the area tolerance of the Fermi area or the area of the shadow
+    of the sheets within the IBZ.
+
+# Returns
+- ` (iso,fa₀,fa₁)`: the Fermi level and a lower and upper bound of the Fermi area.
+
+# Examples
+```jldoctest
+import Pebsi.EPMs: m2ibz,m2pointgroup,m2recip_latvecs,m2electrons1
+n = 10
+mesh = ibz_init₋mesh(m2ibz,n)
+
+simplicesᵢ = notbox_simplices(mesh)
+simplices = [Matrix(mesh.points[s,:]') for s=simplicesᵢ]
+
+num_neigh = 1
+cv_pointsᵢ = get_cvpts(mesh,m2ibz)
+neighborsᵢ = reduce(vcat,[get₋neighbors(i,mesh,2) for i=cv_pointsᵢ]) |> unique
+ext_mesh,sym₋unique = get_extmesh(ibz,mesh,m2pointgroup,m2recip_latvecs,num_neigh)
+ext_simplicesᵢ = notbox_simplices(ext_mesh)
+
+sheets = 7
+energy_conv = 1
+eigenvals = zeros(sheets,size(mesh.points,1))
+for i = sort(unique(sym₋unique))[2:end]
+    eigenvals[:,i] = eval_epm(mesh.points[i,:],recip_latvecs,rules,cutoff,sheets,energy_conv)
+end
+
+simplex_bpts = sample_simplex(2,2)
+simplex_pts = [barytocart(simplex_bpts,s) for s=simplices]
+
+mesh_intcoeffs = [get_intercoeffs(index,mesh,ext_mesh,sym₋unique,eigenvals,
+        simplicesᵢ) for index=1:length(simplicesᵢ)]
+
+fermi_area = m2ibz.volume/2*m2electrons1
+(fl,fa₀,fa₁) = bisection(mesh,mesh_intcoeffs,eigenvals,fermi_area)
+# output
+(0.06246735914532753, 0.18476030895687914, 0.17608330082229934)
+```
+"""
+function bisection(mesh::PyObject,mesh_intcoeffs::Vector{Vector{Matrix{Float64}}},
+    eigenvals::AbstractMatrix{<:Real},fermi_area::Real;fa_eps::Real=1e-6,
+    window::Union{Nothing,Vector{<:Real}}=nothing)
+        
+    simplex_bpts = sample_simplex(2,2)
+    simplicesᵢ = notbox_simplices(mesh)
+    simplices = [Matrix(mesh.points[s,:]') for s=simplicesᵢ]
+    simplex_pts = [barytocart(simplex_bpts,s) for s=simplices]
+    
+    sheets = size(eigenvals,1)
+    ibz_area = sum([simplex_size(s) for s = simplices])
+    electrons = 2*fermi_area/ibz_area
+    
+    if window == nothing
+        E₀ = minimum(eigenvals[:,5:end])
+        E₁ = maximum(eigenvals[:,5:end])
+        iso = E₀ + electrons/(2*sheets)*(E₁ - E₀)
+    else
+        E₀,E₁ = window
+        iso = (E₀ + E₁)/2 
+    end
+
+    fa₀,fa₁ = (1e10,1e10)
+    iters = 0
+    while abs((fa₀ + fa₁)/2 - fermi_area) > fa_eps
+        iters += 1
+        if iters > 50
+            break
+        end
+        println("area error: ", abs((fa₀ + fa₁)/2 - fermi_area))
+        fa₀ = sum([quad_area₋volume([simplex_pts[tri]; mesh_intcoeffs[tri][sheet][1,:]' .- iso]
+                ,"area") for tri=1:length(simplicesᵢ) for sheet=1:sheets])
+
+        fa₁ = sum([quad_area₋volume([simplex_pts[tri]; mesh_intcoeffs[tri][sheet][2,:]' .- iso]
+                ,"area") for tri=1:length(simplicesᵢ) for sheet=1:sheets])
+        
+        if (fa₀ + fa₁)/2 < fermi_area
+            E₀ = iso
+        else
+            E₁ = iso
+        end
+        iso = (E₀ + E₁)/2
+    end
+    
+    if iters > 50
+        error("Failed to converge the Fermi area to within the provided tolerance of $fa_eps.")
+    end
+    
+    (iso,fa₀,fa₁)
+end
+
+@doc """
+    calc_fl₋be(mesh,mesh_intcoeffs,eigenvals,fermi_area)
+
+Calculate the Fermi level and band energy.
+
+# Arguments
+- `mesh::PyObject`: a triangulation of the IBZ.
+- `mesh_intcoeffs::Vector{Vector{Matrix{Float64}}}`: the interval coefficients
+    for each triangle and sheet
+- `simplicesᵢ::Vector{Vector{Int64}}`: the simplices of the trianglulation not
+    including the box simplices.
+- `eigenvals::Matrix{<:Real}`: the eigenvalues of the unique k-points.
+- `fermi_area::Real`: the sum of the areas of the shadows of the sheets.
+
+# Returns
+- `fl::Real`: the Fermi level
+- `be::Real`: the band energy
+- `simplices_be₋errs::Vector{<:Real}`: the band energy error contribution from 
+    each simplex.
+- `partial_occ::Vector{Vector{Int64}}`: 0 indicates the portion of the sheet is
+    either unoccupied or completely occupied. 1 indices the sheet is partially 
+    occupied.
+- `fa_eps::Real=1e-6`: the Fermi area is convergered to within this tolerance.
+- `window::Union{Nothing,Vector{<:Real}}=nothing`: an energy window guaranteed to 
+    contain the Fermi level.
+- `rtol::Real=sqrt(eps(maximum(mesh.points)))`: a relative tolerance.
+- `atol::Real=1e-9`: an absolute tolerance.
+
+# Examples
+```jldoctest
+import Pebsi.EPMs: m2ibz,m2pointgroup,m2recip_latvecs
+
+n = 10
+mesh = ibz_init₋mesh(m2ibz,n)
+
+simplicesᵢ = notbox_simplices(mesh)
+simplices = [Matrix(mesh.points[s,:]') for s=simplicesᵢ]
+
+num_neigh = 1
+cv_pointsᵢ = get_cvpts(mesh,m2ibz)
+neighborsᵢ = reduce(vcat,[get₋neighbors(i,mesh,2) for i=cv_pointsᵢ]) |> unique
+ext_mesh,sym₋unique = get_extmesh(ibz,mesh,m2pointgroup,m2recip_latvecs,num_neigh)
+ext_simplicesᵢ = notbox_simplices(ext_mesh)
+
+sheets = 7
+energy_conv = 1
+eigenvals = zeros(sheets,size(mesh.points,1))
+for i = sort(unique(sym₋unique))[2:end]
+    eigenvals[:,i] = eval_epm(mesh.points[i,:],recip_latvecs,rules,cutoff,sheets,energy_conv)
+end
+
+simplex_bpts = sample_simplex(2,2)
+simplex_pts = [barytocart(simplex_bpts,s) for s=simplices]
+
+mesh_intcoeffs = [get_intercoeffs(index,mesh,ext_mesh,sym₋unique,eigenvals,
+        simplicesᵢ) for index=1:length(simplicesᵢ)]
+
+fermi_area = m2ibz.volume/2*electrons
+(fl,be,simplices_be₋errs,partial_occ) = calc_fl₋be(mesh,mesh_intcoeffs,simplicesᵢ,eigenvals,fermi_area,fa_eps = 1e-4)
+# output
+(0.06241309312376897, -0.04816186311193833, [9.190443344929874e-5, 5.191684029069498e-5, 7.857407828406738e-5, 8.545293880361248e-5, 7.097997084329019e-6, 8.804458992841455e-5, 2.663991565761146e-5, 0.00010482469392862471, 0.00010902356818622477, 3.8475243486520585e-5  …  2.903113803216377e-5, 9.589447641648858e-5, 0.00011949521749695925, 1.9665629987051467e-5, 4.5201852814250035e-5, 0.00010889884791019364, 0.00012030741340132867, 0.0001092182342773303, 9.398908584503796e-5, 3.394674934025208e-5], [[0, 0, 1, 0, 0, 0, 0], [0, 0, 0, 0, 0, 0, 0], [0, 0, 0, 0, 0, 0, 0], [0, 0, 0, 0, 0, 0, 0], [0, 0, 0, 0, 0, 0, 0], [0, 0, 0, 0, 0, 0, 0], [0, 1, 0, 0, 0, 0, 0], [1, 1, 0, 0, 0, 0, 0], [0, 1, 0, 0, 0, 0, 0], [0, 0, 0, 0, 0, 0, 0]  …  [0, 0, 0, 0, 0, 0, 0], [1, 0, 0, 0, 0, 0, 0], [0, 1, 0, 0, 0, 0, 0], [0, 0, 0, 0, 0, 0, 0], [1, 1, 0, 0, 0, 0, 0], [1, 1, 0, 0, 0, 0, 0], [0, 1, 0, 0, 0, 0, 0], [1, 1, 0, 0, 0, 0, 0], [1, 1, 0, 0, 0, 0, 0], [0, 0, 0, 0, 0, 0, 0]])
+```
+"""
+function calc_fl₋be(mesh::PyObject,mesh_intcoeffs::Vector{Vector{Matrix{Float64}}},
+        simplicesᵢ,eigenvals::Matrix{<:Real},fermi_area::Real;fa_eps::Real=1e-6,
+    window::Union{Nothing,Vector{<:Real}}=nothing,atol::Real=1e-9,
+        rtol::Real=sqrt(eps(maximum(mesh.points))))
+    
+    (fl,fa₀,fa₁) = bisection(mesh,mesh_intcoeffs,eigenvals,fermi_area;fa_eps=fa_eps,window=window)
+    (fl₁,null,null) = bisection(mesh,mesh_intcoeffs,eigenvals,fa₀;fa_eps=fa_eps,window=window)
+    (fl₀,null,null) = bisection(mesh,mesh_intcoeffs,eigenvals,fa₁;fa_eps=fa_eps,window=window)
+
+    simplex_bpts = sample_simplex(2,2)   
+    simplices = [Matrix(mesh.points[s,:]') for s=simplicesᵢ]
+    simplex_pts = [barytocart(simplex_bpts,s) for s=simplices]
+    
+    sheets = size(eigenvals,1)
+    ibz_area = sum([simplex_size(s) for s = simplices])
+    
+    mesh_fa₁ = [[quad_area₋volume([simplex_pts[tri]; mesh_intcoeffs[tri][sheet][2,:]' .- fl₀]
+                    ,"area") for sheet=1:sheets] for tri=1:length(simplicesᵢ)]
+    mesh_be₁ = [[quad_area₋volume([simplex_pts[tri]; mesh_intcoeffs[tri][sheet][2,:]' .- fl₀]
+                    ,"volume") for sheet=1:sheets] for tri=1:length(simplicesᵢ)]
+    mesh_fa₀ = [[quad_area₋volume([simplex_pts[tri]; mesh_intcoeffs[tri][sheet][1,:]' .- fl₁]
+                    ,"area") for sheet=1:sheets] for tri=1:length(simplicesᵢ)]
+    mesh_be₀ = [[quad_area₋volume([simplex_pts[tri]; mesh_intcoeffs[tri][sheet][1,:]' .- fl₁]
+                    ,"volume") for sheet=1:sheets] for tri=1:length(simplicesᵢ)]
+    
+    be = sum([quad_area₋volume([simplex_pts[tri]; mesh_intcoeffs[tri][sheet][1,:]' .- fl]
+                    ,"volume") for sheet=1:sheets for tri=1:length(simplicesᵢ)])
+    
+    # mesh_fa₋errs = mesh_fa₁ .- mesh_fa₀;
+    mesh_be₋errs = mesh_be₁ .- mesh_be₀;
+    
+    # Determine which triangles and sheets are partially occupied.
+    partial_occ = [[(isapprox(mesh_fa₁[tri][sheet],simplex_size(simplices[1]),atol=atol,rtol=rtol) ||
+        isapprox(mesh_fa₀[tri][sheet],simplex_size(simplices[1]),atol=atol,rtol=rtol) ||
+        isapprox(mesh_fa₁[tri][sheet],0,atol=atol) ||
+        isapprox(mesh_fa₀[tri][sheet],0,atol=atol)) ? 0 : 1
+        for sheet=1:sheets] for tri = 1:length(simplicesᵢ)]
+
+    # Calculate the band energy errors. Take the absolute value of errors of sheets
+    # that are parially occupied and sum the errors of sheets are are occupied or unoccupied
+    simplices_be₋errs = zeros(length(simplicesᵢ))
+    for tri = 1:length(simplicesᵢ)
+        for sheet = 1:sheets
+            if partial_occ[tri][sheet] == 0
+                simplices_be₋errs[tri] += mesh_be₋errs[tri][sheet]
+            else
+                simplices_be₋errs[tri] += abs(mesh_be₋errs[tri][sheet])
+            end
+        end
+    end
+    simplices_be₋errs = abs.(simplices_be₋errs);
+    
+    (fl,be,simplices_be₋errs,partial_occ)    
 end
 
 end # module
