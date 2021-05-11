@@ -372,7 +372,7 @@ Evaluate an empirical pseudopotential at a k-point.
     reciprocal lattice points rounded to two decimals places and whose values
     are the empirical pseudopotential form factors.
 - `cutoff::Real`: the Fourier expansion cutoff.
-- `sheets::Int`: the positions of eigenenergies returned.
+- `sheets::Int`: the number of eigenenergies returned.
 - `energy_conversion_factor::Real=RytoeV`: converts the energy eigenvalue units
     from the energy unit for `rules` to an alternative energy unit.
 - `rtol::Real=sqrt(eps(float(maximum(rbasis))))`: a relative tolerance for
