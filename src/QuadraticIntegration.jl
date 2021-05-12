@@ -18,7 +18,7 @@ import .Geometry: order_vertices!,simplex_size,insimplex,barytocart,carttobary,
     sample_simplex,lineseg₋pt_dist
 
 import QHull: chull,Chull
-import LinearAlgebra: cross,det,norm,dot,I
+import LinearAlgebra: cross,det,norm,dot,I,diagm
 import Statistics: mean
 import Base.Iterators: flatten
 import SparseArrays: findnz
@@ -902,10 +902,9 @@ function get_intercoeffs(index::Int,mesh::PyObject,ext_mesh::PyObject,
 end
 
 @doc """
+    calc₋fl(mesh_intcoeffs,eigenvals,fermi_area;method=1,fa_eps=1e-6,window=nothing)
 
-    bisection(mesh_intcoeffs,eigenvals,simplicesᵢ,electrons,fa_eps)
-
-Calculate the Fermi level with the bisection method.
+Calculate the Fermi level with the bisection or Chandrupatla method.
 
 # Arguments
 - `mesh::PyObject`: a triangulation of the IBZ.
@@ -916,13 +915,22 @@ Calculate the Fermi level with the bisection method.
 - `fermi_area`: the sum of the areas within the Fermi curves.
 - `fa_eps::Real=1e-6`: the area tolerance of the Fermi area or the area of the shadow
     of the sheets within the IBZ.
+- `method::Int`: give the method to compute the Fermi level (1: bisection, 
+    2: Chandrupatla).
+- `window::Union{Nothing,Vector{<:Real}}=nothing`: an energy window that has to
+    the Fermi level contain the Fermi level.
 
 # Returns
-- ` (iso,fa₀,fa₁)`: the Fermi level and a lower and upper bound of the Fermi area.
+- ` (E,fa₁,fa₂)`: the Fermi level and a lower and upper bound of the Fermi area.
 
 # Examples
 ```jldoctest
-import Pebsi.EPMs: m2ibz,m2pointgroup,m2recip_latvecs,m2electrons1
+import Pebsi.EPMs: m2ibz,m2pointgroup,m2recip_latvecs,m2electrons1,m2rules,m2cutoff,eval_epm
+import Pebsi.QuadraticIntegration: calc₋fl,get_intercoeffs
+
+import Pebsi.Geometry: sample_simplex,barytocart
+import Pebsi.Mesh: ibz_init₋mesh,notbox_simplices,get_cvpts,get_extmesh,get₋neighbors
+
 n = 10
 mesh = ibz_init₋mesh(m2ibz,n)
 
@@ -932,14 +940,14 @@ simplices = [Matrix(mesh.points[s,:]') for s=simplicesᵢ]
 num_neigh = 1
 cv_pointsᵢ = get_cvpts(mesh,m2ibz)
 neighborsᵢ = reduce(vcat,[get₋neighbors(i,mesh,2) for i=cv_pointsᵢ]) |> unique
-ext_mesh,sym₋unique = get_extmesh(ibz,mesh,m2pointgroup,m2recip_latvecs,num_neigh)
+ext_mesh,sym₋unique = get_extmesh(m2ibz,mesh,m2pointgroup,m2recip_latvecs,num_neigh)
 ext_simplicesᵢ = notbox_simplices(ext_mesh)
 
 sheets = 7
 energy_conv = 1
 eigenvals = zeros(sheets,size(mesh.points,1))
 for i = sort(unique(sym₋unique))[2:end]
-    eigenvals[:,i] = eval_epm(mesh.points[i,:],recip_latvecs,rules,cutoff,sheets,energy_conv)
+    eigenvals[:,i] = eval_epm(mesh.points[i,:],m2recip_latvecs,m2rules,m2cutoff,sheets,energy_conv)
 end
 
 simplex_bpts = sample_simplex(2,2)
@@ -949,13 +957,13 @@ mesh_intcoeffs = [get_intercoeffs(index,mesh,ext_mesh,sym₋unique,eigenvals,
         simplicesᵢ) for index=1:length(simplicesᵢ)]
 
 fermi_area = m2ibz.volume/2*m2electrons1
-(fl,fa₀,fa₁) = bisection(mesh,mesh_intcoeffs,eigenvals,fermi_area)
+(fl,fa₁,fa₂) = calc₋fl(mesh,mesh_intcoeffs,eigenvals,fermi_area,method=1)
 # output
-(0.06246735914532753, 0.18476030895687914, 0.17608330082229934)
+(0.06247693583610149, 0.18475076861612755, 0.17609279661656574)
 ```
 """
-function bisection(mesh::PyObject,mesh_intcoeffs::Vector{Vector{Matrix{Float64}}},
-    eigenvals::AbstractMatrix{<:Real},fermi_area::Real;fa_eps::Real=1e-6,
+function calc₋fl(mesh::PyObject,mesh_intcoeffs::Vector{Vector{Matrix{Float64}}},
+    eigenvals::AbstractMatrix{<:Real},fermi_area::Real;method::Int=1,fa_eps::Real=1e-6,
     window::Union{Nothing,Vector{<:Real}}=nothing)
         
     simplex_bpts = sample_simplex(2,2)
@@ -966,47 +974,82 @@ function bisection(mesh::PyObject,mesh_intcoeffs::Vector{Vector{Matrix{Float64}}
     sheets = size(eigenvals,1)
     ibz_area = sum([simplex_size(s) for s = simplices])
     electrons = 2*fermi_area/ibz_area
-    
-    if window == nothing
-        E₀ = minimum(eigenvals[:,5:end])
-        E₁ = maximum(eigenvals[:,5:end])
-        iso = E₀ + electrons/(2*sheets)*(E₁ - E₀)
-    else
-        E₀,E₁ = window
-        iso = (E₀ + E₁)/2 
-    end
+    max_sheet = round(Int,electrons/2)
 
-    fa₀,fa₁ = (1e10,1e10)
+    if window == nothing
+        E₁ = minimum(eigenvals[max_sheet,5:end])
+        E₂ = maximum(eigenvals[max_sheet,5:end])
+    else
+        E₁,E₂ = window
+    end
+    E = (E₁ + E₂)/2
+
+    f₁ = sum([quad_area₋volume([simplex_pts[tri]; mesh_intcoeffs[tri][sheet][1,:]' .- E₁]
+        ,"area") for tri=1:length(simplicesᵢ) for sheet=1:sheets]) - fermi_area
+
+    f₂ = max_sheet*ibz_area - fermi_area
+    f₃ = 0
+    E₃ = 0
     iters = 0
-    while abs((fa₀ + fa₁)/2 - fermi_area) > fa_eps
+    f,fa₁,fa₂ = 1e9,1e9,1e9
+    while abs(f) > fa_eps
         iters += 1
         if iters > 50
-            break
+            error("Failed to converge the Fermi area to within the provided tolerance of $fa_eps.")
         end
-        println("area error: ", abs((fa₀ + fa₁)/2 - fermi_area))
-        fa₀ = sum([quad_area₋volume([simplex_pts[tri]; mesh_intcoeffs[tri][sheet][1,:]' .- iso]
-                ,"area") for tri=1:length(simplicesᵢ) for sheet=1:sheets])
+        println("area error: ", abs((fa₁ + fa₂)/2 - fermi_area))
 
-        fa₁ = sum([quad_area₋volume([simplex_pts[tri]; mesh_intcoeffs[tri][sheet][2,:]' .- iso]
+        fa₁ = sum([quad_area₋volume([simplex_pts[tri]; mesh_intcoeffs[tri][sheet][1,:]' .- E]
                 ,"area") for tri=1:length(simplicesᵢ) for sheet=1:sheets])
-        
-        if (fa₀ + fa₁)/2 < fermi_area
-            E₀ = iso
+        fa₂ = sum([quad_area₋volume([simplex_pts[tri]; mesh_intcoeffs[tri][sheet][2,:]' .- E]
+                ,"area") for tri=1:length(simplicesᵢ) for sheet=1:sheets])
+        f = (fa₁ + fa₂)/2 - fermi_area
+
+        if sign(f) != sign(f₁)
+            E₃ = E₂
+            f₃ = f₂
+            E₂ = E₁
+            f₂ = f₁
+            E₁ = E
+            f₁ = f
         else
-            E₁ = iso
+            E₃ = E₁
+            f₃ = f₁
+            E₁ = E
+            f₁ = f
         end
-        iso = (E₀ + E₁)/2
+
+        # Bisection method
+        if method == 1
+            t = 0.5
+        # Chandrupatla method
+        elseif method == 2            
+            ϕ₁ = (f₁ - f₂)/(f₃ - f₂)
+            ξ₁ = (E₁ - E₂)/(E₃ - E₂)
+            if 1 - √(1 - ξ₁) < ϕ₁ && ϕ₁ < √ξ₁
+                α = (E₃ - E₁)/(E₂ - E₁)
+                t = (f₁/(f₁ - f₂))*(f₃/(f₃ - f₂)) - α*(f₁/(f₃ - f₁))*(f₂/(f₂ - f₃))
+            else
+                t = 0.5
+            end
+
+            if t < 0
+                t = 1e-9
+            elseif t > 1
+                t = 1 - 1e-9
+            end
+        else
+            ArgumentError("The method for calculating the Fermi is either 1 or 2.")
+        end
+        E = E₁ + t*(E₂ - E₁)
     end
     
-    if iters > 50
-        error("Failed to converge the Fermi area to within the provided tolerance of $fa_eps.")
-    end
-    
-    (iso,fa₀,fa₁)
+    (E,fa₁,fa₂)
 end
 
 @doc """
-    calc_fl₋be(mesh,mesh_intcoeffs,eigenvals,fermi_area;fa_eps,window,rtol,atol)
+    calc_fl₋be(mesh,mesh_intcoeffs,eigenvals,fermi_area;fa_eps=1e-6,fl_method=2,
+        window=nothing,rtol,atol=1e-9)
 
 Calculate the Fermi level and band energy.
 
@@ -1019,6 +1062,8 @@ Calculate the Fermi level and band energy.
 - `eigenvals::Matrix{<:Real}`: the eigenvalues of the unique k-points.
 - `fermi_area::Real`: the sum of the areas of the shadows of the sheets.
 - `fa_eps::Real`: the Fermi are is converged to within this tolerance.
+- `fl_method::Int=2`: the method for calculating the Fermi level. If 1, use the
+    bisection method. If 2, use Chandrupatla's method.
 - `window::AbstractVector{<:Real}`: a window that the Fermi level is guaranteed
     to lie within.
 - `rtol::Real`: a relative tolerance.
@@ -1075,13 +1120,15 @@ fermi_area = m2ibz.volume/2*electrons
 """
 function calc_fl₋be(mesh::PyObject,mesh_intcoeffs::Vector{Vector{Matrix{Float64}}},
         simplicesᵢ,eigenvals::Matrix{<:Real},fermi_area::Real;fa_eps::Real=1e-6,
-    window::Union{Nothing,Vector{<:Real}}=nothing,atol::Real=1e-9,
+        fl_method::Int=2,window::Union{Nothing,Vector{<:Real}}=nothing,atol::Real=1e-9,
         rtol::Real=sqrt(eps(maximum(mesh.points))))
     
-    (fl,fa₀,fa₁) = bisection(mesh,mesh_intcoeffs,eigenvals,fermi_area;fa_eps=fa_eps,window=window)
-    (fl₁,null,null) = bisection(mesh,mesh_intcoeffs,eigenvals,fa₀;fa_eps=fa_eps,window=window)
-    (fl₀,null,null) = bisection(mesh,mesh_intcoeffs,eigenvals,fa₁;fa_eps=fa_eps,window=window)
-
+    (fl,fa₀,fa₁) = calc₋fl(mesh,mesh_intcoeffs,eigenvals,fermi_area;fa_eps=fa_eps,window=window,
+        method=fl_method)
+    (fl₁,null,null) = calc₋fl(mesh,mesh_intcoeffs,eigenvals,fa₀;fa_eps=fa_eps,window=window,
+        method=fl_method)
+    (fl₀,null,null) = calc₋fl(mesh,mesh_intcoeffs,eigenvals,fa₁;fa_eps=fa_eps,window=window,
+        method=fl_method)
     simplex_bpts = sample_simplex(2,2)   
     simplices = [Matrix(mesh.points[s,:]') for s=simplicesᵢ]
     simplex_pts = [barytocart(simplex_bpts,s) for s=simplices]
