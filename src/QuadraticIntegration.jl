@@ -1176,10 +1176,8 @@ function calc_fl₋be(mesh::PyObject,mesh_intcoeffs::Vector{Vector{Matrix{Float6
 end
 
 @doc """
-
     refine_mesh(recip_latvecs,rules,cutoff,ibz,pointgroup,mesh,ext_mesh,sym₋unique,
-        eigenvals,simplices_errs,acc_tol,refine_method,sample_method,
-        num_neigh;energy_conv,rtol,atol)
+        eigenvals,simplices_errs,acc_tol,refine_method,sample_method,num_neigh;energy_conv,rtol,atol)
     
 Add points to a mesh where errors are largest.
 

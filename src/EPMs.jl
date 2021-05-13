@@ -15,7 +15,7 @@ import SymmetryReduceBZ.Symmetry: calc_spacegroup
 
 import PyCall: pyimport
 import PyPlot: subplots
-import QHull: chull
+import QHull: chull,Chull
 import SymmetryReduceBZ.Lattices: get_recip_latvecs
 import SymmetryReduceBZ.Utilities: sample_circle, sample_sphere
 import LinearAlgebra: norm, Symmetric, eigvals, dot
@@ -231,116 +231,91 @@ Sn_ibz = chull([-0.09073998457420263 1.3877787807814455e-17 0.0; -0.045369992287
 Zn_bz = chull([-0.06619141232616481 0.1146468891736583 0.05348680480525456; -0.06619141232616481 0.11464688917365831 -0.05348680480525455; 0.06619141232616478 0.1146468891736583 0.05348680480525456; 0.06619141232616477 0.11464688917365831 -0.05348680480525455; 0.13238282465232962 -4.4326276067538885e-17 -0.05348680480525455; 0.13238282465232964 -4.43262760675389e-17 0.05348680480525456; 0.06619141232616481 -0.11464688917365833 -0.05348680480525455; 0.06619141232616484 -0.11464688917365833 0.05348680480525456; -0.06619141232616477 -0.11464688917365833 0.05348680480525456; -0.06619141232616478 -0.11464688917365835 -0.05348680480525456; -0.13238282465232962 2.4164565425101098e-17 -0.05348680480525455; -0.13238282465232964 4.83291308502022e-17 0.05348680480525456])
 Zn_ibz = chull([0.0 0.0 0.05348680480525454; 0.0 0.0 0.0; -0.06619141232616481 0.11464688917365831 0.05348680480525452; -0.0661914123261648 0.1146468891736583 -3.9661999043715395e-17; 1.1674136499448448e-17 0.11464688917365831 1.487324964139329e-17; 1.1674136499448449e-17 0.11464688917365831 0.05348680480525453])
 
+# Band energy and Fermi level solutions and approximate error computed with about 
+# 3 million k-points with the rectangular method
+Ag_flans = 2.1922390847785764
+Al_flans = 11.591037691304805
+Au_flans = 0.25853699543371234
+Cs_flans = 1.3360115371222165
+Cu_flans = 2.299010605345029
+In_flans = 8.579352636903511
+K_flans = 2.025607254792486
+Li_flans = 3.9113730301061116
+Na_flans = 3.1193508267702335
+Pb_flans = 9.017164353350289
+Rb_flans = 1.8548568671440286
+Sn_flans = 5.905697491784268
+Zn_flans = 5.524488853935539
+
+Ag_flstd = 0.00029024054548876027
+Al_flstd = 0.0008395537007797541
+Au_flstd = 0.00035649434441836867
+Cs_flstd = 6.975117482541303e-5
+Cu_flstd = 0.00914908383769056
+In_flstd = 0.0004458156420962059
+K_flstd = 0.0002935445102367859
+Li_flstd = 0.0004358031904537981
+Na_flstd = 0.00044732694710161134
+Pb_flstd = 0.0007380499203445475
+Rb_flstd = 0.00035086563370848473
+Sn_flstd = 0.0013689154092370389
+Zn_flstd = 0.00041898720333712655
+
+Ag_beans = 0.6644229355784247
+Al_beans = 22.99549912356057
+Au_beans = -1.1340092325533375
+Cs_beans = 0.11629735361316625
+Cu_beans = 0.44869514208694117
+In_beans = 10.828585098946128
+K_beans = 0.29421043930517937
+Li_beans = 1.7553123751053519
+Na_beans = 0.8668889251058358
+Pb_beans = 12.009129106121884
+Rb_beans = 0.23479467880160457
+Sn_beans = 4.625508607056789
+Zn_beans = 3.8962879178996266
+
+Ag_bestd = 8.775063251184409e-6
+Al_bestd = 3.0020754459305066e-5
+Au_bestd = 2.9387131731311005e-6
+Cs_bestd = 2.851175160523137e-5
+Cu_bestd = 0.005879409105478692
+In_bestd = 0.00042706681206913376
+K_bestd = 3.74162920869127e-6
+Li_bestd = 0.0006671643075317917
+Na_bestd = 9.023522804366152e-6
+Pb_bestd = 2.9950783348248257e-5
+Rb_bestd = 6.910086337481342e-7
+Sn_bestd = 0.0018233084032896424
+Zn_bestd = 4.026081648014471e-6
+
+Ag_fermiarea = Ag_electrons/2*Ag_ibz.volume
+Al_fermiarea = Al_electrons/2*Al_ibz.volume
+Au_fermiarea = Au_electrons/2*Au_ibz.volume
+Cs_fermiarea = Cs_electrons/2*Cs_ibz.volume
+Cu_fermiarea = Cu_electrons/2*Cu_ibz.volume
+In_fermiarea = In_electrons/2*In_ibz.volume
+K_fermiarea = K_electrons/2*K_ibz.volume
+Li_fermiarea = Li_electrons/2*Li_ibz.volume
+Na_fermiarea = Na_electrons/2*Na_ibz.volume
+Pb_fermiarea = Pb_electrons/2*Pb_ibz.volume
+Rb_fermiarea = Rb_electrons/2*Rb_ibz.volume
+Sn_fermiarea = Sn_electrons/2*Sn_ibz.volume
+Zn_fermiarea = Zn_electrons/2*Zn_ibz.volume
+
+atom_types = [0]
+atom_pos = Array([0 0 0;]')
+coordinates = "Cartesian"
+convention = "ordinary"
+
+v = Dict()
+for m=epm_names
+    v["ft"],v["pg"] = calc_spacegroup(eval(Symbol(m*"_latvecs")),atom_types,atom_pos,coordinates)
+    @eval $(Symbol(m,"_pointgroup")) = v["pg"]
+    @eval $(Symbol(m,"_frac_trans")) = v["ft"]
+end
 
 # 2D "toy" empirical pseudopotentials (the form factors are chosen at random)
-# Model 1 - square symmetry
-atom_types = [0]
-atom_pos = Array([0 0;]')
-coordinates = "Cartesian" 
-
-convention = "ordinary"
-m1real_latvecs = [1 0; 0 1]
-(m1frac_trans,m1pointgroup) = calc_spacegroup(m1real_latvecs,atom_types,atom_pos,
-    coordinates)
-m1recip_latvecs = get_recip_latvecs(m1real_latvecs,convention)
-m1rules = Dict(1.00 => -0.23, 1.41 => 0.12)
-m1electrons1 = 6
-
-m1cutoff = 6.1
-m1fermilevel1 = 0.9381309375519309
-m1bandenergy1 = 1.0423513259405526
-
-m1electrons2 = 7
-m1fermilevel2 = 1.1057574662181007
-m1bandenergy2 = 1.5535874027360785
-
-m1electrons3 = 8
-m1fermilevel3 = 1.258616280256323
-m1bandenergy3 = 2.145219996962875
-
-# Model 2 - hexagonal symmetry
-convention = "ordinary"
-m2recip_latvecs = [0.5 0.5; 0.8660254037844386 -0.8660254037844386]
-m2real_latvecs = get_recip_latvecs(m2recip_latvecs,convention)
-(m2frac_trans,m2pointgroup) = calc_spacegroup(m2real_latvecs,atom_types,atom_pos,
-    coordinates)
-m2rules = Dict(1.0 => 0.39, 1.73 => 0.23, 2.0 => -0.11)
-m2cutoff = 5.9
-
-m2electrons1 = 5
-m2fermilevel1 = 0.06138423898212197
-m2bandenergy1 = -0.4302312741509512
-
-m2electrons2 = 7
-m2fermilevel2 = 0.9021827685803184
-m2bandenergy2 = -0.024599327665460413
-
-m2electrons3 = 8
-m2fermilevel3 = 0.9968615721784458
-m2bandenergy3 = 0.38884262264868563
-
-# Model 3 - centered rectangular symmetry
-convention = "ordinary"
-m3recip_latvecs = [0.4338837391175581 1.0; 0.9009688679024191 0.0]
-m3real_latvecs = get_recip_latvecs(m3recip_latvecs,convention)
-(m3frac_trans,m3pointgroup) = calc_spacegroup(m3real_latvecs,atom_types,atom_pos,
-    coordinates)
-m3rules = Dict(1.0 => -0.27, 1.06 => 0.2, 1.69 => -0.33)
-m3cutoff = 5.95
-
-m3electrons1 = 5
-m3fermilevel1 = 0.5833433206577795
-m3bandenergy1 = 0.0035066586253235665
-
-m3electrons2 = 7
-m3fermilevel2 = 0.9911138305912597
-m3bandenergy2 = 0.71444638735834
-
-m3electrons3 = 8
-m3fermilevel3 = 1.1117071929086504
-m3bandenergy3 = 1.1860046687293682
-
-# Model 4 - rectangular symmetry
-convention = "ordinary"
-m4recip_latvecs = [1 0; 0 2]
-m4real_latvecs = get_recip_latvecs(m4recip_latvecs,convention)
-(m4frac_trans,m4pointgroup) = calc_spacegroup(m4real_latvecs,atom_types,atom_pos,
-    coordinates)
-m4rules = Dict(1.0 => 0.39, 2.0 => -0.11, 2.24 => 0.11)
-m4cutoff = 8.6
-
-m4electrons1 = 6
-m4fermilevel1 = 1.9034249381001005
-m4bandenergy1 = 5.1056578173306795
-
-m4electrons2 = 7
-m4fermilevel2 = 2.2266488438956333
-m4bandenergy2 = 7.1685536634386136
-
-m4electrons3 = 8
-m4fermilevel3 = 2.551004975931985
-m4bandenergy3 = 9.555193758896971
-
-# Model 5 - oblique symmetry
-convention = "ordinary"
-m5recip_latvecs = [1.0 -0.4; 0.0 1.0392304845413265]
-m5real_latvecs = get_recip_latvecs(m5recip_latvecs,convention)
-(m5frac_trans,m5pointgroup) = calc_spacegroup(m5real_latvecs,atom_types,atom_pos,
-    coordinates)
-m5rules = Dict(1.0 => 0.42, 1.11 => 0.02, 1.2 => -0.18)
-m5cutoff = 6.3
-
-m5electrons1 = 5
-m5fermilevel1 = 0.7916464535133585
-m5bandenergy1 = 0.47750270146629903
-
-m5electrons2 = 7
-m5fermilevel2 = 1.1470444743280181
-m5bandenergy2 = 1.4588171623200643
-
-m5electrons3 = 9
-m5fermilevel3 = 1.4883816210907215
-m5bandenergy3 = 2.8258962133639556
 
 # Brillouin zone and irreducible Brillouin zone for 2D models.
 m1bz = chull([0.5 0.5; 0.5 -0.5; -0.5 -0.5; -0.5 0.5])
@@ -357,6 +332,233 @@ m4ibz = chull([0.5 0.0; 0.0 0.0; 0.0 1.0; 0.5 1.0])
 
 m5bz = chull([0.09999999999999995 0.6350852961085884; 0.5 0.4041451884327381; 0.5 -0.40414518843273806; -0.5 0.4041451884327381; -0.1000000000000001 -0.6350852961085884; -0.5 -0.4041451884327381])
 m5ibz = chull([-0.5 0.4041451884327381; 0.5 -0.07872958216222165; -0.5 0.07872958216222165; 0.5 0.4041451884327381; 0.10000000000000002 0.6350852961085884])
+
+# Model 1 - square symmetry
+atom_types = [0]
+atom_pos = Array([0 0;]')
+coordinates = "Cartesian" 
+
+convention = "ordinary"
+m1real_latvecs = [1 0; 0 1]
+(m1frac_trans,m1pointgroup) = calc_spacegroup(m1real_latvecs,atom_types,atom_pos,
+    coordinates)
+m1recip_latvecs = get_recip_latvecs(m1real_latvecs,convention)
+m1rules = Dict(1.00 => -0.23, 1.41 => 0.12)
+m1electrons1 = 6
+
+m1cutoff = 6.1
+m1fermiarea1 = m1electrons1/2*m1ibz.volume
+m1fermilevel1 = 0.9381309375519309
+m1bandenergy1 = 1.0423513259405526
+
+m1electrons2 = 7
+m1fermiarea2 = m1electrons2/2*m1ibz.volume
+m1fermilevel2 = 1.1057574662181007
+m1bandenergy2 = 1.5535874027360785
+
+m1electrons3 = 8
+m1fermiarea3 = m1electrons3/2*m1ibz.volume
+m1fermilevel3 = 1.258616280256323
+m1bandenergy3 = 2.145219996962875
+
+# Model 2 - hexagonal symmetry
+convention = "ordinary"
+m2recip_latvecs = [0.5 0.5; 0.8660254037844386 -0.8660254037844386]
+m2real_latvecs = get_recip_latvecs(m2recip_latvecs,convention)
+(m2frac_trans,m2pointgroup) = calc_spacegroup(m2real_latvecs,atom_types,atom_pos,
+    coordinates)
+m2rules = Dict(1.0 => 0.39, 1.73 => 0.23, 2.0 => -0.11)
+m2cutoff = 5.9
+
+m2electrons1 = 5
+m2fermiarea1 = m2electrons1/2*m2ibz.volume
+m2fermilevel1 = 0.06138423898212197
+m2bandenergy1 = -0.4302312741509512
+
+m2electrons2 = 7
+m2fermiarea2 = m2electrons2/2*m2ibz.volume
+m2fermilevel2 = 0.9021827685803184
+m2bandenergy2 = -0.024599327665460413
+
+m2electrons3 = 8
+m2fermiarea3 = m2electrons3/2*m2ibz.volume
+m2fermilevel3 = 0.9968615721784458
+m2bandenergy3 = 0.38884262264868563
+
+# Model 3 - centered rectangular symmetry
+convention = "ordinary"
+m3recip_latvecs = [0.4338837391175581 1.0; 0.9009688679024191 0.0]
+m3real_latvecs = get_recip_latvecs(m3recip_latvecs,convention)
+(m3frac_trans,m3pointgroup) = calc_spacegroup(m3real_latvecs,atom_types,atom_pos,
+    coordinates)
+m3rules = Dict(1.0 => -0.27, 1.06 => 0.2, 1.69 => -0.33)
+m3cutoff = 5.95
+
+m3electrons1 = 5
+m3fermiarea1 = m3electrons1/2*m3ibz.volume
+m3fermilevel1 = 0.5833433206577795
+m3bandenergy1 = 0.0035066586253235665
+
+m3electrons2 = 7
+m3fermiarea2 = m3electrons2/2*m3ibz.volume
+m3fermilevel2 = 0.9911138305912597
+m3bandenergy2 = 0.71444638735834
+
+m3electrons3 = 8
+m3fermiarea3 = m3electrons3/2*m3ibz.volume
+m3fermilevel3 = 1.1117071929086504
+m3bandenergy3 = 1.1860046687293682
+
+# Model 4 - rectangular symmetry
+convention = "ordinary"
+m4recip_latvecs = [1 0; 0 2]
+m4real_latvecs = get_recip_latvecs(m4recip_latvecs,convention)
+(m4frac_trans,m4pointgroup) = calc_spacegroup(m4real_latvecs,atom_types,atom_pos,
+    coordinates)
+m4rules = Dict(1.0 => 0.39, 2.0 => -0.11, 2.24 => 0.11)
+m4cutoff = 8.6
+
+m4electrons1 = 6
+m4fermiarea1 = m4electrons1/2*m4ibz.volume
+m4fermilevel1 = 1.9034249381001005
+m4bandenergy1 = 5.1056578173306795
+
+m4electrons2 = 7
+m4fermiarea2 = m4electrons2/2*m4ibz.volume
+m4fermilevel2 = 2.2266488438956333
+m4bandenergy2 = 7.1685536634386136
+
+m4electrons3 = 8
+m4fermiarea3 = m4electrons3/2*m4ibz.volume
+m4fermilevel3 = 2.551004975931985
+m4bandenergy3 = 9.555193758896971
+
+# Model 5 - oblique symmetry
+convention = "ordinary"
+m5recip_latvecs = [1.0 -0.4; 0.0 1.0392304845413265]
+m5real_latvecs = get_recip_latvecs(m5recip_latvecs,convention)
+(m5frac_trans,m5pointgroup) = calc_spacegroup(m5real_latvecs,atom_types,atom_pos,
+    coordinates)
+m5rules = Dict(1.0 => 0.42, 1.11 => 0.02, 1.2 => -0.18)
+m5cutoff = 6.3
+
+m5electrons1 = 5
+m5fermiarea1 = m5electrons1/2*m5ibz.volume
+m5fermilevel1 = 0.7916464535133585
+m5bandenergy1 = 0.47750270146629903
+
+m5electrons2 = 7
+m5fermiarea2 = m5electrons2/2*m5ibz.volume
+m5fermilevel2 = 1.1470444743280181
+m5bandenergy2 = 1.4588171623200643
+
+m5electrons3 = 9
+m5fermiarea3 = m5electrons3/2*m5ibz.volume
+m5fermilevel3 = 1.4883816210907215
+m5bandenergy3 = 2.8258962133639556
+
+@doc """
+    model2D(energy_conv,sheets,real_latvecs,recip_latvecs,bz,ibz,pointgroup,
+    frac_trans,rules,cutoff,electrons,fermiarea,fermilevel,bandenergy)
+
+A container for all the information about the 2D empirical pseudopotential model(s).
+"""
+struct model
+    energy_conv::Real
+    sheets::Int 
+    atom_types::Vector{<:Int}
+    atom_pos::Matrix{<:Real}
+    coordinates::String
+    convention::String
+
+    real_latvecs::Matrix{<:Real}
+    recip_latvecs::Matrix{<:Real}
+    bz::Chull{<:Real}
+    ibz::Chull{<:Real}
+    pointgroup::Vector{Matrix{Float64}}
+    frac_trans::Vector{Vector{Float64}}
+    
+    rules::Dict{Float64,Float64}
+    cutoff::Real       
+    electrons::Real
+    fermiarea::Real
+    fermilevel::Real
+    bandenergy::Real
+end
+
+energy_conv = 1
+sheets = 10
+atom_types = [0]
+atom_pos = Array([0 0 0;]')
+coordinates = "Cartesian" 
+convention = "ordinary"
+vars₀ = ["energy_conv","sheets","atom_types","atom_pos","coordinates","convention"]
+vars₁ = ["real_latvecs","recip_latvecs","bz","ibz","pointgroup","frac_trans","rules","cutoff"]
+vars₂ = ["electrons","fermiarea","fermilevel","bandenergy"];
+v = Dict()
+for i=1:5
+    [v[var] = (var |> Symbol |> eval) for var=vars₀]
+    [v[var] = ("m"*string(i)*var |> Symbol |> eval) for var=vars₁]
+    for j=1:3
+        [v[var] = ("m"*string(i)*var*string(j) |> Symbol |> eval) for var=vars₂]
+        name = "m"*string(i)*string(j)        
+        @eval $(Symbol(name)) = model([v[var] for var=[vars₀; vars₁; vars₂]]...)
+    end
+end
+
+@doc """
+    epm₋model()
+
+A container for all the information about the 2D empirical pseudopotential model(s).
+"""
+struct epm₋model
+    energy_conv::Real
+    sheets::Int 
+    sym_offset::Vector{<:Real}
+    atom_types::Vector{<:Int}
+    atom_pos::Matrix{<:Real}
+    coordinates::String
+    convention::String
+    
+    lat_type::String
+    lat_constants::Vector{<:Real}
+    lat_angles::Vector{<:Real}
+    real_latvecs::Matrix{<:Real}
+    rlat_type::String
+    recip_latvecs::Matrix{<:Real}
+    pointgroup::Vector{Matrix{Float64}}
+    frac_trans::Vector{Vector{Float64}}
+    
+    bz::Chull{<:Real}
+    ibz::Chull{<:Real}    
+    rules::Dict{Float64,Float64}    
+    electrons::Real
+    cutoff::Real
+    fermiarea::Real
+    fermilevel::Real
+    fl_error::Real
+    bandenergy::Real
+    be_error::Real
+end
+
+energy_conv = RytoeV
+sheets = 10
+atom_types = [0]
+atom_pos = Array([0 0 0;]')
+coordinates = "Cartesian" 
+convention = "ordinary"
+vars₀ = ["energy_conv","sheets","offset","atom_types","atom_pos","coordinates","convention"]
+vars₁ = ["type","abc","αβγ","latvecs","rtype","rlatvecs","pointgroup","frac_trans",
+        "bz","ibz","rules","electrons","cutoff","fermiarea","flans","flstd","beans","bestd"]
+v = Dict()
+offset = [0.0,0,0]
+for m=epm_names
+    offset = sym_offset[eval(Symbol(m,"_rtype"))]
+    [v[var] = eval(Symbol(var)) for var=vars₀]
+    [v[var] = eval(Symbol(m,"_",var)) for var=vars₁]
+    @eval $(Symbol(m,"_epm")) = epm₋model([v[var] for var=[vars₀;vars₁]]...)
+end
+        
 
 @doc """
     eval_epm(kpoint,rbasis,rules,cutoff,sheets,energy_conversion_factor;rtol,
@@ -471,6 +673,42 @@ function eval_epm(kpoints::AbstractMatrix{<:Real},
 
     mapslices(x->eval_epm(x,rbasis,rules,cutoff,sheets,energy_conversion_factor;
         rtol=rtol,atol=atol),kpoints,dims=1)
+end
+
+@doc """
+    Evaluate an empirical pseudopotential model at a k-point or many k-points.
+
+# Arguments
+- `m::Union{model,epm₋model}`: an EPM model structure.
+- `kpoint::Union{Vector{<:Real},Matrix{<:Real}}`: a kpoint or kpoints as a 
+    vector or as columns of a matrix, respectively.
+- `rtol=rtol::Real=sqrt(eps(float(maximum(m.recip_latvecs))))`: a relative tolerance.
+- `atol::Real=1e-9`: an absolute tolerance.
+
+# Examples
+```jldoctest
+import Pebsi.EPMs: m11,eval_epm
+eval_epm(m11,[0,0])
+# output
+10-element Vector{Float64}:
+ -0.1577295402106862
+  0.7384430928842765
+  0.8909287017101515
+  0.890928701710161
+  1.099286788661485
+  1.9651120864887792
+  2.0354692798814584
+  2.0354692798815126
+  2.2049666585171774
+  3.894975261713816
+```
+"""
+function eval_epm(m::Union{model,epm₋model},
+    kpoint::Union{Vector{<:Real},Matrix{<:Real}};
+    rtol=rtol::Real=sqrt(eps(float(maximum(m.recip_latvecs)))),
+    atol=1e-9)::Union{Vector{<:Real},Matrix{<:Real}}
+    eval_epm(kpoint,m.recip_latvecs,m.rules,m.cutoff,m.sheets,m.energy_conv;
+        rtol=rtol,atol=atol)
 end
 
 @doc """
