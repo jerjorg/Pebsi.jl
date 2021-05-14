@@ -88,7 +88,7 @@ end
     are the empirical pseudopotential form factors.
 - `electrons::Integer`: the number of free electrons in the unit cell.
 - `cutoff::Real`: the Fourier expansion cutoff.
-- `sheets::UnitRange{<:Int}`: the sheets of the band structure included in the
+- `sheets::Int`: the sheets of the band structure included in the
     calculation. This must begin with 1 for the result to make any sense.
 - `N::AbstractArray{<:Integer,2}`: an integer, square array that relates the
     reciprocal lattice vectors `R` to the grid generating vectors `K`: `R=KN`.
@@ -138,7 +138,7 @@ rectangular_method(real_latvecs,atom_types,atom_pos,rules,electrons,cutoff,
 function rectangular_method(real_latvecs::AbstractMatrix{<:Real},
     atom_types::AbstractArray{<:Integer,1}, atom_pos::AbstractMatrix{<:Real},
     rules::Dict{Float64,Float64}, electrons::Integer, cutoff::Real,
-    sheets::UnitRange{<:Int}, N::AbstractArray{<:Integer,2},
+    sheets::Int, N::AbstractArray{<:Integer,2},
     grid_offset::AbstractVector{<:Real}=[0,0], convention::String="ordinary",
     coordinates::String="Cartesian", energy_factor::Real=RytoeV;
     rtol::Real=sqrt(eps(float(maximum(real_latvecs)))),
@@ -159,9 +159,9 @@ function rectangular_method(real_latvecs::AbstractMatrix{<:Real},
 
     if func == nothing
         eigenvalues = eval_epm(unique_kpoints,recip_latvecs,rules,cutoff,sheets,
-            energy_factor,rtol=rtol,atol=atol)
+            energy_factor;rtol=rtol,atol=atol)
     else
-        eigenvalues = eval_epm(func,unique_kpoints,sheets[end])
+        eigenvalues = eval_epm(func,unique_kpoints,sheets)
     end
     
     num_unique = size(unique_kpoints,2)
@@ -170,7 +170,7 @@ function rectangular_method(real_latvecs::AbstractMatrix{<:Real},
     maxoccupied_state = ceil(Int,round(electrons*num_kpoints/2,sigdigits=12))
     rectangle_size = abs(det(recip_latvecs))/num_kpoints
     
-    eigenweights = zeros(sheets[end],num_unique)
+    eigenweights = zeros(sheets,num_unique)
     for i=1:num_unique
         eigenweights[:,i] .= kpoint_weights[i]
     end
@@ -182,10 +182,10 @@ function rectangular_method(real_latvecs::AbstractMatrix{<:Real},
     eigenvalues = eigenvalues[order]
     eigenweights = eigenweights[order]
     
-    totalstates = sheets[end]*num_kpoints
+    totalstates = sheets*num_kpoints
     counter = maxoccupied_state
     index = 0
-    for i=1:num_kpoints*sheets[end]
+    for i=1:num_kpoints*sheets
         counter -= eigenweights[i]
         if counter <= 0
             index = i
@@ -207,7 +207,7 @@ Calculate the Fermi level and band energy with the rectangular method without sy
 """
 function rectangular_method(recip_latvecs::AbstractMatrix{<:Real},
     rules::Dict{Float64,Float64}, electrons::Integer, cutoff::Real,
-    sheets::UnitRange{<:Int}, N::AbstractMatrix{<:Real},
+    sheets::Int, N::AbstractMatrix{<:Real},
     grid_offset::AbstractVector{<:Real}=[0,0], energy_factor::Real=RytoeV;
     rtol::Real=sqrt(eps(float(maximum(recip_latvecs)))),
     atol::Real=1e-9,
@@ -216,16 +216,16 @@ function rectangular_method(recip_latvecs::AbstractMatrix{<:Real},
     integration_points = sample_unitcell(recip_latvecs, N, grid_offset,rtol,
         atol)
     num_kpoints = size(integration_points,2)
-    num_states = num_kpoints*sheets[end]
+    num_states = num_kpoints*sheets
     eigenvalues = zeros(num_states)
 
     for i=1:num_kpoints
         if func == nothing
-        eigenvalues[1+(i-1)*sheets[end]:(sheets[end]*i)] = eval_epm(
+        eigenvalues[1+(i-1)*sheets:(sheets*i)] = eval_epm(
             integration_points[:,i],recip_latvecs,rules,cutoff,sheets,
             energy_factor,rtol=rtol,atol=atol)
         else
-            eigenvalues[1+(i-1)*sheets[end]:(sheets[end]*i)] = eval_epm(
+            eigenvalues[1+(i-1)*sheets:(sheets*i)] = eval_epm(
                 func,integration_points[])    
         end
     end
