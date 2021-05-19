@@ -458,7 +458,7 @@ m5fermilevel3 = 1.4883816210907215
 m5bandenergy3 = 2.8258962133639556
 
 @doc """
-    model2D(energy_conv,sheets,real_latvecs,recip_latvecs,bz,ibz,pointgroup,
+    model(energy_conv,sheets,real_latvecs,recip_latvecs,bz,ibz,pointgroup,
     frac_trans,rules,cutoff,electrons,fermiarea,fermilevel,bandenergy)
 
 A container for all the information about the 2D empirical pseudopotential model(s).

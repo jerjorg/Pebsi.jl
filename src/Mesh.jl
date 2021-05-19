@@ -298,7 +298,7 @@ function get_cvpts(mesh::PyObject,ibz::Chull;atol::Real=1e-9)::AbstractVector{<:
 end
 
 @doc """
-    get_extmesh(ibz,mesh,pointgroup;rtol,atol)
+    get_extmesh(ibz,mesh,pointgroup,recip_latvecs,near_neigh=1;rtol,atol)
 
 Calculate a triangulation of points within and just outside the IBZ.
 
@@ -307,6 +307,8 @@ Calculate a triangulation of points within and just outside the IBZ.
 - `mesh::PyObject`: a triangulation of a mesh over the IBZ.
 - `pointgroup::Vector{Matrix{Float64}}`: the point operators of the real-space
     lattice.
+- `recip_latvecs::AbstractMatrix{<:Real}`: the reciprocal lattice vectors as 
+    columns of a matrix.
 - `near_neigh::Int=1`: the number of nearest neighbors to include outside the 
     IBZ.
 - `rtol::Real=sqrt(eps(maximum(abs.(mesh.points))))`: a relative tolerance for 

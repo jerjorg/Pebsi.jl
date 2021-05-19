@@ -231,9 +231,11 @@ function getbez_pts₋wts(bezpts::AbstractMatrix{<:Real},
         bezptsᵣ = [p₀ (p₀+p₂)/2 p₂]
     else
         arg = -h₁₁₀/2h₀₀₂
-        if !(isapprox(arg,0,atol=atol)) && arg < 0
+        if isapprox(arg,0,atol=atol)
             w₁ = 0
-        else 
+        elseif !(isapprox(arg,0,atol=atol)) && arg < 0
+            w₁ = 0
+        else
             w₁ = √(arg)
         end
         bezwtsᵣ = [w₀,w₁,w₂]

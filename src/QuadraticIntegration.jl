@@ -11,7 +11,7 @@ import SymmetryReduceBZ.Symmetry: calc_spacegroup
 import .Polynomials: eval_poly,getpoly_coeffs,getbez_pts₋wts,eval_bezcurve,
     conicsection
 
-import .EPMs: eval_epm, RytoeV
+import .EPMs: eval_epm, RytoeV, model, epm₋model
 
 import .Mesh: get₋neighbors,notbox_simplices,get_cvpts
 import .Geometry: order_vertices!,simplex_size,insimplex,barytocart,carttobary,
@@ -24,6 +24,39 @@ import Base.Iterators: flatten
 import SparseArrays: findnz
 import PyCall: PyObject, pyimport
 
+
+@doc """
+    bandstructure
+
+A container for all variables related to the band structure.
+"""
+mutable struct bandstructure
+    init_msize::Int
+    mesh::PyObject
+    simplicesᵢ::Vector{Vector{Int}}
+    bandenergy_errors::Vector{<:Real}
+    fermiarea_errors::Vector{<:Real}
+    num_neigh::Int
+    ext_mesh::PyObject
+    sym₋unique::AbstractVector{<:Int}
+    eigenvals::AbstractMatrix{<:Real}
+    mesh_intcoeffs::Vector{Vector{Matrix{Float64}}}
+    approx_fermilevel::Real
+    approx_bandenergy::Real
+    fermiarea_interval::AbstractVector{<:Real}
+    fermilevel_interval::AbstractVector{<:Real}
+    bandenergy_interval::AbstractVector{<:Real}
+    fermilevel::Real
+    bandenergy::Real
+    partially_occupied::Vector{Vector{Int64}}
+    fermiarea_eps::Real
+    target_accuracy::Real
+    fermilevel_method::Int
+    refine_method::Int
+    sample_method::Int
+    atol::Real
+    rtol::Real
+end
 
 @doc """
     simpson(interval_len,vals)
@@ -486,15 +519,13 @@ function sub₋coeffs(bezpts::AbstractMatrix{<:Real},
 end
 
 @doc """
-    two₋intersects_area₋volume(bezpts,quantity,intersects=[];atol=1e-9)
+    two₋intersects_area₋volume(bezpts,quantity;atol=1e-9)
 
 Calculate the area or volume within a quadratic curve and triangle and Quadratic surface.
 
 # Arguments
 - `bezpts::AbstractMatrix{<:Real}`: the Bezier points of a quadratic surface.
 - `quantity::String`: the quantity to compute ("area" or "volume").
-- `intersects::AbstractArray=[]`: the two point where the curve intersects the 
-    triangle as columns of an array.
 - `atol::Real`: an absolute tolerance.
 
 # Returns
@@ -726,78 +757,78 @@ function calc_mesh₋bezcoeffs(recip_latvecs::AbstractMatrix{<:Real},
     mesh_bezcoeffs
 end
 
-@doc """
-    shadow₋size(recip_latvecs,rules,cutoff,sheets,mesh,fermi_level,energy_conversion_factor;rtol,atol)
+# @doc """
+#     shadow₋size(recip_latvecs,rules,cutoff,sheets,mesh,fermi_level,energy_conversion_factor;rtol,atol)
 
-Calculate the size of the shadow of the band structure beneath the Fermi level.
+# Calculate the size of the shadow of the band structure beneath the Fermi level.
 
-# Arguments
-- `recip_latvecs::AbstractMatrix{<:Real}`: the reciprocal lattice basis as columns of
-    a square matrix.
-- `rules::Dict{Float64,Float64}`: a dictionary whose keys are distances between
-    reciprocal lattice points rounded to two decimals places and whose values
-    are the empirical pseudopotential form factors.
-- `cutoff::Real`: the Fourier expansion cutoff.
-- `sheets<:Int`: the number of sheets considered in the calculation.
-- `mesh::PyObject`: a simplex tesselation of the IBZ.
-- `fermi_level::Real`: an estimate of the value of the Fermi level.
-- `energy_conversion_factor::Real=RytoeV`: converts the energy eigenvalue units
-    from the energy unit for `rules` to an alternative energy unit.
-- `rtol::Real=sqrt(eps(float(maximum(recip_latvecs))))`: a relative tolerance for
-    finite precision comparisons. This is used for identifying points within a
-    circle or sphere in the Fourier expansion of the EPM.
-- `atol::Real=1e-9`: an absolute tolerance for finite precision comparisons.
+# # Arguments
+# - `recip_latvecs::AbstractMatrix{<:Real}`: the reciprocal lattice basis as columns of
+#     a square matrix.
+# - `rules::Dict{Float64,Float64}`: a dictionary whose keys are distances between
+#     reciprocal lattice points rounded to two decimals places and whose values
+#     are the empirical pseudopotential form factors.
+# - `cutoff::Real`: the Fourier expansion cutoff.
+# - `sheets<:Int`: the number of sheets considered in the calculation.
+# - `mesh::PyObject`: a simplex tesselation of the IBZ.
+# - `fermi_level::Real`: an estimate of the value of the Fermi level.
+# - `energy_conversion_factor::Real=RytoeV`: converts the energy eigenvalue units
+#     from the energy unit for `rules` to an alternative energy unit.
+# - `rtol::Real=sqrt(eps(float(maximum(recip_latvecs))))`: a relative tolerance for
+#     finite precision comparisons. This is used for identifying points within a
+#     circle or sphere in the Fourier expansion of the EPM.
+# - `atol::Real=1e-9`: an absolute tolerance for finite precision comparisons.
 
-# Returns
-    `shadow_size::Real`: the size of the shadow of the sheets onto the IBZ for the 
-    estimated Fermi level.
+# # Returns
+#     `shadow_size::Real`: the size of the shadow of the sheets onto the IBZ for the 
+#     estimated Fermi level.
 
-# Examples
-```jldoctest
-import Pebsi.EPMs: m5recip_latvecs, m5real_latvecs, m5rules, m5cutoff, m5ibz
-import PyCall: pyimport
-spatial = pyimport("scipy.spatial")
-sheets = 5
-mesh = spatial.Delaunay(m5ibz.points)
-fermi_level = 0.5
-energy_conv=1
-shadow₋size(m5recip_latvecs,m5rules,m5cutoff,sheets,mesh,fermi_level,energy_conv)
-# output
-0.9257020287626774
-```
-"""
-function shadow₋size(recip_latvecs::AbstractMatrix{<:Real},rules::Dict{Float64,Float64},
-        cutoff::Real,sheets::Int,mesh::PyObject,fermi_level::Real,
-        energy_conversion_factor::Real=RytoeV;rtol::Real=sqrt(eps(float(maximum(recip_latvecs)))),atol::Real=1e-9)::Real
+# # Examples
+# ```jldoctest
+# import Pebsi.EPMs: m5recip_latvecs, m5real_latvecs, m5rules, m5cutoff, m5ibz
+# import PyCall: pyimport
+# spatial = pyimport("scipy.spatial")
+# sheets = 5
+# mesh = spatial.Delaunay(m5ibz.points)
+# fermi_level = 0.5
+# energy_conv=1
+# shadow₋size(m5recip_latvecs,m5rules,m5cutoff,sheets,mesh,fermi_level,energy_conv)
+# # output
+# 0.9257020287626774
+# ```
+# """
+# function shadow₋size(recip_latvecs::AbstractMatrix{<:Real},rules::Dict{Float64,Float64},
+#         cutoff::Real,sheets::Int,mesh::PyObject,fermi_level::Real,
+#         energy_conversion_factor::Real=RytoeV;rtol::Real=sqrt(eps(float(maximum(recip_latvecs)))),atol::Real=1e-9)::Real
     
-    dim,deg=(2,2)
-    simplex_bpts=sample_simplex(dim,deg)
-    shadow_size = 0
-    for s = 1:size(mesh.simplices,1)
-        simplex = Array(mesh.points[mesh.simplices[s,:].+1,:]')
-        simplex_pts = barytocart(simplex_bpts,simplex)
-        values = eval_epm(simplex_pts,recip_latvecs,rules,cutoff,sheets,energy_conversion_factor) .- fermi_level
-        sheet_bezpts = [[simplex_pts; getpoly_coeffs(values[i,:],simplex_bpts,dim,deg)'] for i=1:sheets[end]]
-        shadow_size += sum([quad_area₋volume(sheet_bezpts[i],"area") for i=1:sheets[end]])
-    end
-    shadow_size
-end
+#     dim,deg=(2,2)
+#     simplex_bpts=sample_simplex(dim,deg)
+#     shadow_size = 0
+#     for s = 1:size(mesh.simplices,1)
+#         simplex = Array(mesh.points[mesh.simplices[s,:].+1,:]')
+#         simplex_pts = barytocart(simplex_bpts,simplex)
+#         values = eval_epm(simplex_pts,recip_latvecs,rules,cutoff,sheets,energy_conversion_factor) .- fermi_level
+#         sheet_bezpts = [[simplex_pts; getpoly_coeffs(values[i,:],simplex_bpts,dim,deg)'] for i=1:sheets[end]]
+#         shadow_size += sum([quad_area₋volume(sheet_bezpts[i],"area") for i=1:sheets[end]])
+#     end
+#     shadow_size
+# end
 
 
-function shadow₋size(mesh::PyObject, mesh_bezcoeffs::Vector{Vector{Any}},fermi_level::Real)::Real
+# function shadow₋size(mesh::PyObject, mesh_bezcoeffs::Vector{Vector{Any}},fermi_level::Real)::Real
 
-    dim,deg=(2,2)
-    simplex_bpts=sample_simplex(dim,deg)
-    sheets = size(mesh_bezcoeffs[1],1)
-    shadow_size = 0
-    for s = 1:size(mesh.simplices,1)
-        simplex = Array(mesh.points[mesh.simplices[s,:],:]')
-        simplex_pts = barytocart(simplex_bpts,simplex)
-        sheet_bezpts = [Matrix{Real}([simplex_pts; mesh_bezcoeffs[s][i]']) for i=1:sheets]
-        shadow_size += sum([quad_area₋volume(sheet_bezpts[i],"area") for i=1:sheets])
-    end
-    shadow_size
-end
+#     dim,deg=(2,2)
+#     simplex_bpts=sample_simplex(dim,deg)
+#     sheets = size(mesh_bezcoeffs[1],1)
+#     shadow_size = 0
+#     for s = 1:size(mesh.simplices,1)
+#         simplex = Array(mesh.points[mesh.simplices[s,:],:]')
+#         simplex_pts = barytocart(simplex_bpts,simplex)
+#         sheet_bezpts = [Matrix{Real}([simplex_pts; mesh_bezcoeffs[s][i]']) for i=1:sheets]
+#         shadow_size += sum([quad_area₋volume(sheet_bezpts[i],"area") for i=1:sheets])
+#     end
+#     shadow_size
+# end
 
 @doc """
     get_intercoeffs(index,mesh,ext_mesh,sym₋unique,eigenvals,simplicesᵢ)
@@ -870,7 +901,7 @@ function get_intercoeffs(index::Int,mesh::PyObject,ext_mesh::PyObject,
     # Minimum distance from the edges of the triangle.
     W = diagm([minimum([lineseg₋pt_dist(simplex[:,s],ext_mesh.points[i,:]) for s=[[1,2],[2,3],[3,1]]])
         for i=neighborsᵢ])
-    
+ 
     # Distance from the center of the triangle.
     # W = diagm([norm(ext_mesh.points[i,:] - mean(simplex,dims=2)) for i=neighborsᵢ])
     
@@ -881,7 +912,7 @@ function get_intercoeffs(index::Int,mesh::PyObject,ext_mesh::PyObject,
         fᵢ = eigenvals[sheet,sym₋unique[neighborsᵢ]]
         q = eigenvals[sheet,sym₋unique[simplexᵢ]]
         Z = fᵢ - Zm*q
-    
+
         # Weighted least squares
         # c = M\Z
         c = inv(M'*W*M)*M'*W*Z
@@ -898,6 +929,7 @@ function get_intercoeffs(index::Int,mesh::PyObject,ext_mesh::PyObject,
         intercoeffs = reduce(hcat,[[q1,q1],c1,[q2,q2],c2,c3,[q3,q3]])
         inter_bezcoeffs[sheet] = intercoeffs
     end
+
     Vector{Matrix{Float64}}(inter_bezcoeffs)
 end
 
@@ -1176,6 +1208,71 @@ function calc_fl₋be(mesh::PyObject,mesh_intcoeffs::Vector{Vector{Matrix{Float6
 end
 
 @doc """
+    calc_fl₋be(epm,ebs)
+
+Calculate the Fermi level and band energy for a given rep. of the band struct.
+"""
+function calc_fl₋be(epm::Union{model,epm₋model},ebs::bandstructure)
+
+    maxsheet = round(Int,m11.electrons/2)
+    window = [minimum(ebs.eigenvals[1:maxsheet+2,5:end]),
+        maximum(ebs.eigenvals[1:maxsheet+2,5:end])]
+    
+    (fl,fa₀,fa₁) = calc₋fl(ebs.mesh,ebs.mesh_intcoeffs,ebs.eigenvals,epm.fermiarea;
+        fa_eps=ebs.fermiarea_eps,window=window,method=ebs.fermilevel_method)
+    (fl₁,null,null) = calc₋fl(ebs.mesh,ebs.mesh_intcoeffs,ebs.eigenvals,fa₀;
+        fa_eps=ebs.fermiarea_eps,window=window,method=ebs.fermilevel_method)
+    (fl₀,null,null) = calc₋fl(ebs.mesh,ebs.mesh_intcoeffs,ebs.eigenvals,fa₁;
+        fa_eps=ebs.fermiarea_eps,window=window,method=ebs.fermilevel_method)
+    simplex_bpts = sample_simplex(2,2)   
+    simplices = [Matrix(ebs.mesh.points[s,:]') for s=ebs.simplicesᵢ]
+    simplex_pts = [barytocart(simplex_bpts,s) for s=simplices]
+        
+    mesh_fa₁ = [[quad_area₋volume([simplex_pts[tri]; ebs.mesh_intcoeffs[tri][sheet][2,:]' .- fl₀]
+                    ,"area") for sheet=1:epm.sheets] for tri=1:length(ebs.simplicesᵢ)]
+    mesh_be₁ = [[quad_area₋volume([simplex_pts[tri]; ebs.mesh_intcoeffs[tri][sheet][2,:]' .- fl₀]
+                    ,"volume") for sheet=1:epm.sheets] for tri=1:length(ebs.simplicesᵢ)]
+    mesh_fa₀ = [[quad_area₋volume([simplex_pts[tri]; ebs.mesh_intcoeffs[tri][sheet][1,:]' .- fl₁]
+                    ,"area") for sheet=1:epm.sheets] for tri=1:length(ebs.simplicesᵢ)]
+    mesh_be₀ = [[quad_area₋volume([simplex_pts[tri]; ebs.mesh_intcoeffs[tri][sheet][1,:]' .- fl₁]
+                    ,"volume") for sheet=1:epm.sheets] for tri=1:length(ebs.simplicesᵢ)]
+    
+    be = sum([quad_area₋volume([simplex_pts[tri]; ebs.mesh_intcoeffs[tri][sheet][1,:]' .- fl]
+                    ,"volume") for sheet=1:epm.sheets for tri=1:length(ebs.simplicesᵢ)])
+    
+    mesh_fa₋errs = mesh_fa₁ .- mesh_fa₀
+    mesh_be₋errs = mesh_be₁ .- mesh_be₀
+    
+    # Determine which triangles and sheets are partially occupied.
+    partial_occ = [[(isapprox(mesh_fa₁[tri][sheet],simplex_size(simplices[1]),atol=ebs.atol,rtol=ebs.rtol) ||
+        isapprox(mesh_fa₀[tri][sheet],simplex_size(simplices[1]),atol=ebs.atol,rtol=ebs.rtol) ||
+        isapprox(mesh_fa₁[tri][sheet],0,atol=ebs.atol) ||
+        isapprox(mesh_fa₀[tri][sheet],0,atol=ebs.atol)) ? 0 : 1
+        for sheet=1:epm.sheets] for tri = 1:length(ebs.simplicesᵢ)]
+
+    # Calculate the band energy errors. Take the absolute value of errors of sheets
+    # that are parially occupied and sum the errors of sheets are are occupied or unoccupied
+    simplices_be₋errs = zeros(length(ebs.simplicesᵢ))
+    for tri = 1:length(ebs.simplicesᵢ)
+        for sheet = 1:epm.sheets
+            if partial_occ[tri][sheet] == 0
+                simplices_be₋errs[tri] += mesh_be₋errs[tri][sheet]
+            else
+                simplices_be₋errs[tri] += abs(mesh_be₋errs[tri][sheet])
+            end
+        end
+    end
+    ebs.bandenergy_errors = abs.(simplices_be₋errs)
+    ebs.fermiarea_errors = sum(mesh_fa₋errs)
+    ebs.fermilevel_interval = [fl₀,fl₁]
+    ebs.fermiarea_interval = [fa₀,fa₁]
+    ebs.bandenergy_interval = [sum(sum(mesh_be₀)),sum(sum(mesh_be₁))]
+    ebs.partially_occupied = partial_occ
+
+    ebs
+end
+
+@doc """
     refine_mesh(recip_latvecs,rules,cutoff,ibz,pointgroup,mesh,ext_mesh,sym₋unique,
         eigenvals,simplices_errs,acc_tol,refine_method,sample_method,num_neigh;energy_conv,rtol,atol)
     
@@ -1381,6 +1478,143 @@ function refine_mesh(recip_latvecs::AbstractMatrix{<:Real}, rules::Dict{Float64,
         simplicesᵢ) for index=1:length(simplicesᵢ)]
 
     (sym₋unique,[eigenvals new_eigvals],simplicesᵢ,mesh_intcoeffs,mesh,ext_mesh)
+end
+
+function init₋bandstruct(epm::Union{model,epm₋model};init_msize::Int=5,
+    num_neigh::Int=2,fermiarea_eps::Real=1e-6,fermilevel_method=2,
+    refine_method::Int=1,sample_method::Int=1,target_accuracy::Real=1e-4,
+    atol=1e-9,rtol=1e-9)
+
+    mesh = ibz_init₋mesh(epm.ibz,init_msize;rtol=rtol,atol=atol)
+    simplicesᵢ = notbox_simplices(mesh)
+    ext_mesh,sym₋unique = get_extmesh(epm.ibz,mesh,epm.pointgroup,epm.recip_latvecs,num_neigh;
+        rtol=rtol,atol=atol)
+    
+    uniqueᵢ = sort(unique(sym₋unique))[2:end]
+    eigenvals = zeros(epm.sheets,length(uniqueᵢ)+4)
+    for i=uniqueᵢ
+        eigenvals[:,i] = eval_epm(epm,mesh.points[i,:]; rtol=rtol,atol=atol)
+    end
+    
+    mesh_intcoeffs = [get_intercoeffs(index,mesh,ext_mesh,sym₋unique,eigenvals,
+        simplicesᵢ) for index=1:length(simplicesᵢ)];
+    
+    approx_fermilevel = 0
+    approx_bandenergy = 0
+    fermiarea_interval = [0,0]
+    fermilevel_interval = [0,0]
+    bandenergy_interval = [0,0]
+    
+    fermilevel = 0
+    bandenergy = 0
+    partially_occupied = [zeros(Int,epm.sheets) for _=1:length(simplicesᵢ)]
+    bandenergy_errors = zeros(length(simplicesᵢ))
+    fermiarea_errors = zeros(length(simplicesᵢ))
+    
+    bandstructure(init_msize,mesh,simplicesᵢ,bandenergy_errors,fermiarea_errors,
+        num_neigh,ext_mesh,sym₋unique,eigenvals,mesh_intcoeffs,approx_fermilevel,
+        approx_bandenergy,fermiarea_interval,fermilevel_interval,bandenergy_interval,
+        fermilevel,bandenergy,partially_occupied,fermiarea_eps,target_accuracy,
+        fermilevel_method,refine_method,sample_method,atol,rtol)
+end
+
+@doc """
+    refine_mesh(epm,ebs)
+
+One iteration of adaptive refinement.
+"""
+function refine_mesh(epm::Union{model,epm₋model},ebs::bandstructure)
+    
+    spatial = pyimport("scipy.spatial")
+    simplices = [Matrix(ebs.mesh.points[s,:]') for s=ebs.simplicesᵢ]
+
+    # Refine the tile with the most error
+    if ebs.refine_method == 1
+        splitpos = [sortperm(ebs.bandenergy_errors)[end]]
+    # Refine the tiles with too much error (given the tiles' sizes).
+    elseif ebs.refine_method == 2
+        err_cutoff = [simplex_size(s)/epm.ibz.volume for s=simplices]*ebs.target_accuracy
+        splitpos = filter(x -> x>0,[ebs.bandenergy_errors[i] > err_cutoff[i] ? i : 0 for i=1:length(err_cutoff)])
+    else
+        ArgumentError("The refinement method has to be an integer of 1 or 2.")
+    end
+    
+    # A single point at the center of the triangle
+    if ebs.sample_method == 1
+        new_meshpts = reduce(hcat,[barytocart([1/3,1/3,1/3],s) for s=simplices[splitpos]])
+    # Point at the midpoints of all edges of the triangle
+    elseif ebs.sample_method == 2
+        new_meshpts = reduce(hcat,[barytocart([0 1/2 1/2; 1/2 0 1/2; 1/2 1/2 0],s) for s=simplices[splitpos]])
+    else
+        ArgumentError("The sample method for refinement has to be an integer of 1 or 2.")
+    end
+
+    # Remove duplicates from the new mesh points.
+    new_meshpts = unique_points(new_meshpts,rtol=ebs.rtol,atol=ebs.atol)
+
+    cv_pointsᵢ = get_cvpts(ebs.mesh,epm.ibz,atol=ebs.atol)
+    # Calculate the maximum distance between neighboring points
+    bound_limit = 1.01*maximum(reduce(vcat,[[norm(ebs.mesh.points[i,:] - ebs.mesh.points[j,:]) 
+                    for j=get₋neighbors(i,ebs.mesh,ebs.num_neigh)] for i=cv_pointsᵢ]))
+
+    # The Line segments that bound the IBZ.
+    ibz_linesegs = [Matrix(epm.ibz.points[i,:]') for i=epm.ibz.simplices]
+
+    # Translations that need to be considered when calculating points outside the IBZ.
+    bztrans = [[[i,j] for i=-1:1,j=-1:1]...]
+    
+    # Indices of the new mesh points.
+    new_ind = size(ebs.mesh.points,1):size(ebs.mesh.points,1)+size(new_meshpts,2) - 1
+    ebs.sym₋unique = [ebs.sym₋unique; new_ind]
+    
+    # Indices of sym. equiv. points on the boundary of and nearby the IBZ. Points
+    # to the symmetrically unique point.
+    sym_mesh = zeros(Int,size(new_meshpts,2)*length(epm.pointgroup)*length(bztrans))
+    
+    # Keep track of points on the IBZ boundaries.
+    n = 0
+    # Add points to the mesh on the boundary of the IBZ.
+    neighbors = zeros(Float64,2,size(new_meshpts,2)*length(epm.pointgroup)*length(bztrans))
+    for i=1:length(new_ind),op=epm.pointgroup,trans=bztrans
+        pt = op*new_meshpts[:,i] + epm.recip_latvecs*trans
+
+        if (any([isapprox(lineseg₋pt_dist(line_seg,pt,false),0,atol=ebs.atol) for line_seg=ibz_linesegs]) &&
+            !any(mapslices(x->isapprox(x,pt,atol=ebs.atol,rtol=ebs.rtol),
+                        [ebs.mesh.points' new_meshpts neighbors[:,1:n]],dims=1)))
+            n += 1
+            sym_mesh[n] = new_ind[i]
+            neighbors[:,n] = pt
+        end
+    end
+    ebs.mesh = spatial.Delaunay([ebs.mesh.points; new_meshpts'; neighbors[:,1:n]'])
+    
+    # Add points to the extended mesh nearby but outside of the IBZ
+    for i=1:length(new_ind),op=epm.pointgroup,trans=bztrans
+        pt = op*new_meshpts[:,i] + epm.recip_latvecs*trans
+
+        if any([lineseg₋pt_dist(line_seg,pt,false) < bound_limit for line_seg=ibz_linesegs]) &&
+            !any(mapslices(x->isapprox(x,pt,atol=ebs.atol,rtol=ebs.rtol),
+                    [ebs.ext_mesh.points' new_meshpts neighbors[:,1:n]],dims=1))
+            n += 1
+            sym_mesh[n] = new_ind[i]
+            neighbors[:,n] = pt
+        end
+    end
+    
+    ebs.sym₋unique = [ebs.sym₋unique; sym_mesh[1:n]]
+    ebs.ext_mesh = spatial.Delaunay([ebs.ext_mesh.points; new_meshpts'; neighbors[:,1:n]'])
+    new_eigvals = zeros(epm.sheets,size(new_meshpts,2))
+
+    for i=1:size(new_meshpts,2)
+        new_eigvals[:,i] = eval_epm(new_meshpts[:,i],epm.recip_latvecs,epm.rules,epm.cutoff,epm.sheets,epm.energy_conv)
+    end
+
+    ebs.simplicesᵢ = notbox_simplices(ebs.mesh)
+    ebs.eigenvals = [ebs.eigenvals new_eigvals]
+    ebs.mesh_intcoeffs = [get_intercoeffs(index,ebs.mesh,ebs.ext_mesh,ebs.sym₋unique,ebs.eigenvals,
+        ebs.simplicesᵢ) for index=1:length(ebs.simplicesᵢ)]
+    
+    ebs
 end
 
 end # module
