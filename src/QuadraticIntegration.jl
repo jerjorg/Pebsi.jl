@@ -11,7 +11,7 @@ import SymmetryReduceBZ.Symmetry: calc_spacegroup
 import .Polynomials: eval_poly,getpoly_coeffs,getbez_pts₋wts,eval_bezcurve,
     conicsection
 
-import .EPMs: eval_epm, RytoeV, model, epm₋model
+import .EPMs: eval_epm, RytoeV, epm₋model2D, epm₋model
 
 import .Mesh: get₋neighbors,notbox_simplices,get_cvpts
 import .Geometry: order_vertices!,simplex_size,insimplex,barytocart,carttobary,
@@ -513,6 +513,7 @@ sub₋coeffs(bezpts,subtriangle)
 """
 function sub₋coeffs(bezpts::AbstractMatrix{<:Real},
     subtriangle::AbstractMatrix{<:Real})::AbstractVector{<:Real}
+
     ptsᵢ = carttobary(barytocart(sample_simplex(2,2),subtriangle),bezpts[1:2,corner_indices])
     valsᵢ = eval_poly(ptsᵢ,bezpts[end,:],2,2)
     getpoly_coeffs(valsᵢ,sample_simplex(2,2),2,2)
@@ -706,16 +707,8 @@ end
 Calculate the quadratic coefficients of a triangulation of the IBZ.
 
 # Arguments
-- `recip_latvecs::AbstractMatrix{<:Real}`: the reciprocal lattice basis as columns of
-    a square matrix.
-- `rules::Dict{Float64,Float64}`: a dictionary whose keys are distances between
-    reciprocal lattice points rounded to two decimals places and whose values
-    are the empirical pseudopotential form factors.
-- `cutoff::Real`: the Fourier expansion cutoff.
-- `sheets<:Int`: the number of sheets considered in the calculation.
+- `epm::Union{epm₋model2D,epm₋model}`: an empirical pseudopotential structure.
 - `mesh::PyObject`: a simplex tesselation of the IBZ.
-- `energy_conversion_factor::Real=RytoeV`: converts the energy eigenvalue units
-    from the energy unit for `rules` to an alternative energy unit.
 - `rtol::Real=sqrt(eps(float(maximum(recip_latvecs))))`: a relative tolerance for
     finite precision comparisons. This is used for identifying points within a
     circle or sphere in the Fourier expansion of the EPM.
@@ -739,20 +732,19 @@ mesh_bezcoeffs = calc_mesh₋bezcoeffs(m4recip_latvecs,m4rules,m4cutoff,sheets,m
  [[-0.28153999982153577, -0.18566890981787773, 0.4825655582645329, -0.30280441786109924, -0.2057751336785528, -0.319970723890622], [0.5806033720376905, 0.8676008216346605, 1.0021520603113079, 0.6209049649780336, 0.905049403637905, 1.041804108772328]]
 ```
 """
-function calc_mesh₋bezcoeffs(recip_latvecs::AbstractMatrix{<:Real},
-    rules::Dict{Float64,Float64},cutoff::Real,sheets::Int,mesh::PyObject,
-    energy_conversion_factor::Real=RytoeV; 
-    rtol::Real=sqrt(eps(float(maximum(recip_latvecs)))),atol::Real=1e-9)::Vector{Vector{Any}}
+function calc_mesh₋bezcoeffs(epm,mesh::PyObject;
+    rtol::Real=sqrt(eps(float(maximum(epm.recip_latvecs)))),
+    atol::Real=1e-9)::Vector{Vector{Any}}
 
-    dim,deg=(2,2)
+    deg=2
+    dim = size(epm.real_latvecs,1)
     simplex_bpts=sample_simplex(dim,deg)
     mesh_bezcoeffs = [Vector{Any}[] for i=1:size(mesh.simplices,1)]
     for s = 1:size(mesh.simplices,1)
-        simplex = Array(mesh.points[mesh.simplices[s,:],:]')
+        simplex = Array(mesh.points[mesh.simplices[s,:] .+ 1,:]')
         simplex_pts = barytocart(simplex_bpts,simplex)
-        values = eval_epm(simplex_pts,recip_latvecs,rules,cutoff,sheets,
-            energy_conversion_factor,rtol=rtol,atol=atol)
-        mesh_bezcoeffs[s] = [getpoly_coeffs(values[i,:],simplex_bpts,dim,deg) for i=1:sheets]
+        values = eval_epm(simplex_pts,epm,rtol=rtol,atol=atol)
+        mesh_bezcoeffs[s] = [getpoly_coeffs(values[i,:],simplex_bpts,dim,deg) for i=1:epm.sheets]
     end
     mesh_bezcoeffs
 end
@@ -1212,7 +1204,7 @@ end
 
 Calculate the Fermi level and band energy for a given rep. of the band struct.
 """
-function calc_fl₋be(epm::Union{model,epm₋model},ebs::bandstructure)
+function calc_fl₋be(epm::Union{epm₋model2D,epm₋model},ebs::bandstructure)
 
     maxsheet = round(Int,m11.electrons/2)
     window = [minimum(ebs.eigenvals[1:maxsheet+2,5:end]),
@@ -1480,7 +1472,7 @@ function refine_mesh(recip_latvecs::AbstractMatrix{<:Real}, rules::Dict{Float64,
     (sym₋unique,[eigenvals new_eigvals],simplicesᵢ,mesh_intcoeffs,mesh,ext_mesh)
 end
 
-function init₋bandstruct(epm::Union{model,epm₋model};init_msize::Int=5,
+function init₋bandstruct(epm::Union{epm₋model2D,epm₋model};init_msize::Int=5,
     num_neigh::Int=2,fermiarea_eps::Real=1e-6,fermilevel_method=2,
     refine_method::Int=1,sample_method::Int=1,target_accuracy::Real=1e-4,
     atol=1e-9,rtol=1e-9)
@@ -1493,7 +1485,7 @@ function init₋bandstruct(epm::Union{model,epm₋model};init_msize::Int=5,
     uniqueᵢ = sort(unique(sym₋unique))[2:end]
     eigenvals = zeros(epm.sheets,length(uniqueᵢ)+4)
     for i=uniqueᵢ
-        eigenvals[:,i] = eval_epm(epm,mesh.points[i,:]; rtol=rtol,atol=atol)
+        eigenvals[:,i] = eval_epm(mesh.points[i,:], epm, rtol=rtol, atol=atol)
     end
     
     mesh_intcoeffs = [get_intercoeffs(index,mesh,ext_mesh,sym₋unique,eigenvals,
@@ -1523,7 +1515,7 @@ end
 
 One iteration of adaptive refinement.
 """
-function refine_mesh(epm::Union{model,epm₋model},ebs::bandstructure)
+function refine_mesh(epm::Union{epm₋model2D,epm₋model},ebs::bandstructure)
     
     spatial = pyimport("scipy.spatial")
     simplices = [Matrix(ebs.mesh.points[s,:]') for s=ebs.simplicesᵢ]

@@ -93,12 +93,20 @@ PyObject <scipy.spatial.qhull.Delaunay object at 0x19483d130>
 function ibz_init₋mesh(ibz::Chull{<:Real},n::Int;
     rtol::Real=sqrt(eps(maximum(ibz.points))),atol::Real=1e-9)::PyObject
     spatial = pyimport("scipy.spatial")
-    dim = 2
+
+    dim = size(ibz.points,2)
     # We need to enclose the IBZ in a box to prevent collinear triangles.
     box_length = maximum(abs.(ibz.points))
-    box_pts = reduce(hcat,[[mean(ibz.points,dims=1)...] + box_length*[i,j] 
-        for i=[-1,1] for j=[-1,1]])
-    
+    if dim == 2
+        box_pts = reduce(hcat,[[mean(ibz.points,dims=1)...] + box_length*[i,j] 
+            for i=[-1,1] for j=[-1,1]])
+    elseif dim == 3
+        box_pts = reduce(hcat,[[mean(ibz.points,dims=1)...] + box_length*[i,j,k] 
+            for i=[-1,1] for j=[-1,1] for k=[-1,1]])  
+    else
+        ArgumentError("Dimension of IBZ must be 2 or 3.")
+    end
+        
     mesh = spatial.Delaunay(ibz.points)
     simplices = [Array(mesh.points[mesh.simplices[i,:].+1,:]') 
         for i=1:size(mesh.simplices,1)]

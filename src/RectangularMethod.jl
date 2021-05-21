@@ -138,14 +138,14 @@ rectangular_method(real_latvecs,atom_types,atom_pos,rules,electrons,cutoff,
 function rectangular_method(real_latvecs::AbstractMatrix{<:Real},
     atom_types::AbstractArray{<:Integer,1}, atom_pos::AbstractMatrix{<:Real},
     rules::Dict{Float64,Float64}, electrons::Integer, cutoff::Real,
-    sheets::Int, N::AbstractArray{<:Integer,2},
+    sheets::Int, N::AbstractMatrix{<:Integer},
     grid_offset::AbstractVector{<:Real}=[0,0], convention::String="ordinary",
     coordinates::String="Cartesian", energy_factor::Real=RytoeV;
     rtol::Real=sqrt(eps(float(maximum(real_latvecs)))),
-    atol::Real=0.0,
+    atol::Real=1e-9,
     func::Union{Nothing,Function}=nothing)::Tuple{Int64,Float64,Float64}
 
-    (atom_types,atom_pos,real_latvecs)=make_primitive(real_latvecs,atom_types,
+    (real_latvecs,atom_types,atom_pos)=make_primitive(real_latvecs,atom_types,
         atom_pos,coordinates,rtol=rtol,atol=atol)
     (frac_trans,pointgroup) = calc_spacegroup(real_latvecs,atom_types,atom_pos,
         coordinates,rtol=rtol,atol=atol)
