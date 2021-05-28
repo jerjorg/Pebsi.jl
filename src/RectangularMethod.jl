@@ -7,7 +7,7 @@ import Base.Iterators: product
 import LinearAlgebra: det, diag, dot, inv
 import AbstractAlgebra: ZZ, matrix, snf_with_transform, hnf_with_transform, hnf
 
-import Pebsi.EPMs: eval_epm,RytoeV,eVtoRy
+import Pebsi.EPMs: eval_epm,RytoeV,eVtoRy,epm₋model,epm₋model2D,sym_offset
 
 #include("EPMs.jl")
 #import .EPMs: eval_epm,RytoeV,eVtoRy
@@ -23,8 +23,8 @@ Create a generalized regular grid over the unit cell.
     of a square array.
 - `N::AbstractArray{<:Integer,2}`: an integer, square array that relates the
     reciprocal lattice vectors `R` to the grid generating vectors `K`: `R=KN`.
-- `grid_offset::AbstractVector{<:Real}=[0,0]`: the offset of the grid in grid
-    coordinates (fractions of the grid generating vectors).
+- `grid_offset::AbstractVector{<:Real}=zeros(size(N,1))`: the offset of the grid
+    in grid coordinates (fractions of the grid generating vectors).
 - `rtol::Real=sqrt(eps(float(maximum(latvecs))))`: a relative tolerance for
     floating point comparisons. This is used for mapping points into the
     provided unit cell.
@@ -33,6 +33,7 @@ Create a generalized regular grid over the unit cell.
 # Returns
 - `::Array{Float64,2}`: the points in the generalized, regular grid as
     columns of a 2D array.
+
 # Examples
 ```jldoctest
 recip_latvecs = [1 0; 0 1]
@@ -47,7 +48,7 @@ sample_unitcell(recip_latvecs,N,grid_offset)
 """
 function sample_unitcell(latvecs::AbstractMatrix{<:Real},
     N::AbstractArray{<:Integer,2},
-    grid_offset::AbstractVector{<:Real}=[0,0];
+    grid_offset::AbstractVector{<:Real}=zeros(size(N,1));
     rtol::Real=sqrt(eps(float(maximum(latvecs)))),
     atol::Real=1e-9)::Array{Float64,2}
 
@@ -73,39 +74,15 @@ function sample_unitcell(latvecs::AbstractMatrix{<:Real},
 end
 
 @doc """
-    rectangular_method(real_latvecs,atom_types,atom_pos,rules,electrons,cutoff,
-        sheets,N,grid_offset,convention,coordinates,energy_factor;rtol,atol,
-        func)
+    rectangular_method(epm,N;rtol,atol,func)
 
 # Arguments
-- `real_latvecs::AbstractMatrix{<:Real}`: the basis of the lattice as columns
-    of an array.
-- `atom_types::AbstractArray{<:Int,1}`: a list of atom types as integers.
-- `atom_pos::AbstractMatrix{<:Real}`: the positions of atoms in the crystal
-    structure as columns of an array.
-- `rules::Dict{Float64,Float64}`: a dictionary whose keys are distances between
-    reciprocal lattice points rounded to two decimals places and whose values
-    are the empirical pseudopotential form factors.
-- `electrons::Integer`: the number of free electrons in the unit cell.
-- `cutoff::Real`: the Fourier expansion cutoff.
-- `sheets::Int`: the sheets of the band structure included in the
-    calculation. This must begin with 1 for the result to make any sense.
+- `epm::Union{epm₋model2D,epm₋model}`: an empirical pseudopotential.
 - `N::AbstractArray{<:Integer,2}`: an integer, square array that relates the
     reciprocal lattice vectors `R` to the grid generating vectors `K`: `R=KN`.
-- `grid_offset::AbstractVector{<:Real}=[0,0]`: the offset of the grid in grid
-    coordinates (fractions of the grid generating vectors).
-- `convention::String="ordinary"`: the convention used to go between real and
-    reciprocal space. The two conventions are ordinary (temporal) frequency and
-    angular frequency. The transformation from real to reciprocal space is
-    unitary if the convention is ordinary.
-- `coordinates::String`: indicates the positions of the atoms are in \"lattice\"
-    or \"Cartesian\" coordinates.
-- `energy_conversion_factor::Real=RytoeV`: converts the energy eigenvalue units
-    from the energy unit used for `rules` to an alternative energy unit.
 - `rtol::Real=sqrt(eps(float(maximum(real_latvecs))))` a relative tolerance for
     floating point comparisons.
 - `atol::Real=1e-9`: an absolute tolerance for floating point comparisons.
-- `func::Union{Nothing,Function}=nothing)`: a k-point independent EPM.
 
 # Returns
 - `num_unique::Integer`: the number of symmetrically unique points in the grid.
@@ -114,63 +91,43 @@ end
 
 # Examples
 ```jldoctest
+import Pebsi.EPMs: m11
 import Pebsi.RectangularMethod: rectangular_method
-
-real_latvecs = [1 0; 0 1]
-atom_types = [0]
-atom_pos = Array([0 0]')
-coordinates = "Cartesian"
-rules = Dict(1.00 => -0.23, 1.41 => 0.12)
-electrons = 6
-cutoff = 6.1
-sheets = 1:10
-N = [10 0; 0 10]
-grid_offset = [0.5,0.5]
-convention = "ordinary"
-coordinates = "Cartesian"
-energy_factor = 1
-rectangular_method(real_latvecs,atom_types,atom_pos,rules,electrons,cutoff,
-    sheets,N,grid_offset,convention,coordinates,energy_factor)
+rectangular_method(m11,3)
 # output
-(38, 0.8913900782229439, 1.0409313912201126)
+(3, 0.6898935531252085, 1.010633880786488)
 ```
 """
-function rectangular_method(real_latvecs::AbstractMatrix{<:Real},
-    atom_types::AbstractArray{<:Integer,1}, atom_pos::AbstractMatrix{<:Real},
-    rules::Dict{Float64,Float64}, electrons::Integer, cutoff::Real,
-    sheets::Int, N::AbstractMatrix{<:Integer},
-    grid_offset::AbstractVector{<:Real}=[0,0], convention::String="ordinary",
-    coordinates::String="Cartesian", energy_factor::Real=RytoeV;
-    rtol::Real=sqrt(eps(float(maximum(real_latvecs)))),
-    atol::Real=1e-9,
-    func::Union{Nothing,Function}=nothing)::Tuple{Int64,Float64,Float64}
+function rectangular_method(epm::Union{epm₋model2D,epm₋model},
+    N::Union{Integer,AbstractMatrix{<:Integer}};
+    rtol::Real=sqrt(eps(float(maximum(epm.recip_latvecs)))), 
+    atol::Real=1e-9)::Tuple{Int64,Float64,Float64}
 
-    (real_latvecs,atom_types,atom_pos)=make_primitive(real_latvecs,atom_types,
-        atom_pos,coordinates,rtol=rtol,atol=atol)
-    (frac_trans,pointgroup) = calc_spacegroup(real_latvecs,atom_types,atom_pos,
-        coordinates,rtol=rtol,atol=atol)
-
-    recip_latvecs = get_recip_latvecs(real_latvecs,convention)
-    (kpoint_weights,unique_kpoints,orbits) = symreduce_grid(recip_latvecs,N,
-        grid_offset,pointgroup,rtol=rtol,atol=atol)
-
-    inv_latvecs = inv(recip_latvecs)
-    unique_kpoints = mapto_bz(unique_kpoints, recip_latvecs, inv_latvecs, coordinates)
-
-    if func == nothing
-        eigenvalues = eval_epm(unique_kpoints,recip_latvecs,rules,cutoff,sheets,
-            energy_factor;rtol=rtol,atol=atol)
-    else
-        eigenvalues = eval_epm(func,unique_kpoints,sheets)
+    grid_offset = sym_offset[epm.rlat_type]
+    if typeof(N) <: Integer
+        if size(epm.recip_latvecs,1) == 3
+            N = [N 0 0; 0 N 0; 0 0 N]
+        else
+            N = [N 0; 0 N]
+        end
     end
+
+    (kpoint_weights,unique_kpoints,orbits) = symreduce_grid(epm.recip_latvecs,N,
+        grid_offset,epm.pointgroup,rtol=rtol,atol=atol)
+
+    inv_latvecs = inv(epm.recip_latvecs)
+    unique_kpoints = mapto_bz(unique_kpoints, epm.recip_latvecs, inv_latvecs,
+        epm.coordinates)
+
+    eigenvalues = eval_epm(unique_kpoints,epm,rtol=rtol,atol=atol)
     
     num_unique = size(unique_kpoints,2)
     num_kpoints = sum(kpoint_weights)
 
-    maxoccupied_state = ceil(Int,round(electrons*num_kpoints/2,sigdigits=12))
-    rectangle_size = abs(det(recip_latvecs))/num_kpoints
+    maxoccupied_state = ceil(Int,round(epm.electrons*num_kpoints/2,sigdigits=12))
+    rectangle_size = abs(det(epm.recip_latvecs))/num_kpoints
     
-    eigenweights = zeros(sheets,num_unique)
+    eigenweights = zeros(epm.sheets,num_unique)
     for i=1:num_unique
         eigenweights[:,i] .= kpoint_weights[i]
     end
@@ -182,10 +139,10 @@ function rectangular_method(real_latvecs::AbstractMatrix{<:Real},
     eigenvalues = eigenvalues[order]
     eigenweights = eigenweights[order]
     
-    totalstates = sheets*num_kpoints
+    totalstates = epm.sheets*num_kpoints
     counter = maxoccupied_state
     index = 0
-    for i=1:num_kpoints*sheets
+    for i=1:num_kpoints*epm.sheets
         counter -= eigenweights[i]
         if counter <= 0
             index = i
@@ -290,6 +247,7 @@ function symreduce_grid(recip_latvecs::AbstractMatrix{<:Real},
     origin = zeros(Int,dim)
     inv_rlatvecs = inv(recip_latvecs)
     N = matrix(ZZ,N)
+
     (H,U) = hnf_with_transform(N)
     (D,A,B) = snf_with_transform(H)
     (D,A,N,H) = [Array(x) for x=[D,A,N,H]]

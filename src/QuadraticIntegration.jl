@@ -891,13 +891,13 @@ function get_intercoeffs(index::Int,mesh::PyObject,ext_mesh::PyObject,
     Dᵢ = [sum((M[i,:]/2).^2) for i=1:size(M,1)]
     
     # Minimum distance from the edges of the triangle.
-    W = diagm([minimum([lineseg₋pt_dist(simplex[:,s],ext_mesh.points[i,:]) for s=[[1,2],[2,3],[3,1]]])
-        for i=neighborsᵢ])
+    # W = diagm([minimum([lineseg₋pt_dist(simplex[:,s],ext_mesh.points[i,:]) for s=[[1,2],[2,3],[3,1]]])
+    #     for i=neighborsᵢ])
  
     # Distance from the center of the triangle.
     # W = diagm([norm(ext_mesh.points[i,:] - mean(simplex,dims=2)) for i=neighborsᵢ])
     
-    # W=I
+    W=I
     
     inter_bezcoeffs = [zeros(2,size(eigenvals,1)) for i=1:size(eigenvals,1)]
     for sheet = 1:size(eigenvals,1)

@@ -112,6 +112,7 @@ function ibz_init₋mesh(ibz::Chull{<:Real},n::Int;
         for i=1:size(mesh.simplices,1)]
     
     pt_sizes = [round(Int,sqrt(simplex_size(s)/ibz.volume*n^2/2)) for s=simplices]
+    pt_sizes = [ i == 0 ? 1 : i for i=pt_sizes]
     pts = unique_points(reduce(hcat,[barytocart(sample_simplex(
         dim,pt_sizes[i]),simplices[i]) for i=1:length(pt_sizes)]),atol=atol,rtol=rtol)
     mesh = spatial.Delaunay([box_pts'; pts'])
@@ -244,7 +245,7 @@ end
 @doc """
     get_cvpts(mesh,ibz,atol=1e-9)
 
-Determine which points on the boundary of the IBZ (or any convex hull).
+Determine which points are on the boundary of the IBZ (or any convex hull).
 
 # Arguments
 - `mesh::PyObject`: a triangulation of a mesh over the IBZ.

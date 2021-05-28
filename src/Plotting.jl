@@ -118,7 +118,7 @@ end
 """
     bezplot(bezpts)
 
-Plot an interval quadratic Bezier curve and its Bezier points.
+Plot an quadratic Bezier curve and its Bezier points (1D).
 """
 function bezplot(bezpts::AbstractMatrix{<:Real},
         ax::Union{PyObject,Nothing}=nothing)
@@ -143,7 +143,7 @@ end
 """
     bezcurve_plot(bezptsᵣ,bezwtsᵣ,ax)
 
-Plot a rational, quadratic, Bezier curve and its Bezier points
+Plot a rational quadratic Bezier curve and its Bezier points
 
 # Arguments
 - `bezptsᵣ::AbstractMatrix{<:Real}`: the Bezier control points as columns of an

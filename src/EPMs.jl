@@ -19,7 +19,7 @@ import QHull: chull,Chull
 import SymmetryReduceBZ.Lattices: get_recip_latvecs
 import SymmetryReduceBZ.Utilities: sample_circle, sample_sphere
 import LinearAlgebra: norm, Symmetric, eigvals, dot
-
+import StaticArrays: SMatrix
 
 Ag_name = "Ag"
 Al_name = "Al"
@@ -79,7 +79,9 @@ body-centered tetragonal lattice may be different lattice types depending on the
 lattice parameters (I think). 
 =#
 sym_offset = Dict("BCC" => [0,0,0],"FCC" => [0.5,0.5,0.5],
-    "HEX" => [0,0,0.5], "BCT₁" => [0.5,0.5,0.5], "BCT₂" => [0.5,0.5,0.5])
+    "HEX" => [0,0,0.5], "BCT₁" => [0.5,0.5,0.5], "BCT₂" => [0.5,0.5,0.5],
+    "square" => [0.5,0.5], "hexagonal" => [0.0,0.0], "centered rectangular" => 
+    [0.0,0.0], "rectangular" => [0.0, 0.0], "oblique" => [0.0,0.0])
 
 # The lattice angles of the EPMs in radians
 Ag_αβγ = [π/2, π/2, π/2]
@@ -143,6 +145,20 @@ Zn_rlatvecs = get_recip_latvecs(Zn_latvecs,"angular")
 
 # EPM rules for replacing distances with pseudopotential form factors
 # Distances are for the angular reciprocal space convention.
+Ag_dist_ff = [[1.99,7.95],[0.195,0.121]]
+Al_dist_ff = [[2.02,8.09],[0.0179,0.0562]]
+Au_dist_ff = [[1.99,7.98],[0.252,0.152]]
+Cs_dist_ff = [[1.76],[-0.03]]
+Cu_dist_ff = [[6.77,10.15],[0.282,0.18]]
+In_dist_ff = [[8.36,10.17],[0.02,-0.047]]
+K_dist_ff = [[2.34,3.12],[0.0075,-0.009]]
+Li_dist_ff = [[5.38],[0.11]]
+Na_dist_ff = [[3.60],[0.0158]]
+Pb_dist_ff = [[1.35,5.41],[-0.084,-0.039]]
+Rb_dist_ff = [[2.13],[-0.002]]
+Sn_dist_ff = [[2.72,5.67,14.05,20.07],[-0.056,-0.069,0.051,0.033]]
+Zn_dist_ff = [[1.81,2.08,2.53],[-0.022,0.02,0.063]]
+
 Ag_rules = Dict(1.41 => 0.195,2.82 => 0.121)
 Al_rules = Dict(1.42 => 0.0179,2.84 => 0.0562)
 Au_rules = Dict(1.41 => 0.252,2.82 => 0.152)
@@ -171,36 +187,19 @@ Rb_electrons = 1
 Sn_electrons = 4
 Zn_electrons = 2
 
-Ag_sheets = 2
-Al_sheets = 5
-Au_sheets = 2
+Ag_sheets = 1
+Al_sheets = 4
+Au_sheets = 1
 Cs_sheets = 2
-Cu_sheets = 2
-In_sheets = 3 
+Cu_sheets = 1
+In_sheets = 4 
 K_sheets = 2
-Li_sheets = 2
+Li_sheets = 1
 Na_sheets = 2
-Pb_sheets = 3
+Pb_sheets = 4
 Rb_sheets = 2 
-Sn_sheets = 2 
-Zn_sheets = 2 
-
-# Cutoffs were compared to a cutoff that had at least 10,000 terms in the 
-# expansion at the origin. Cutoffs are such that the difference between the 10th
-# eigenvalues is less than 1e-9.
-# Ag_cutoff = 8.15
-# Al_cutoff = 6.8
-# Au_cutoff = 8.12
-# Cs_cutoff = 3.98
-# Cu_cutoff = 9.9
-# In_cutoff = 7.1
-# K_cutoff = 3.85
-# Li_cutoff = 7.46
-# Na_cutoff = 4.78
-# Pb_cutoff = 5.54
-# Rb_cutoff = 2.7
-# Sn_cutoff = 9.9
-# Zn_cutoff = 5.24
+Sn_sheets = 5 
+Zn_sheets = 3 
 
 # Cutoffs are chosen so that there are at least 1000 terms in the expansion at
 # the origin.
@@ -217,6 +216,41 @@ Pb_cutoff = 6.7
 Rb_cutoff = 4.7
 Sn_cutoff = 5.5
 Zn_cutoff = 6.6
+
+#=
+Cutoffs are chosen such that the mean deviation in all eigenvalues is less
+than 1e-10 for all points of a sparse mesh over the IBZ for all eigenvalues 
+beneath and slightly above the Fermi level (up to 1 eV above). The mean 
+deviation is for 5 different consecutive expansions where the number of terms in
+the expansions for all k-points changed.
+=#
+Ag_cutoff = 10.47 # 2232 terms, 3 seconds
+Al_cutoff = 10.49 # 2186 terms, 3 seconds 
+Au_cutoff = 10.48 # 2230 terms, 3 seconds
+Cs_cutoff = 5.86 # 2657 terms, 5 seconds
+Cu_cutoff = 12.48 # 2617 terms, 5 seconds
+In_cutoff = 9.79 # 2797  terms, 5 seconds
+K_cutoff = 6.06 # 1916 terms, 2 seconds
+Li_cutoff = 10.85 # 3144 terms, 7 seconds
+Na_cutoff = 7.40 # 1878 terms, 2 seconds
+Pb_cutoff = 8.58 # 2201 terms, 3 seconds
+Rb_cutoff = 4.58 # 976 terms, 1 second
+Sn_cutoff = 0
+Zn_cutoff = 7.59 # 1498 terms, 0.5 seconds
+
+# Ag_cutoff = 8.1
+# Al_cutoff = 7.12
+# Au_cutoff = 8.48
+# Cs_cutoff = 4.4
+# Cu_cutoff = 10.21
+# In_cutoff = 4.27
+# K_cutoff = 4.05
+# Li_cutoff = 7.7
+# Na_cutoff = 4.78
+# Pb_cutoff = 5.82
+# Rb_cutoff = 3.04
+# Sn_cutoff = 6.92
+# Zn_cutoff = 4.67
 
 eVtoRy = 0.07349864435130871395
 RytoeV = 13.6056931229942343775
@@ -346,6 +380,12 @@ end
 
 # 2D "toy" empirical pseudopotentials (the form factors are chosen at random)
 
+m1rlat_type = "square"
+m2rlat_type = "hexagonal"
+m3rlat_type = "centered rectangular"
+m4rlat_type = "rectangular"
+m5rlat_type = "oblique"
+
 # Brillouin zone and irreducible Brillouin zone for 2D models.
 m1bz = chull([0.5 0.5; 0.5 -0.5; -0.5 -0.5; -0.5 0.5])
 m1ibz = chull([0.0 0.0; 0.5 0.0; 0.5 0.5])
@@ -372,6 +412,7 @@ m1real_latvecs = [1 0; 0 1]
 (m1frac_trans,m1pointgroup) = calc_spacegroup(m1real_latvecs,atom_types,atom_pos,
     coordinates)
 m1recip_latvecs = get_recip_latvecs(m1real_latvecs,convention)
+m1dist_ff = [[1.00,2.00],[-0.23,0.12]]
 m1rules = Dict(1.00 => -0.23, 1.41 => 0.12)
 m1electrons1 = 6
 
@@ -396,6 +437,7 @@ m2recip_latvecs = [0.5 0.5; 0.8660254037844386 -0.8660254037844386]
 m2real_latvecs = get_recip_latvecs(m2recip_latvecs,convention)
 (m2frac_trans,m2pointgroup) = calc_spacegroup(m2real_latvecs,atom_types,atom_pos,
     coordinates)
+m2dist_ff = [[1.00,3.00,4.00],[0.39,0.23,-0.11]]
 m2rules = Dict(1.0 => 0.39, 1.73 => 0.23, 2.0 => -0.11)
 m2cutoff = 5.9
 
@@ -420,6 +462,7 @@ m3recip_latvecs = [0.4338837391175581 1.0; 0.9009688679024191 0.0]
 m3real_latvecs = get_recip_latvecs(m3recip_latvecs,convention)
 (m3frac_trans,m3pointgroup) = calc_spacegroup(m3real_latvecs,atom_types,atom_pos,
     coordinates)
+m3dist_ff = [[1.00,1.13,2.87],[-0.27,0.2,-0.33]]
 m3rules = Dict(1.0 => -0.27, 1.06 => 0.2, 1.69 => -0.33)
 m3cutoff = 5.95
 
@@ -444,6 +487,7 @@ m4recip_latvecs = [1 0; 0 2]
 m4real_latvecs = get_recip_latvecs(m4recip_latvecs,convention)
 (m4frac_trans,m4pointgroup) = calc_spacegroup(m4real_latvecs,atom_types,atom_pos,
     coordinates)
+m4dist_ff = [[1.00,4.00,5.00],[0.39,-0.11,0.11]]
 m4rules = Dict(1.0 => 0.39, 2.0 => -0.11, 2.24 => 0.11)
 m4cutoff = 8.6
 
@@ -468,6 +512,7 @@ m5recip_latvecs = [1.0 -0.4; 0.0 1.0392304845413265]
 m5real_latvecs = get_recip_latvecs(m5recip_latvecs,convention)
 (m5frac_trans,m5pointgroup) = calc_spacegroup(m5real_latvecs,atom_types,atom_pos,
     coordinates)
+m5dist_ff = [[1.0,1.24,1.44],[0.42,0.02,-0.18]]
 m5rules = Dict(1.0 => 0.42, 1.11 => 0.02, 1.2 => -0.18)
 m5cutoff = 6.3
 
@@ -506,9 +551,10 @@ mutable struct epm₋model2D
     ibz::Chull{<:Real}
     pointgroup::Vector{Matrix{Float64}}
     frac_trans::Vector{Vector{Float64}}
+    dist_ff::Vector{Vector{Float64}}
+    cutoff::Real
+    rlat_type::String
     
-    rules::Dict{Float64,Float64}
-    cutoff::Real       
     electrons::Real
     fermiarea::Real
     fermilevel::Real
@@ -521,8 +567,10 @@ atom_types = [0]
 atom_pos = Array([0 0 0;]')
 coordinates = "Cartesian" 
 convention = "ordinary"
-vars₀ = ["energy_conv","sheets","atom_types","atom_pos","coordinates","convention"]
-vars₁ = ["real_latvecs","recip_latvecs","bz","ibz","pointgroup","frac_trans","rules","cutoff"]
+vars₀ = ["energy_conv","sheets","atom_types","atom_pos","coordinates",
+        "convention"]
+vars₁ = ["real_latvecs","recip_latvecs","bz","ibz","pointgroup","frac_trans",
+        "dist_ff","cutoff","rlat_type"]
 vars₂ = ["electrons","fermiarea","fermilevel","bandenergy"];
 v = Dict()
 for i=1:5
@@ -561,7 +609,8 @@ mutable struct epm₋model
     
     bz::Chull{<:Real}
     ibz::Chull{<:Real}    
-    rules::Dict{Float64,Float64}    
+    dist_ff::Vector{Vector{Float64}}
+    rules::Dict{Float64,Float64}
     electrons::Real
     cutoff::Real
     fermiarea::Real
@@ -579,7 +628,7 @@ coordinates = "Cartesian"
 convention = "angular"
 vars₀ = ["energy_conv","offset","atom_types","atom_pos","coordinates","convention"]
 vars₁ = ["sheets","name","type","abc","αβγ","latvecs","rtype","rlatvecs","pointgroup","frac_trans",
-        "bz","ibz","rules","electrons","cutoff","fermiarea","flans","flstd","beans","bestd"]
+        "bz","ibz","dist_ff","rules","electrons","cutoff","fermiarea","flans","flstd","beans","bestd"]
 v = Dict()
 offset = [0.0,0,0]
 for m=epm_names
@@ -590,120 +639,120 @@ for m=epm_names
 end
         
 
-# @doc """
-#     eval_epm(kpoint,rbasis,rules,cutoff,sheets,energy_conversion_factor;rtol,
-#         atol,func)
+@doc """
+    eval_epm(kpoint,rbasis,rules,cutoff,sheets,energy_conversion_factor;rtol,
+        atol,func)
 
-# Evaluate an empirical pseudopotential at a k-point.
+Evaluate an empirical pseudopotential at a k-point.
 
-# # Arguments
-# - `kpoint::AbstractVector{<:Real}:` a point at which the EPM is evaluated.
-# - `rbasis::AbstractMatrix{<:Real}`: the reciprocal lattice basis as columns of
-#     a 3x3 real array.
-# - `rules::Dict{Float64,Float64}`: a dictionary whose keys are distances between
-#     reciprocal lattice points rounded to two decimals places and whose values
-#     are the empirical pseudopotential form factors.
-# - `cutoff::Real`: the Fourier expansion cutoff.
-# - `sheets::Int`: the number of eigenenergies returned.
-# - `energy_conversion_factor::Real=RytoeV`: converts the energy eigenvalue units
-#     from the energy unit for `rules` to an alternative energy unit.
-# - `rtol::Real=sqrt(eps(float(maximum(rbasis))))`: a relative tolerance for
-#     finite precision comparisons. This is used for identifying points within a
-#     circle or sphere in the Fourier expansion.
-# - `atol::Real=1e-9`: an absolute tolerance for finite precision comparisons.
-# - `func::Union{Nothing,Function}=nothing`: a k-point independent EPM.
+# Arguments
+- `kpoint::AbstractVector{<:Real}:` a point at which the EPM is evaluated.
+- `rbasis::AbstractMatrix{<:Real}`: the reciprocal lattice basis as columns of
+    a 3x3 real array.
+- `rules::Dict{Float64,Float64}`: a dictionary whose keys are distances between
+    reciprocal lattice points rounded to two decimals places and whose values
+    are the empirical pseudopotential form factors.
+- `cutoff::Real`: the Fourier expansion cutoff.
+- `sheets::Int`: the number of eigenenergies returned.
+- `energy_conversion_factor::Real=RytoeV`: converts the energy eigenvalue units
+    from the energy unit for `rules` to an alternative energy unit.
+- `rtol::Real=sqrt(eps(float(maximum(rbasis))))`: a relative tolerance for
+    finite precision comparisons. This is used for identifying points within a
+    circle or sphere in the Fourier expansion.
+- `atol::Real=1e-9`: an absolute tolerance for finite precision comparisons.
+- `func::Union{Nothing,Function}=nothing`: a k-point independent EPM.
 
-# # Returns
-# - `::AbstractVector{<:Real}`: a list of eigenenergies
+# Returns
+- `::AbstractVector{<:Real}`: a list of eigenenergies
 
-# # Examples
-# ```jldoctest
-# import Pebsi.EPMs: eval_epm
-# kpoint = [0,0,0]
-# rlatvecs = [1 0 0; 0 1 0; 0 0 1]
-# rules = Dict(1.00 => .01, 2.00 => 0.015)
-# cutoff = 3.0
-# sheets = 1:10
-# eval_epm(kpoint, rlatvecs, rules, cutoff, sheets)
-# # output
-# 10-element Array{Float64,1}:
-#  -0.012572222255690903
-#  13.392395133818168
-#  13.392395133818248
-#  13.392395133818322
-#  13.803213112862565
-#  13.803213112862627
-#  13.803213665491697
-#  26.79812229071137
-#  26.7981222907114
-#  26.798122290711415
-# ```
-# """
-# function eval_epm(kpoint::AbstractVector{<:Real},
-#     rbasis::AbstractMatrix{<:Real}, rules::Dict{Float64,Float64}, cutoff::Real,
-#     sheets::Int,energy_conversion_factor::Real=RytoeV;
-#     rtol::Real=sqrt(eps(float(maximum(rbasis)))),
-#     atol::Real=1e-9,
-#     func::Union{Nothing,Function}=nothing)::AbstractVector{<:Real}
+# Examples
+```jldoctest
+import Pebsi.EPMs: eval_epm
+kpoint = [0,0,0]
+rlatvecs = [1 0 0; 0 1 0; 0 0 1]
+rules = Dict(1.00 => .01, 2.00 => 0.015)
+cutoff = 3.0
+sheets = 1:10
+eval_epm(kpoint, rlatvecs, rules, cutoff, sheets)
+# output
+10-element Array{Float64,1}:
+ -0.012572222255690903
+ 13.392395133818168
+ 13.392395133818248
+ 13.392395133818322
+ 13.803213112862565
+ 13.803213112862627
+ 13.803213665491697
+ 26.79812229071137
+ 26.7981222907114
+ 26.798122290711415
+```
+"""
+function eval_epm(kpoint::AbstractVector{<:Real},
+    rbasis::AbstractMatrix{<:Real}, rules::Dict{Float64,Float64}, cutoff::Real,
+    sheets::Int,energy_conversion_factor::Real=RytoeV;
+    rtol::Real=sqrt(eps(float(maximum(rbasis)))),
+    atol::Real=1e-9,
+    func::Union{Nothing,Function}=nothing)::AbstractVector{<:Real}
 
-#     if !(func == nothing)
-#         return eval_epm(func,kpoint...,sheets)
-#     end
+    if !(func == nothing)
+        return eval_epm(func,kpoint...,sheets)
+    end
 
-#     if length(kpoint) == 3
-#         rlatpts = sample_sphere(rbasis,cutoff,kpoint,rtol=rtol,atol=atol)
-#     elseif length(kpoint) == 2
-#         rlatpts = sample_circle(rbasis,cutoff,kpoint,rtol=rtol,atol=atol)
-#     else
-#         throw(ArgumentError("The k-point may only have 2 or 3 elements."))
-#     end
+    if length(kpoint) == 3
+        rlatpts = sample_sphere(rbasis,cutoff,kpoint,rtol=rtol,atol=atol)
+    elseif length(kpoint) == 2
+        rlatpts = sample_circle(rbasis,cutoff,kpoint,rtol=rtol,atol=atol)
+    else
+        throw(ArgumentError("The k-point may only have 2 or 3 elements."))
+    end
 
-#     npts = size(rlatpts,2)
-#     if npts < sheets[end]
-#         error("The cutoff is too small for the requested number of sheets. The"*
-#             " number of terms in the expansion is $npts.")
-#     end
-#     ham=zeros(Float64,npts,npts)
-#     dist = 0.0
-#     for i=1:npts, j=i:npts
-#         if i==j
-#             # ham[i,j] = norm(kpoint + rlatpts[:,i])^2
-#             ham[i,j] = dot(kpoint + rlatpts[:,i],kpoint + rlatpts[:,i])
-#         else
-#             dist = round(norm(rlatpts[:,i] - rlatpts[:,j]),digits=2)
-#             if haskey(rules,dist)
-#                 ham[i,j] = rules[dist]
-#             end
-#         end
-#     end
+    npts = size(rlatpts,2)
+    if npts < sheets[end]
+        error("The cutoff is too small for the requested number of sheets. The"*
+            " number of terms in the expansion is $npts.")
+    end
+    ham=zeros(Float64,npts,npts)
+    dist = 0.0
+    for i=1:npts, j=i:npts
+        if i==j
+            # ham[i,j] = norm(kpoint + rlatpts[:,i])^2
+            ham[i,j] = dot(kpoint + rlatpts[:,i],kpoint + rlatpts[:,i])
+        else
+            dist = round(norm(rlatpts[:,i] - rlatpts[:,j]),digits=2)
+            if haskey(rules,dist)
+                ham[i,j] = rules[dist]
+            end
+        end
+    end
 
-#     eigvals(Symmetric(ham))[1:sheets]*energy_conversion_factor
-# end
+    eigvals(Symmetric(ham))[1:sheets]*energy_conversion_factor
+end
 
 
-# @doc """
-#     eval_epm(kpoints,rbasis,rules,cutoff,sheets,energy_conversion_factor;rtol,atol,func)
+@doc """
+    eval_epm(kpoints,rbasis,rules,cutoff,sheets,energy_conversion_factor;rtol,atol,func)
 
-# Evaluate an empirical pseudopotential at each point in an array.
+Evaluate an empirical pseudopotential at each point in an array.
 
-# # Arguments
-# - `kpoints::AbstractMatrix{<:Real}`: an array of k-points as columns of an
-#     array.
-# """
-# function eval_epm(kpoints::AbstractMatrix{<:Real},
-#     rbasis::AbstractMatrix{<:Real}, rules::Dict{Float64,Float64}, cutoff::Real,
-#     sheets::Int,energy_conversion_factor::Real=RytoeV;
-#     rtol::Real=sqrt(eps(float(maximum(rbasis)))),
-#     atol::Real=1e-9,
-#     func::Union{Nothing,Function}=nothing)::AbstractMatrix{<:Real}
+# Arguments
+- `kpoints::AbstractMatrix{<:Real}`: an array of k-points as columns of an
+    array.
+"""
+function eval_epm(kpoints::AbstractMatrix{<:Real},
+    rbasis::AbstractMatrix{<:Real}, rules::Dict{Float64,Float64}, cutoff::Real,
+    sheets::Int,energy_conversion_factor::Real=RytoeV;
+    rtol::Real=sqrt(eps(float(maximum(rbasis)))),
+    atol::Real=1e-9,
+    func::Union{Nothing,Function}=nothing)::AbstractMatrix{<:Real}
 
-#     if !(func == nothing)
-#         eval_epm(func,kpoints,sheets)
-#     end
+    if !(func == nothing)
+        eval_epm(func,kpoints,sheets)
+    end
 
-#     mapslices(x->eval_epm(x,rbasis,rules,cutoff,sheets,energy_conversion_factor;
-#         rtol=rtol,atol=atol),kpoints,dims=1)
-# end
+    mapslices(x->eval_epm(x,rbasis,rules,cutoff,sheets,energy_conversion_factor;
+        rtol=rtol,atol=atol),kpoints,dims=1)
+end
 
 @doc """
     eval_epm(kpoint,epm;rtol,atol,func,sheets)
@@ -715,7 +764,6 @@ Evaluate an empirical pseudopotential at a k-point.
 - `epm::Union{epm₋model2D,epm₋model}`: an empirical pseudopotential.
 - `rtol::Real=sqrt(eps(float(maximum(epm.recip_latvecs))))`: a relative tolerance.
 - `atol::Real=1e-9`: an absolute tolerances
-- `func::Union{Nothing,Function}=nothing`: a k-point independent EPM.
 - `sheets::Integer=10`: the number of sheets for the k-point independent EPM.
 
 # Returns
@@ -742,41 +790,65 @@ eval_epm([0,0,0],Al_epm)
 function eval_epm(kpoint::AbstractVector{<:Real},
     epm::Union{epm₋model2D,epm₋model};
     rtol::Real=sqrt(eps(float(maximum(epm.recip_latvecs)))),
-    atol::Real=1e-9,func::Union{Nothing,Function}=nothing,
-    sheets::Integer=10)::AbstractVector{<:Real}
-
-    if !(func == nothing)
-        return eval_epm(func,kpoint...,sheets)
-    end
+    atol::Real=1e-9,sheets::Integer=10)::AbstractVector{<:Real}
 
     if length(kpoint) == 3
-        rlatpts = sample_sphere(epm.recip_latvecs,epm.cutoff,kpoint;rtol=rtol,atol=atol)
+        rlatpts = sample_sphere(epm.recip_latvecs,epm.cutoff,kpoint;rtol=rtol,
+            atol=atol)
     elseif length(kpoint) == 2
-        rlatpts = sample_circle(epm.recip_latvecs,epm.cutoff,kpoint;rtol=rtol,atol=atol)
+        rlatpts = sample_circle(epm.recip_latvecs,epm.cutoff,kpoint;rtol=rtol,
+            atol=atol)
     else
         throw(ArgumentError("The k-point may only have 2 or 3 elements."))
     end
 
+    rlatpts = SMatrix{length(kpoint),size(rlatpts,2)}(rlatpts)
     npts = size(rlatpts,2)
     if npts < epm.sheets
         error("The cutoff is too small for the requested number of sheets. The"*
             " number of terms in the expansion is $npts.")
     end
+    # ham=zeros(Float64,npts,npts)
+    # dist = 0.0
+    # for i=1:npts, j=i:npts
+    #     if i==j
+    #         ham[i,j] = dot(kpoint + rlatpts[:,i],kpoint + rlatpts[:,i])
+    #     else
+    #         dist = round(norm(rlatpts[:,i] - rlatpts[:,j]),digits=2)
+    #         if haskey(epm.rules,dist)
+    #             ham[i,j] = epm.rules[dist]
+    #         end
+    #     end
+    # end
     ham=zeros(Float64,npts,npts)
     dist = 0.0
+    p = 0
+    dist_ff = epm.dist_ff
+    max_dist = maximum(dist_ff[1])
     for i=1:npts, j=i:npts
         if i==j
-            # ham[i,j] = norm(kpoint + rlatpts[:,i])^2
             ham[i,j] = dot(kpoint + rlatpts[:,i],kpoint + rlatpts[:,i])
         else
-            dist = round(norm(rlatpts[:,i] - rlatpts[:,j]),digits=2)
-            if haskey(epm.rules,dist)
-                ham[i,j] = epm.rules[dist]
+            dist = round(dot(rlatpts[:,i] - rlatpts[:,j],rlatpts[:,i] - rlatpts[:,j]),digits=2)
+            if dist > max_dist
+                continue
+            else
+                p = 0
+                for k=1:length(dist_ff[1])
+                    if dist_ff[1][k] == dist
+                        p = k
+                        break
+                    end
+                end        
+                if p == 0
+                    continue
+                else
+                    ham[i,j] = dist_ff[2][p]
+                end
             end
         end
-    end
-    
-    eigvals(Symmetric(ham))[1:epm.sheets]*epm.energy_conv
+    end 
+    eigvals(Symmetric(ham),1:epm.sheets)*epm.energy_conv
 end
 
 @doc """
@@ -817,10 +889,9 @@ eval_epm([0 0; 0 1; 0 0],Al_epm)
 function eval_epm(kpoints::AbstractMatrix{<:Real},
     epm::Union{epm₋model2D,epm₋model};
     rtol::Real=sqrt(eps(float(maximum(epm.recip_latvecs)))),
-    atol=1e-9,func::Union{Nothing,Function}=nothing,
-    sheets::Integer=10)::AbstractMatrix{<:Real}
+    atol=1e-9,sheets::Integer=10)::AbstractMatrix{<:Real}
 
-    mapslices(x->eval_epm(x,epm,rtol=rtol,atol=atol,func=func,sheets=sheets),
+    mapslices(x->eval_epm(x,epm,rtol=rtol,atol=atol,sheets=sheets),
     kpoints,dims=1)
 end
 
@@ -969,7 +1040,8 @@ format.
 """
 labels_dict=Dict("GAMMA"=>"Γ","X"=>"X","U"=>"U","L"=>"L","W"=>"W","X"=>"X","K"=>"K",
                  "H"=>"H","N"=>"N","P"=>"P","Y"=>"Y","M"=>"M","A"=>"A","L_2"=>"L₂",
-                 "V_2"=>"V₂","I_2"=>"I₂","I"=>"I","M_2"=>"M₂","Y"=>"Y")
+                 "V_2"=>"V₂","I_2"=>"I₂","I"=>"I","M_2"=>"M₂","Y"=>"Y",
+                 "Z"=>"Z","Z_0"=>"Z₀")
 
 @doc """
     plot_bandstructure(name,basis,rules,expansion_size,sheets,kpoint_dist,
@@ -1064,9 +1136,10 @@ function plot_bandstructure(epm::Union{epm₋model2D,epm₋model},
     end
 
     # Determine the x-axis tick positions and labels.
-    labels=spdict["explicit_kpoints_labels"];
+    labels=spdict["explicit_kpoints_labels"]
+    @show labels
     sympts_pos = filter(x->x>0,[if labels[i]==""; -1 else i end for i=1:length(labels)])
-    λ=spdict["explicit_kpoints_linearcoord"];
+    λ=spdict["explicit_kpoints_linearcoord"]
 
     tmp_labels=[labels_dict[l] for l=labels[sympts_pos]]
     tick_labels=tmp_labels
