@@ -1,16 +1,16 @@
 module Mesh
 
-include("Geometry.jl")
-include("Polynomials.jl")
+# include("Geometry.jl")
+# include("Polynomials.jl")
 
-import .Geometry: simplex_size, barytocart,lineseg₋pt_dist
-import .Polynomials: sample_simplex
-import SymmetryReduceBZ.Utilities: unique_points
+using ..Geometry: simplex_size, barytocart,lineseg₋pt_dist
+using ..Polynomials: sample_simplex
+using SymmetryReduceBZ.Utilities: unique_points
 
-import PyCall: pyimport,PyObject
-import QHull: Chull
-import Statistics: mean
-import LinearAlgebra: norm
+using PyCall: pyimport,PyObject
+using QHull: Chull
+using Statistics: mean
+using LinearAlgebra: norm
 
 @doc """
     get₋neighbors(index,mesh,num₋neighbors=2)
@@ -83,7 +83,7 @@ Create a triangulation of a roughly uniform mesh over the IBZ.
 # Examples
 ```jldoctest
 import Pebsi.EPMs: m2ibz
-import Pebsi.QuadraticIntegration: ibz_init₋mesh
+import Pebsi.Mesh: ibz_init₋mesh
 n = 5
 ibz_init₋mesh(ibz,n)
 # output
@@ -138,7 +138,7 @@ Calculate the symmetrically unique points within the IBZ.
 # Examples
 ```jldoctest
 import Pebsi.EPMs: m2ibz,m2pointgroup
-import Pebsi.QuadraticIntegration: ibz_init₋mesh
+import Pebsi.Mesh: ibz_init₋mesh
 n = 5
 mesh = ibz_init₋mesh(ibz,n)
 get_sym₋unique(mesh,m2pointgroup)

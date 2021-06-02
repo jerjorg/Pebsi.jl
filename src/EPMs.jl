@@ -9,17 +9,19 @@ Lattice constants from https://periodictable.com.
 """
 module EPMs
 
-import SymmetryReduceBZ.Lattices: genlat_FCC, genlat_BCC, genlat_HEX,
+using SymmetryReduceBZ.Lattices: genlat_FCC, genlat_BCC, genlat_HEX,
     genlat_BCT, get_recip_latvecs
-import SymmetryReduceBZ.Symmetry: calc_spacegroup
+using SymmetryReduceBZ.Symmetry: calc_spacegroup
 
-import PyCall: pyimport
-import PyPlot: subplots
-import QHull: chull,Chull
-import SymmetryReduceBZ.Lattices: get_recip_latvecs
-import SymmetryReduceBZ.Utilities: sample_circle, sample_sphere
-import LinearAlgebra: norm, Symmetric, eigvals, dot
-import StaticArrays: SMatrix
+using PyCall: pyimport
+using PyPlot: subplots
+using QHull: chull,Chull
+using SymmetryReduceBZ.Lattices: get_recip_latvecs
+using SymmetryReduceBZ.Utilities: sample_circle, sample_sphere
+using LinearAlgebra: norm, Symmetric, eigvals, dot
+using StaticArrays: SMatrix
+
+export eval_epm, RytoeV, epm₋model2D, epm₋model
 
 Ag_name = "Ag"
 Al_name = "Al"

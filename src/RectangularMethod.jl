@@ -1,17 +1,13 @@
 module RectangularMethod
 
-import SymmetryReduceBZ.Symmetry: mapto_unitcell, make_primitive,
+using SymmetryReduceBZ.Symmetry: mapto_unitcell, make_primitive,
     calc_spacegroup, mapto_bz
-import SymmetryReduceBZ.Lattices: get_recip_latvecs
-import Base.Iterators: product
-import LinearAlgebra: det, diag, dot, inv
-import AbstractAlgebra: ZZ, matrix, snf_with_transform, hnf_with_transform, hnf
+using SymmetryReduceBZ.Lattices: get_recip_latvecs
+using Base.Iterators: product
+using LinearAlgebra: det, diag, dot, inv
+using AbstractAlgebra: ZZ, matrix, snf_with_transform, hnf_with_transform, hnf
 
-import Pebsi.EPMs: eval_epm,RytoeV,eVtoRy,epm₋model,epm₋model2D,sym_offset
-
-#include("EPMs.jl")
-#import .EPMs: eval_epm,RytoeV,eVtoRy
-
+import ..EPMs: eval_epm,RytoeV,eVtoRy,epm₋model,epm₋model2D,sym_offset
 
 @doc """
     sample_unitcell(latvecs,N,grid_offset,rtol,atol)

@@ -1,11 +1,10 @@
 module Polynomials
 
-include("Geometry.jl")
-import .Geometry: sample_simplex,barytocart,carttobary
+using ..Geometry: sample_simplex,barytocart,carttobary
 
-import Base.Iterators: product
-import LinearAlgebra: dot,det,norm
-import Statistics: mean
+using Base.Iterators: product
+using LinearAlgebra: dot,det,norm
+using Statistics: mean
 
 @doc """
     bernstein_basis(bpt,dim,deg)

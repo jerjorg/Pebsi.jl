@@ -1,17 +1,13 @@
 module Plotting
 
-import PyPlot: subplots, figure, PyObject, figaspect
-import QHull: chull
+using PyPlot: subplots, figure, PyObject, figaspect
+using QHull: chull
 
-include("RectangularMethod.jl")
-include("Polynomials.jl")
-include("Geometry.jl")
+using ..RectangularMethod: sample_unitcell
+using ..Polynomials: eval_poly,sample_simplex,eval_bezcurve
+using ..Geometry: carttobary,barytocart
 
-import .RectangularMethod: sample_unitcell
-import .Polynomials: eval_poly,sample_simplex,eval_bezcurve
-import .Geometry: carttobary,barytocart
-
-import SymmetryReduceBZ.Plotting: plot_2Dconvexhull
+using SymmetryReduceBZ.Plotting: plot_2Dconvexhull
 
 @doc """
     meshplot(meshpts,ax,color)
@@ -118,7 +114,7 @@ end
 """
     bezplot(bezpts)
 
-Plot an quadratic Bezier curve and its Bezier points (1D).
+Plot a quadratic Bezier curve and its Bezier points (1D).
 """
 function bezplot(bezpts::AbstractMatrix{<:Real},
         ax::Union{PyObject,Nothing}=nothing)

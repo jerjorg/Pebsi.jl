@@ -1,7 +1,7 @@
 module Geometry
 
-import LinearAlgebra: dot,cross,norm,det
-import Base.Iterators: product
+using LinearAlgebra: dot,cross,norm,det
+using Base.Iterators: product
 
 @doc """
     order_vertices(vertices)
