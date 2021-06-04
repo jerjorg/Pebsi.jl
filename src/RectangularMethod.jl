@@ -130,7 +130,7 @@ function rectangular_method(epm::Union{epm₋model2D,epm₋model},
 
     eigenvalues = [eigenvalues...]
     eigenweights = [eigenweights...]
-
+    
     order = sortperm(eigenvalues)
     eigenvalues = eigenvalues[order]
     eigenweights = eigenweights[order]

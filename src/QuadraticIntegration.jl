@@ -22,6 +22,53 @@ using PyCall: PyObject, pyimport
     bandstructure
 
 A container for all variables related to the band structure.
+
+# Arguments
+- `init_msize::Int`: the initial size of the mesh over the IBZ. The number of 
+    points is approximately proportional to init_msize^2/2.
+- `num_neigh::Int`: the number of nearest neighbors to consider to include when
+    calculating interval coefficients.
+- `fermiarea_eps::Real`: a tolerance used during the bisection algorithm that 
+    determines how close the midpoints of the Fermi area interval is to the true
+    Fermi area.
+- `target_accuracy::Real`: the accuracy desired for the band energy at the end 
+    of the computation.
+- `fermilevel_method::Int`: the method for computing the Fermi level.
+    1- bisection, 2-Chandrupatla.
+- `refine_method::Int`: the method of refinement. 1-refine the tile with the most
+    error. 2-refine the tiles with too much error given the sizes of the tiles.
+- `sample_method::Int`: the method of sampling a tile with too much error. 1-add
+    a single point at the center of the triangle. 2-add point the midpoints of 
+    all three edges.
+- `rtol::Real`: a relative tolerance for floating point comparisons.
+- `atol::Real`: an absolute tolerance for floating point comparisons.
+- `mesh::PyObject`: a Delaunay triangulation of points over the IBZ.
+- `simplicesᵢ::Vector{Vector{Int}}`: the indices of points at the corners of the 
+    tile for all tiles in the triangulation.
+- `ext_mesh::PyObject`: a Delaunay triangulation of points within and around the 
+    IBZ. The number of points outside is determined by `num_neigh`.
+- `sym₋unique::AbstractVector{<:Int}`: the indices of symmetrically unique points
+    in the mesh.
+- `eigenvals::AbstractMatrix{<:Real}`: the eigenvalues at each of the points unique
+    by symmetry.
+- `mesh_intcoeffs::Vector{Vector{Matrix{Float64}}}`:the interval Bezier 
+    coefficients for all tiles and sheets. 
+- `approx_fermilevel::Real`: the approximate Fermi level. This is the midpoint of
+    the Fermi level interval.
+- `approx_bandenergy::Real`: the approximate band energy. This is the midpoint of
+    the band energy interval.
+- `fermiarea_interval::AbstractVector{<:Real}`: the Fermi area interval. 
+- `fermilevel_interval::AbstractVector{<:Real}`: the Fermi level interval. 
+- `bandenergy_interval::AbstractVector{<:Real}`: the band energy interval.
+- `fermilevel::Real`: the true Fermi level.
+- `bandenergy::Real`: the true band energy.
+- `partially_occupied::Vector{Vector{Int64}}`: the sheets that are partially
+    occupied in each tile.
+- `bandenergy_errors::Vector{<:Real}`: the band energy errors for each tile
+    in the triangulation.
+- `fermiarea_errors::Vector{<:Real}`: the Fermi area errors for each tile in the
+    triangulation.
+
 """
 mutable struct bandstructure
     init_msize::Int
@@ -54,18 +101,53 @@ end
 @doc """
     init_bandstructure(epm; init_msize,nut_neigh,fermiarea_eps,target_accuracy,
         fermilevel_method,refine_method,sample_method,rtol,atol)
+
+Initialize a band structure container
+
+# Arguments
+- `epm::Union{epm₋model,epm₋model2D}`: an empirical pseudopotential. 
+- `init_msize::Int`: the initial size of the mesh over the IBZ. The number of 
+    points is approximately proportional to init_msize^2/2.
+- `num_neigh::Int`: the number of nearest neighbors to consider to include when
+    calculating interval coefficients.
+- `fermiarea_eps::Real`: a tolerance used during the bisection algorithm that 
+    determines how close the midpoints of the Fermi area interval is to the true
+    Fermi area.
+- `target_accuracy::Real`: the accuracy desired for the band energy at the end 
+    of the computation.
+- `fermilevel_method::Int`: the method for computing the Fermi level.
+    1- bisection, 2-Chandrupatla.
+- `refine_method::Int`: the method of refinement. 1-refine the tile with the most
+    error. 2-refine the tiles with too much error given the sizes of the tiles.
+- `sample_method::Int`: the method of sampling a tile with too much error. 1-add
+    a single point at the center of the triangle. 2-add point the midpoints of 
+    all three edges.
+- `rtol::Real`: a relative tolerance for floating point comparisons.
+- `atol::Real`: an absolute tolerance for floating point comparisons.
+
+# Returns
+- `::bandstructure`: a container containing useful information about the 
+    band structure representation.
+
+# Examples
+```
+import Pebsi.EPMs: m11
+import Pebsi.QuadraticIntegration: init_bandstructure
+init_bandstructure(m11)
+```
 """
-function init_bandstructure(epm::Union{epm₋model,epm₋model2D};
-        init_msize::Int=5,
-        num_neigh::Int=1,
-        fermiarea_eps::Real=1e-6,
-        target_accuracy::Real=1e-4,
-        fermilevel_method::Int=1,
-        refine_method::Int=1,
-        sample_method::Int=1,
-        rtol::Real=1e-9,
-        atol::Real=1e-9)
-    
+function init_bandstructure(
+    epm::Union{epm₋model,epm₋model2D};
+    init_msize::Int=5,
+    num_neigh::Int=1,
+    fermiarea_eps::Real=1e-6,
+    target_accuracy::Real=1e-4,
+    fermilevel_method::Int=1,
+    refine_method::Int=1,
+    sample_method::Int=1,
+    rtol::Real=1e-9,
+    atol::Real=1e-9)
+
     mesh = ibz_init₋mesh(epm.ibz,init_msize;rtol=rtol,atol=atol)
     simplicesᵢ = notbox_simplices(mesh)
     ext_mesh,sym₋unique = get_extmesh(epm.ibz,mesh,epm.pointgroup,epm.recip_latvecs,num_neigh;
@@ -947,7 +1029,6 @@ function calc₋fl(epm::Union{epm₋model,epm₋model2D},ebs::bandstructure;
     iters = 0
     f,fa₁,fa₂ = 1e9,1e9,1e9
     while abs(f) > ebs.fermiarea_eps
-        @show E₁,E₂,E₃
         iters += 1
         if iters > 50
             error("Failed to converge the Fermi area to within the provided tolerance of $ebs.fermiarea_eps.")
@@ -1006,6 +1087,15 @@ end
     calc_fl₋be(epm,ebs)
 
 Calculate the Fermi level and band energy for a given rep. of the band struct.
+
+# Arguments
+- `epm::Union{epm₋model2D,epm₋model}`: an empirical pseudopotential.
+- `ebs::bandstructure`: the band structure container 
+
+# Returns
+- `ebs::bandstructure`: update values within container for the band energy error,
+    Fermi area error, Fermi level interval, Fermi area interval, band energy
+    interval, and the partially occupied sheets.
 """
 function calc_fl₋be(epm::Union{epm₋model2D,epm₋model},ebs::bandstructure)
 
@@ -1069,7 +1159,8 @@ end
 @doc """
     refine_mesh(epm,ebs)
 
-One iteration of adaptive refinement.
+Perform one iteration of adaptive refinement. See the composite type 
+`bandstructure` for refinement options. 
 """
 function refine_mesh(epm::Union{epm₋model2D,epm₋model},ebs::bandstructure)
     

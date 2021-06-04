@@ -19,7 +19,11 @@ using QHull: chull,Chull
 using SymmetryReduceBZ.Lattices: get_recip_latvecs
 using SymmetryReduceBZ.Utilities: sample_circle, sample_sphere
 using LinearAlgebra: norm, Symmetric, eigvals, dot
-using StaticArrays: SMatrix
+using SparseArrays: SparseMatrixCSC
+using Distances: SqEuclidean, pairwise!
+using Arpack: eigs
+
+
 
 export eval_epm, RytoeV, epm₋model2D, epm₋model
 
@@ -161,19 +165,19 @@ Rb_dist_ff = [[2.13],[-0.002]]
 Sn_dist_ff = [[2.72,5.67,14.05,20.07],[-0.056,-0.069,0.051,0.033]]
 Zn_dist_ff = [[1.81,2.08,2.53],[-0.022,0.02,0.063]]
 
-Ag_rules = Dict(1.41 => 0.195,2.82 => 0.121)
-Al_rules = Dict(1.42 => 0.0179,2.84 => 0.0562)
-Au_rules = Dict(1.41 => 0.252,2.82 => 0.152)
-Cs_rules = Dict(1.33 => -0.03)
-Cu_rules = Dict(3.19 => 0.18,2.6 => 0.282)
-In_rules = Dict(2.89 => 0.02,3.19 => -0.047)
-K_rules = Dict(1.77 => -0.009,1.53 => 0.0075)
-Li_rules = Dict(2.32 => 0.11)
-Na_rules = Dict(1.9 => 0.0158)
-Pb_rules = Dict(2.33 => -0.039,1.16 => -0.084)
-Rb_rules = Dict(1.46 => -0.002)
-Sn_rules = Dict(4.48 => 0.033,1.65 => -0.056,2.38 => -0.069,3.75 => 0.051)
-Zn_rules = Dict(1.34 => -0.022,1.59 => 0.063,1.44 => 0.02)
+Ag_rules = [1.99 => 0.195,0.195 => 0.121]
+Al_rules = [2.02 => 0.0179,8.09 => 0.0562]
+Au_rules = [1.99 => 0.252,7.98 => 0.152]
+Cs_rules = [1.76 => -0.03]
+Cu_rules = [3.19 => 0.18,6.77 => 0.282]
+In_rules = [2.89 => 0.02,3.19 => -0.047]
+K_rules = [1.77 => -0.009,1.53 => 0.0075]
+Li_rules = [2.32 => 0.11]
+Na_rules = [1.9 => 0.0158]
+Pb_rules = [2.33 => -0.039,1.16 => -0.084]
+Rb_rules = [1.46 => -0.002]
+Sn_rules = [4.48 => 0.033,1.65 => -0.056,2.38 => -0.069,3.75 => 0.051]
+Zn_rules = [1.34 => -0.022,1.59 => 0.063,1.44 => 0.02]
 
 Ag_electrons = 1
 Al_electrons = 3
@@ -381,7 +385,6 @@ for m=epm_names
 end
 
 # 2D "toy" empirical pseudopotentials (the form factors are chosen at random)
-
 m1rlat_type = "square"
 m2rlat_type = "hexagonal"
 m3rlat_type = "centered rectangular"
@@ -612,7 +615,7 @@ mutable struct epm₋model
     bz::Chull{<:Real}
     ibz::Chull{<:Real}    
     dist_ff::Vector{Vector{Float64}}
-    rules::Dict{Float64,Float64}
+    rules::Vector{Pair{Float64, Float64}}
     electrons::Real
     cutoff::Real
     fermiarea::Real
@@ -766,7 +769,7 @@ Evaluate an empirical pseudopotential at a k-point.
 - `epm::Union{epm₋model2D,epm₋model}`: an empirical pseudopotential.
 - `rtol::Real=sqrt(eps(float(maximum(epm.recip_latvecs))))`: a relative tolerance.
 - `atol::Real=1e-9`: an absolute tolerances
-- `sheets::Integer=10`: the number of sheets for the k-point independent EPM.
+- `sheets::Integer=-1`: the number of sheets for the k-point independent EPM.
 
 # Returns
 - `::AbstractVector{<:Real}`: the eigenenergies at the k-point for the EPM.
@@ -792,7 +795,7 @@ eval_epm([0,0,0],Al_epm)
 function eval_epm(kpoint::AbstractVector{<:Real},
     epm::Union{epm₋model2D,epm₋model};
     rtol::Real=sqrt(eps(float(maximum(epm.recip_latvecs)))),
-    atol::Real=1e-9,sheets::Integer=10)::AbstractVector{<:Real}
+    atol::Real=1e-9,sheets::Integer=-1)::AbstractVector{<:Real}
 
     if length(kpoint) == 3
         rlatpts = sample_sphere(epm.recip_latvecs,epm.cutoff,kpoint;rtol=rtol,
@@ -804,53 +807,29 @@ function eval_epm(kpoint::AbstractVector{<:Real},
         throw(ArgumentError("The k-point may only have 2 or 3 elements."))
     end
 
-    rlatpts = SMatrix{length(kpoint),size(rlatpts,2)}(rlatpts)
     npts = size(rlatpts,2)
-    if npts < epm.sheets
+    if npts < sheets
         error("The cutoff is too small for the requested number of sheets. The"*
             " number of terms in the expansion is $npts.")
     end
-    # ham=zeros(Float64,npts,npts)
-    # dist = 0.0
-    # for i=1:npts, j=i:npts
-    #     if i==j
-    #         ham[i,j] = dot(kpoint + rlatpts[:,i],kpoint + rlatpts[:,i])
-    #     else
-    #         dist = round(norm(rlatpts[:,i] - rlatpts[:,j]),digits=2)
-    #         if haskey(epm.rules,dist)
-    #             ham[i,j] = epm.rules[dist]
-    #         end
-    #     end
-    # end
+
+    if sheets < 0
+        sheets = epm.sheets
+    end
+
     ham=zeros(Float64,npts,npts)
-    dist = 0.0
-    p = 0
-    dist_ff = epm.dist_ff
-    max_dist = maximum(dist_ff[1])
-    for i=1:npts, j=i:npts
-        if i==j
-            ham[i,j] = dot(kpoint + rlatpts[:,i],kpoint + rlatpts[:,i])
-        else
-            dist = round(dot(rlatpts[:,i] - rlatpts[:,j],rlatpts[:,i] - rlatpts[:,j]),digits=2)
-            if dist > max_dist
-                continue
-            else
-                p = 0
-                for k=1:length(dist_ff[1])
-                    if dist_ff[1][k] == dist
-                        p = k
-                        break
-                    end
-                end        
-                if p == 0
-                    continue
-                else
-                    ham[i,j] = dist_ff[2][p]
-                end
-            end
-        end
-    end 
-    eigvals(Symmetric(ham),1:epm.sheets)*epm.energy_conv
+    rules = epm.rules
+    maxff = maximum([x[2] for x=rules])
+    maxd = maximum([x[1] for x=rules]) + 1e-3
+    pairwise!(ham, SqEuclidean(), rlatpts, dims=2)
+    replace!(x -> x > maxd ? 0 : x, ham)
+    ind = findall(!iszero, ham)
+    ham[ind] = replace(round.(ham[ind],digits=2),rules...)
+    ham[ind] = replace(x -> x > maxff ? 0 : x, ham[ind])
+    for i=1:npts
+        ham[i,i] = (kpoint[1] + rlatpts[1,i])^2 + (kpoint[2] + rlatpts[2,i])^2 + (kpoint[3] + rlatpts[3,i])^2
+    end
+    eigs(SparseMatrixCSC(ham),ritzvec=false,nev=2*sheets,which=:SR)[1][1:sheets]*epm.energy_conv 
 end
 
 @doc """
@@ -891,7 +870,7 @@ eval_epm([0 0; 0 1; 0 0],Al_epm)
 function eval_epm(kpoints::AbstractMatrix{<:Real},
     epm::Union{epm₋model2D,epm₋model};
     rtol::Real=sqrt(eps(float(maximum(epm.recip_latvecs)))),
-    atol=1e-9,sheets::Integer=10)::AbstractMatrix{<:Real}
+    atol=1e-9,sheets::Integer=-1)::AbstractMatrix{<:Real}
 
     mapslices(x->eval_epm(x,epm,rtol=rtol,atol=atol,sheets=sheets),
     kpoints,dims=1)
@@ -1052,46 +1031,16 @@ labels_dict=Dict("GAMMA"=>"Γ","X"=>"X","U"=>"U","L"=>"L","W"=>"W","X"=>"X","K"=
 Plot the band structure of an empirical pseudopotential.
 
 # Arguments
-- `name`::String: the name of metal.
-- `basis::AbstractMatrix{<:Real}`: the lattice vectors of the crystal
-    as columns of a 3x3 array.
-- `rules::Dict{Float64,Float64}`: a dictionary whose keys are distances between
-    reciprocal lattice points rounded to two decimals places and whose values
-    are the empirical pseudopotential form factors.
+- `epm::Union{epm₋model2D,epm₋model}`: an empirical pseudopotential.
+- `kpoint_dist::Real`: the distance between k-points in the band plot.
 - `expansion_size::Integer`: the desired number of terms in the Fourier
     expansion.
-- `sheets::Int`: the sheets included in the electronic
-    band structure plot.
-- `kpoint_dist::Real`: the distance between k-points in the band plot.
-- `convention::String="angular"`: the convention for going from real to
-    reciprocal space. Options include "angular" and "ordinary".
-- `coordinates::String="Cartesian"`: the coordinates of the k-points in
-    the band structure plot. Options include "Cartesian" and "lattice".
+- `sheets::Int`: the sheets included in the electronic band structure plot.
 
 # Returns
 - (`fig::PyPlot.Figure`,`ax::PyCall.PyObject`): the band structure plot
     as a `PyPlot.Figure`.
-
-# Examples
-```jldoctest
-import Pebsi.EPMs: eval_epm,plot_bandstructure
-name="Al"
-Al_latvecs=[0.0 3.8262 3.8262; 3.8262 0.0 3.8262; 3.8262 3.8262 0.0]
-Al_rules=Dict(2.84 => 0.0562,1.42 => 0.0179)
-cutoff=100
-sheets=10
-kpoint_dist=0.001
-plot_bandstructure(name,Al_latvecs,Al_rules,cutoff,sheets,kpoint_dist)
-# returns
-(PyPlot.Figure(PyObject <Figure size 1280x960 with 1 Axes>),
-PyObject <AxesSubplot:title={'center':'Al band structure plot'},
-xlabel='High symmetry points', ylabel='Total energy (Ry)'>)
 """
-# function plot_bandstructure(name::String,basis::AbstractMatrix{<:Real},
-#         rules::Dict{<:Real,<:Real},expansion_size::Integer,
-#         sheets::Int,kpoint_dist::Real,
-#         convention::String="angular",coordinates::String="Cartesian";
-#         func::Union{Nothing,Function}=nothing)
 function plot_bandstructure(epm::Union{epm₋model2D,epm₋model},
     kpoint_dist::Real,expansion_size::Integer;
     func::Union{Nothing,Function}=nothing,sheets::Integer=10)
@@ -1139,7 +1088,6 @@ function plot_bandstructure(epm::Union{epm₋model2D,epm₋model},
 
     # Determine the x-axis tick positions and labels.
     labels=spdict["explicit_kpoints_labels"]
-    @show labels
     sympts_pos = filter(x->x>0,[if labels[i]==""; -1 else i end for i=1:length(labels)])
     λ=spdict["explicit_kpoints_linearcoord"]
 
@@ -1156,7 +1104,7 @@ function plot_bandstructure(epm::Union{epm₋model2D,epm₋model},
     end
 
     # Eigenvalues in band structure plot
-    evals = eval_epm(sympath_pts,epm,sheets=sheets,func=func)
+    evals = eval_epm(sympath_pts,epm,sheets=sheets)
 
     fig,ax=subplots()
     for i=1:epm.sheets ax.scatter(λ,evals[i,:],s=0.1) end
@@ -1169,116 +1117,116 @@ function plot_bandstructure(epm::Union{epm₋model2D,epm₋model},
     (fig,ax)
 end
 
-# @doc """
-#     plot_bandstructure(name,basis,rules,expansion_size,sheets,kpoint_dist,
-#         convention,coordinates)
-# Plot the band structure of an empirical pseudopotential.
-# # Arguments
-# - `name`::String: the name of metal.
-# - `basis::AbstractMatrix{<:Real}`: the lattice vectors of the crystal
-#     as columns of a 3x3 array.
-# - `rules::Dict{Float64,Float64}`: a dictionary whose keys are distances between
-#     reciprocal lattice points rounded to two decimals places and whose values
-#     are the empirical pseudopotential form factors.
-# - `expansion_size::Integer`: the desired number of terms in the Fourier
-#     expansion.
-# - `sheets::Int`: the sheets included in the electronic
-#     band structure plot.
-# - `kpoint_dist::Real`: the distance between k-points in the band plot.
-# - `convention::String="angular"`: the convention for going from real to
-#     reciprocal space. Options include "angular" and "ordinary".
-# - `coordinates::String="Cartesian"`: the coordinates of the k-points in
-#     the band structure plot. Options include "Cartesian" and "lattice".
-# # Returns
-# - (`fig::PyPlot.Figure`,`ax::PyCall.PyObject`): the band structure plot
-#     as a `PyPlot.Figure`.
-# # Examples
-# ```jldoctest
-# import Pebsi.EPMs: eval_epm,plot_bandstructure
-# name="Al"
-# Al_latvecs=[0.0 3.8262 3.8262; 3.8262 0.0 3.8262; 3.8262 3.8262 0.0]
-# Al_rules=Dict(2.84 => 0.0562,1.42 => 0.0179)
-# cutoff=100
-# sheets=10
-# kpoint_dist=0.001
-# plot_bandstructure(name,Al_latvecs,Al_rules,cutoff,sheets,kpoint_dist)
-# # returns
-# (PyPlot.Figure(PyObject <Figure size 1280x960 with 1 Axes>),
-# PyObject <AxesSubplot:title={'center':'Al band structure plot'},
-# xlabel='High symmetry points', ylabel='Total energy (Ry)'>)
-# """
-# function plot_bandstructure(name::String,basis::AbstractMatrix{<:Real},
-#         rules::Dict{<:Real,<:Real},expansion_size::Integer,
-#         sheets::Int,kpoint_dist::Real,
-#         convention::String="angular",coordinates::String="Cartesian";
-#         func::Union{Nothing,Function}=nothing)
+@doc """
+    plot_bandstructure(name,basis,rules,expansion_size,sheets,kpoint_dist,
+        convention,coordinates)
+Plot the band structure of an empirical pseudopotential.
+# Arguments
+- `name`::String: the name of metal.
+- `basis::AbstractMatrix{<:Real}`: the lattice vectors of the crystal
+    as columns of a 3x3 array.
+- `rules::Dict{Float64,Float64}`: a dictionary whose keys are distances between
+    reciprocal lattice points rounded to two decimals places and whose values
+    are the empirical pseudopotential form factors.
+- `expansion_size::Integer`: the desired number of terms in the Fourier
+    expansion.
+- `sheets::Int`: the sheets included in the electronic
+    band structure plot.
+- `kpoint_dist::Real`: the distance between k-points in the band plot.
+- `convention::String="angular"`: the convention for going from real to
+    reciprocal space. Options include "angular" and "ordinary".
+- `coordinates::String="Cartesian"`: the coordinates of the k-points in
+    the band structure plot. Options include "Cartesian" and "lattice".
+# Returns
+- (`fig::PyPlot.Figure`,`ax::PyCall.PyObject`): the band structure plot
+    as a `PyPlot.Figure`.
+# Examples
+```jldoctest
+import Pebsi.EPMs: eval_epm,plot_bandstructure
+name="Al"
+Al_latvecs=[0.0 3.8262 3.8262; 3.8262 0.0 3.8262; 3.8262 3.8262 0.0]
+Al_rules=Dict(2.84 => 0.0562,1.42 => 0.0179)
+cutoff=100
+sheets=10
+kpoint_dist=0.001
+plot_bandstructure(name,Al_latvecs,Al_rules,cutoff,sheets,kpoint_dist)
+# returns
+(PyPlot.Figure(PyObject <Figure size 1280x960 with 1 Axes>),
+PyObject <AxesSubplot:title={'center':'Al band structure plot'},
+xlabel='High symmetry points', ylabel='Total energy (Ry)'>)
+"""
+function plot_bandstructure(name::String,basis::AbstractMatrix{<:Real},
+        rules::Dict{<:Real,<:Real},expansion_size::Integer,
+        sheets::Int,kpoint_dist::Real,
+        convention::String="angular",coordinates::String="Cartesian";
+        func::Union{Nothing,Function}=nothing)
 
-#     sp=pyimport("seekpath")
+    sp=pyimport("seekpath")
 
-#     rbasis=get_recip_latvecs(basis,convention)
-#     atomtypes=[0]
-#     atompos=[[0,0,0]]
+    rbasis=get_recip_latvecs(basis,convention)
+    atomtypes=[0]
+    atompos=[[0,0,0]]
 
-#     # Calculate the energy cutoff of Fourier expansion.
-#     cutoff=1
-#     num_terms=0
-#     tol=0.2
-#     while abs(num_terms - expansion_size) > expansion_size*tol
-#         if num_terms - expansion_size > 0
-#             cutoff *= 0.95
-#         else
-#             cutoff *= 1.1
-#         end
-#         num_terms = size(sample_sphere(rbasis,cutoff,[0,0,0]),2)
-#     end
+    # Calculate the energy cutoff of Fourier expansion.
+    cutoff=1
+    num_terms=0
+    tol=0.2
+    while abs(num_terms - expansion_size) > expansion_size*tol
+        if num_terms - expansion_size > 0
+            cutoff *= 0.95
+        else
+            cutoff *= 1.1
+        end
+        num_terms = size(sample_sphere(rbasis,cutoff,[0,0,0]),2)
+    end
 
-#     # Calculate points along symmetry paths using `seekpath` Python package.
-#     # Currently uses high symmetry paths from the paper: Y. Hinuma, G. Pizzi,
-#     # Y. Kumagai, F. Oba, I. Tanaka, Band structure diagram paths based on
-#     # crystallography, Comp. Mat. Sci. 128, 140 (2017).
-#     # DOI: 10.1016/j.commatsci.2016.10.015
-#     structure=[basis,atompos,atomtypes]
-#     timereversal=true
+    # Calculate points along symmetry paths using `seekpath` Python package.
+    # Currently uses high symmetry paths from the paper: Y. Hinuma, G. Pizzi,
+    # Y. Kumagai, F. Oba, I. Tanaka, Band structure diagram paths based on
+    # crystallography, Comp. Mat. Sci. 128, 140 (2017).
+    # DOI: 10.1016/j.commatsci.2016.10.015
+    structure=[basis,atompos,atomtypes]
+    timereversal=true
 
-#     spdict=sp[:get_explicit_k_path](structure,timereversal,kpoint_dist)
-#     sympath_pts=Array(spdict["explicit_kpoints_abs"]')
+    spdict=sp[:get_explicit_k_path](structure,timereversal,kpoint_dist)
+    sympath_pts=Array(spdict["explicit_kpoints_abs"]')
 
-#     if coordinates == "lattice"
-#         m=spdict["reciprocal_primitive_lattice"]
-#         sympath_pts=inv(m)*sympath_pts
-#     elseif convention == "ordinary"
-#         sympath_pts=1/(2π).*sympath_pts
-#     end
+    if coordinates == "lattice"
+        m=spdict["reciprocal_primitive_lattice"]
+        sympath_pts=inv(m)*sympath_pts
+    elseif convention == "ordinary"
+        sympath_pts=1/(2π).*sympath_pts
+    end
 
-#     # Determine the x-axis tick positions and labels.
-#     labels=spdict["explicit_kpoints_labels"];
-#     sympts_pos = filter(x->x>0,[if labels[i]==""; -1 else i end for i=1:length(labels)])
-#     λ=spdict["explicit_kpoints_linearcoord"];
+    # Determine the x-axis tick positions and labels.
+    labels=spdict["explicit_kpoints_labels"];
+    sympts_pos = filter(x->x>0,[if labels[i]==""; -1 else i end for i=1:length(labels)])
+    λ=spdict["explicit_kpoints_linearcoord"];
 
-#     tmp_labels=[labels_dict[l] for l=labels[sympts_pos]]
-#     tick_labels=tmp_labels
-#     for i=2:(length(tmp_labels)-1)
-#         if (sympts_pos[i-1]+1) == sympts_pos[i]
-#             tick_labels[i]=""
-#         elseif (sympts_pos[i]+1) == sympts_pos[i+1]
-#             tick_labels[i]=tmp_labels[i]*"|"*tmp_labels[i+1]
-#         else
-#             tick_labels[i]=tmp_labels[i]
-#         end
-#     end
+    tmp_labels=[labels_dict[l] for l=labels[sympts_pos]]
+    tick_labels=tmp_labels
+    for i=2:(length(tmp_labels)-1)
+        if (sympts_pos[i-1]+1) == sympts_pos[i]
+            tick_labels[i]=""
+        elseif (sympts_pos[i]+1) == sympts_pos[i+1]
+            tick_labels[i]=tmp_labels[i]*"|"*tmp_labels[i+1]
+        else
+            tick_labels[i]=tmp_labels[i]
+        end
+    end
 
-#     # Eigenvalues in band structure plot
-#     evals = eval_epm(sympath_pts,rbasis,rules,cutoff,sheets,func=func)
+    # Eigenvalues in band structure plot
+    evals = eval_epm(sympath_pts,rbasis,rules,cutoff,sheets,func=func)
 
-#     fig,ax=subplots()
-#     for i=1:10 ax.scatter(λ,evals[i,:],s=0.1) end
-#     ax.set_xticklabels(tick_labels)
-#     ax.set_xticks(λ[sympts_pos])
-#     ax.grid(axis="x",linestyle="dashed")
-#     ax.set_xlabel("High symmetry points")
-#     ax.set_ylabel("Total energy (Ry)")
-#     ax.set_title(name*" band structure plot")
-#     (fig,ax)
-# end
+    fig,ax=subplots()
+    for i=1:10 ax.scatter(λ,evals[i,:],s=0.1) end
+    ax.set_xticklabels(tick_labels)
+    ax.set_xticks(λ[sympts_pos])
+    ax.grid(axis="x",linestyle="dashed")
+    ax.set_xlabel("High symmetry points")
+    ax.set_ylabel("Total energy (Ry)")
+    ax.set_title(name*" band structure plot")
+    (fig,ax)
+end
 
 end
