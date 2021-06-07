@@ -1103,7 +1103,7 @@ function calc_fl₋be(epm::Union{epm₋model2D,epm₋model},ebs::bandstructure)
     window = [minimum(ebs.eigenvals[1:maxsheet+2,5:end]),
         maximum(ebs.eigenvals[1:maxsheet+2,5:end])]
     
-
+    simplex_bpts = sample_simplex(2,2)
     (fl,fa₀,fa₁) = calc₋fl(epm,ebs,window=window,fermi_area=epm.fermiarea)
     (fl₁,null,null) = calc₋fl(epm,ebs,window=window,fermi_area=fa₀)
     (fl₀,null,null) = calc₋fl(epm,ebs,window=window,fermi_area=fa₁)

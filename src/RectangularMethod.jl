@@ -6,6 +6,7 @@ using SymmetryReduceBZ.Lattices: get_recip_latvecs
 using Base.Iterators: product
 using LinearAlgebra: det, diag, dot, inv
 using AbstractAlgebra: ZZ, matrix, snf_with_transform, hnf_with_transform, hnf
+using Distributed: pmap
 
 import ..EPMs: eval_epm,RytoeV,eVtoRy,epm₋model,epm₋model2D,sym_offset
 
@@ -70,12 +71,14 @@ function sample_unitcell(latvecs::AbstractMatrix{<:Real},
 end
 
 @doc """
-    rectangular_method(epm,N;rtol,atol,func)
+    rectangular_method(epm,N,num_cores=1;rtol,atol,func)
 
 # Arguments
 - `epm::Union{epm₋model2D,epm₋model}`: an empirical pseudopotential.
 - `N::AbstractArray{<:Integer,2}`: an integer, square array that relates the
     reciprocal lattice vectors `R` to the grid generating vectors `K`: `R=KN`.
+- `num_cores::Integer`: the number of cores used when calculating the band energy
+    in parallel.
 - `rtol::Real=sqrt(eps(float(maximum(real_latvecs))))` a relative tolerance for
     floating point comparisons.
 - `atol::Real=1e-9`: an absolute tolerance for floating point comparisons.
@@ -95,7 +98,7 @@ rectangular_method(m11,3)
 ```
 """
 function rectangular_method(epm::Union{epm₋model2D,epm₋model},
-    N::Union{Integer,AbstractMatrix{<:Integer}};
+    N::Union{Integer,AbstractMatrix{<:Integer}},num_cores::Integer=1;
     rtol::Real=sqrt(eps(float(maximum(epm.recip_latvecs)))), 
     atol::Real=1e-9)::Tuple{Int64,Float64,Float64}
 
@@ -115,7 +118,12 @@ function rectangular_method(epm::Union{epm₋model2D,epm₋model},
     unique_kpoints = mapto_bz(unique_kpoints, epm.recip_latvecs, inv_latvecs,
         epm.coordinates)
 
-    eigenvalues = eval_epm(unique_kpoints,epm,rtol=rtol,atol=atol)
+    if num_cores == 1
+        eigenvalues = eval_epm(unique_kpoints,epm,rtol=rtol,atol=atol)
+    else
+        eigenvalues = reduce(hcat,pmap(x->eval_epm(x,epm,rtol=rtol,atol=atol,sheets=epm.sheets),
+            [unique_kpoints[:,i] for i=1:size(unique_kpoints,2)]))
+    end
     
     num_unique = size(unique_kpoints,2)
     num_kpoints = sum(kpoint_weights)
@@ -130,7 +138,7 @@ function rectangular_method(epm::Union{epm₋model2D,epm₋model},
 
     eigenvalues = [eigenvalues...]
     eigenweights = [eigenweights...]
-    
+
     order = sortperm(eigenvalues)
     eigenvalues = eigenvalues[order]
     eigenweights = eigenweights[order]

@@ -418,7 +418,7 @@ m1real_latvecs = [1 0; 0 1]
     coordinates)
 m1recip_latvecs = get_recip_latvecs(m1real_latvecs,convention)
 m1dist_ff = [[1.00,2.00],[-0.23,0.12]]
-m1rules = Dict(1.00 => -0.23, 1.41 => 0.12)
+m1rules = [1.00 => -0.23, 1.41 => 0.12]
 m1electrons1 = 6
 
 m1cutoff = 6.1
@@ -443,7 +443,7 @@ m2real_latvecs = get_recip_latvecs(m2recip_latvecs,convention)
 (m2frac_trans,m2pointgroup) = calc_spacegroup(m2real_latvecs,atom_types,atom_pos,
     coordinates)
 m2dist_ff = [[1.00,3.00,4.00],[0.39,0.23,-0.11]]
-m2rules = Dict(1.0 => 0.39, 1.73 => 0.23, 2.0 => -0.11)
+m2rules = [1.0 => 0.39, 1.73 => 0.23, 2.0 => -0.11]
 m2cutoff = 5.9
 
 m2electrons1 = 5
@@ -468,7 +468,7 @@ m3real_latvecs = get_recip_latvecs(m3recip_latvecs,convention)
 (m3frac_trans,m3pointgroup) = calc_spacegroup(m3real_latvecs,atom_types,atom_pos,
     coordinates)
 m3dist_ff = [[1.00,1.13,2.87],[-0.27,0.2,-0.33]]
-m3rules = Dict(1.0 => -0.27, 1.06 => 0.2, 1.69 => -0.33)
+m3rules = [1.0 => -0.27, 1.06 => 0.2, 1.69 => -0.33]
 m3cutoff = 5.95
 
 m3electrons1 = 5
@@ -493,7 +493,7 @@ m4real_latvecs = get_recip_latvecs(m4recip_latvecs,convention)
 (m4frac_trans,m4pointgroup) = calc_spacegroup(m4real_latvecs,atom_types,atom_pos,
     coordinates)
 m4dist_ff = [[1.00,4.00,5.00],[0.39,-0.11,0.11]]
-m4rules = Dict(1.0 => 0.39, 2.0 => -0.11, 2.24 => 0.11)
+m4rules = [1.0 => 0.39, 2.0 => -0.11, 2.24 => 0.11]
 m4cutoff = 8.6
 
 m4electrons1 = 6
@@ -518,7 +518,7 @@ m5real_latvecs = get_recip_latvecs(m5recip_latvecs,convention)
 (m5frac_trans,m5pointgroup) = calc_spacegroup(m5real_latvecs,atom_types,atom_pos,
     coordinates)
 m5dist_ff = [[1.0,1.24,1.44],[0.42,0.02,-0.18]]
-m5rules = Dict(1.0 => 0.42, 1.11 => 0.02, 1.2 => -0.18)
+m5rules = [1.0 => 0.42, 1.11 => 0.02, 1.2 => -0.18]
 m5cutoff = 6.3
 
 m5electrons1 = 5
@@ -557,6 +557,7 @@ mutable struct epm₋model2D
     pointgroup::Vector{Matrix{Float64}}
     frac_trans::Vector{Vector{Float64}}
     dist_ff::Vector{Vector{Float64}}
+    rules::Vector{Pair{Float64, Float64}}
     cutoff::Real
     rlat_type::String
     
@@ -575,7 +576,7 @@ convention = "ordinary"
 vars₀ = ["energy_conv","sheets","atom_types","atom_pos","coordinates",
         "convention"]
 vars₁ = ["real_latvecs","recip_latvecs","bz","ibz","pointgroup","frac_trans",
-        "dist_ff","cutoff","rlat_type"]
+        "dist_ff","rules","cutoff","rlat_type"]
 vars₂ = ["electrons","fermiarea","fermilevel","bandenergy"];
 v = Dict()
 for i=1:5
@@ -826,8 +827,15 @@ function eval_epm(kpoint::AbstractVector{<:Real},
     ind = findall(!iszero, ham)
     ham[ind] = replace(round.(ham[ind],digits=2),rules...)
     ham[ind] = replace(x -> x > maxff ? 0 : x, ham[ind])
-    for i=1:npts
-        ham[i,i] = (kpoint[1] + rlatpts[1,i])^2 + (kpoint[2] + rlatpts[2,i])^2 + (kpoint[3] + rlatpts[3,i])^2
+
+    if length(kpoint) == 2
+        for i=1:npts
+            ham[i,i] = (kpoint[1] + rlatpts[1,i])^2 + (kpoint[2] + rlatpts[2,i])^2
+        end
+    else
+        for i=1:npts
+            ham[i,i] = (kpoint[1] + rlatpts[1,i])^2 + (kpoint[2] + rlatpts[2,i])^2 + (kpoint[3] + rlatpts[3,i])^2
+        end
     end
     eigs(SparseMatrixCSC(ham),ritzvec=false,nev=2*sheets,which=:SR)[1][1:sheets]*epm.energy_conv 
 end
