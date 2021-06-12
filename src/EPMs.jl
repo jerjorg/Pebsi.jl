@@ -225,24 +225,44 @@ Zn_cutoff = 6.6
 
 #=
 Cutoffs are chosen such that the mean deviation in all eigenvalues is less
-than 1e-10 for all points of a sparse mesh over the IBZ for all eigenvalues 
+than 1e-12 for all points of a sparse mesh over the IBZ for all eigenvalues 
 beneath and slightly above the Fermi level (up to 1 eV above). The mean 
 deviation is for 5 different consecutive expansions where the number of terms in
 the expansions for all k-points changed.
 =#
-Ag_cutoff = 10.47 # 2232 terms, 3 seconds
-Al_cutoff = 10.49 # 2186 terms, 3 seconds 
-Au_cutoff = 10.48 # 2230 terms, 3 seconds
-Cs_cutoff = 5.86 # 2657 terms, 5 seconds
-Cu_cutoff = 12.48 # 2617 terms, 5 seconds
-In_cutoff = 9.79 # 2797  terms, 5 seconds
-K_cutoff = 6.06 # 1916 terms, 2 seconds
-Li_cutoff = 10.85 # 3144 terms, 7 seconds
-Na_cutoff = 7.40 # 1878 terms, 2 seconds
-Pb_cutoff = 8.58 # 2201 terms, 3 seconds
-Rb_cutoff = 4.58 # 976 terms, 1 second
-Sn_cutoff = 0
-Zn_cutoff = 7.59 # 1498 terms, 0.5 seconds
+# Ag_cutoff = 10.47 # 2232 terms, 3 seconds
+# Al_cutoff = 10.49 # 2186 terms, 3 seconds 
+# Au_cutoff = 10.48 # 2230 terms, 3 seconds
+# Cs_cutoff = 5.86 # 2657 terms, 5 seconds
+# Cu_cutoff = 12.48 # 2617 terms, 5 seconds
+# In_cutoff = 9.79 # 2797  terms, 5 seconds
+# K_cutoff = 6.06 # 1916 terms, 2 seconds
+# Li_cutoff = 10.85 # 3144 terms, 7 seconds
+# Na_cutoff = 7.40 # 1878 terms, 2 seconds
+# Pb_cutoff = 8.58 # 2201 terms, 3 seconds
+# Rb_cutoff = 4.58 # 976 terms, 1 second
+# Sn_cutoff = 0
+# Zn_cutoff = 7.59 # 1498 terms, 0.5 seconds
+
+#=
+Cutoffs are chosen such that the mean deviation in all eigenvalues is less
+than 1e-12 for all points of a sparse mesh over the IBZ for all eigenvalues 
+beneath the Fermi level. The mean deviation is for 5 different consecutive
+expansions where the number of terms in the expansions for all k-points changed.
+=#
+Ag_cutoff = 9.04
+Al_cutoff = 10.56
+Au_cutoff = 11.76
+Cs_cutoff = 6.4 # 3,456 terms
+Cu_cutoff = 12.92 # 2910 terms 
+In_cutoff = 4.26 
+K_cutoff = 3.14 
+Li_cutoff = 4.74 
+Na_cutoff = 3.88 
+Pb_cutoff = 3.98 
+Rb_cutoff = 2.98
+Sn_cutoff = 3.84 
+Zn_cutoff = 3.7 
 
 # Ag_cutoff = 8.1
 # Al_cutoff = 7.12
@@ -302,6 +322,9 @@ Zn_ibz = chull([0.0 0.0 0.0; 0.0 0.0 0.33606750608035785; -0.41589290938922446 0
 
 # Band energy and Fermi level solutions and approximate error computed with about 
 # 3 million k-points with the rectangular method
+
+# Solutions for Band energy accuracy limited to 1e-8 from 1e-12 deviation in
+# eigenvalues for the select pseudopotential cutoffs.
 Ag_flans = 2.1922390847785764
 Al_flans = 11.591037691304805
 Au_flans = 0.25853699543371234
@@ -418,7 +441,7 @@ m1real_latvecs = [1 0; 0 1]
     coordinates)
 m1recip_latvecs = get_recip_latvecs(m1real_latvecs,convention)
 m1dist_ff = [[1.00,2.00],[-0.23,0.12]]
-m1rules = [1.00 => -0.23, 1.41 => 0.12]
+m1rules = [1.00 => -0.23, 2.00 => 0.12]
 m1electrons1 = 6
 
 m1cutoff = 6.1
@@ -443,7 +466,7 @@ m2real_latvecs = get_recip_latvecs(m2recip_latvecs,convention)
 (m2frac_trans,m2pointgroup) = calc_spacegroup(m2real_latvecs,atom_types,atom_pos,
     coordinates)
 m2dist_ff = [[1.00,3.00,4.00],[0.39,0.23,-0.11]]
-m2rules = [1.0 => 0.39, 1.73 => 0.23, 2.0 => -0.11]
+m2rules = [1.0 => 0.39, 3.00 => 0.23, 4.00 => -0.11]
 m2cutoff = 5.9
 
 m2electrons1 = 5
@@ -468,7 +491,7 @@ m3real_latvecs = get_recip_latvecs(m3recip_latvecs,convention)
 (m3frac_trans,m3pointgroup) = calc_spacegroup(m3real_latvecs,atom_types,atom_pos,
     coordinates)
 m3dist_ff = [[1.00,1.13,2.87],[-0.27,0.2,-0.33]]
-m3rules = [1.0 => -0.27, 1.06 => 0.2, 1.69 => -0.33]
+m3rules = [1.0 => -0.27, 1.13 => 0.2, 2.87 => -0.33]
 m3cutoff = 5.95
 
 m3electrons1 = 5
@@ -493,7 +516,7 @@ m4real_latvecs = get_recip_latvecs(m4recip_latvecs,convention)
 (m4frac_trans,m4pointgroup) = calc_spacegroup(m4real_latvecs,atom_types,atom_pos,
     coordinates)
 m4dist_ff = [[1.00,4.00,5.00],[0.39,-0.11,0.11]]
-m4rules = [1.0 => 0.39, 2.0 => -0.11, 2.24 => 0.11]
+m4rules = [1.0 => 0.39, 4.00 => -0.11, 5.00 => 0.11]
 m4cutoff = 8.6
 
 m4electrons1 = 6
@@ -518,7 +541,7 @@ m5real_latvecs = get_recip_latvecs(m5recip_latvecs,convention)
 (m5frac_trans,m5pointgroup) = calc_spacegroup(m5real_latvecs,atom_types,atom_pos,
     coordinates)
 m5dist_ff = [[1.0,1.24,1.44],[0.42,0.02,-0.18]]
-m5rules = [1.0 => 0.42, 1.11 => 0.02, 1.2 => -0.18]
+m5rules = [1.0 => 0.42, 1.24 => 0.02, 1.44 => -0.18]
 m5cutoff = 6.3
 
 m5electrons1 = 5
@@ -718,21 +741,42 @@ function eval_epm(kpoint::AbstractVector{<:Real},
         error("The cutoff is too small for the requested number of sheets. The"*
             " number of terms in the expansion is $npts.")
     end
+    # ham=zeros(Float64,npts,npts)
+    # dist = 0.0
+    # for i=1:npts, j=i:npts
+    #     if i==j
+    #         # ham[i,j] = norm(kpoint + rlatpts[:,i])^2
+    #         ham[i,j] = dot(kpoint + rlatpts[:,i],kpoint + rlatpts[:,i])
+    #     else
+    #         dist = round(norm(rlatpts[:,i] - rlatpts[:,j]),digits=2)
+    #         if haskey(rules,dist)
+    #             ham[i,j] = rules[dist]
+    #         end
+    #     end
+    # end
+
+    # eigvals(Symmetric(ham))[1:sheets]*energy_conversion_factor
+
     ham=zeros(Float64,npts,npts)
-    dist = 0.0
-    for i=1:npts, j=i:npts
-        if i==j
-            # ham[i,j] = norm(kpoint + rlatpts[:,i])^2
-            ham[i,j] = dot(kpoint + rlatpts[:,i],kpoint + rlatpts[:,i])
-        else
-            dist = round(norm(rlatpts[:,i] - rlatpts[:,j]),digits=2)
-            if haskey(rules,dist)
-                ham[i,j] = rules[dist]
-            end
+    rules = rules
+    maxff = maximum([x[2] for x=rules])
+    maxd = maximum([x[1] for x=rules]) + 1e-3
+    pairwise!(ham, SqEuclidean(), rlatpts, dims=2)
+    replace!(x -> x > maxd ? 0 : x, ham)
+    ind = findall(!iszero, ham)
+    ham[ind] = replace(round.(ham[ind],digits=2),rules...)
+    ham[ind] = replace(x -> x > maxff ? 0 : x, ham[ind])
+
+    if length(kpoint) == 2
+        for i=1:npts
+            ham[i,i] = (kpoint[1] + rlatpts[1,i])^2 + (kpoint[2] + rlatpts[2,i])^2
+        end
+    else
+        for i=1:npts
+            ham[i,i] = (kpoint[1] + rlatpts[1,i])^2 + (kpoint[2] + rlatpts[2,i])^2 + (kpoint[3] + rlatpts[3,i])^2
         end
     end
-
-    eigvals(Symmetric(ham))[1:sheets]*energy_conversion_factor
+    eigs(SparseMatrixCSC(ham),ritzvec=false,nev=2*sheets,which=:SR)[1][1:sheets]*energy_conversion_factor 
 end
 
 

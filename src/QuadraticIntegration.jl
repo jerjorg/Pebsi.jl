@@ -12,7 +12,7 @@ using ..Geometry: order_vertices!,simplex_size,insimplex,barytocart,carttobary,
     sample_simplex,lineseg₋pt_dist
 
 using QHull: chull,Chull
-using LinearAlgebra: cross,det,norm,dot,I,diagm
+using LinearAlgebra: cross,det,norm,dot,I,diagm,pinv
 using Statistics: mean
 using Base.Iterators: flatten
 using SparseArrays: findnz
@@ -979,6 +979,8 @@ function get_intercoeffs(index::Int,mesh::PyObject,ext_mesh::PyObject,
 
         # Weighted least squares
         c = M\Z
+        # c = pinv(M)*Z
+
         # c = inv(M'*W*M)*M'*W*Z
         c1,c2,c3 = c
         q1,q2,q3 = q
@@ -1010,7 +1012,8 @@ function calc₋fl(epm::Union{epm₋model,epm₋model2D},ebs::bandstructure;
     simplex_pts = [barytocart(simplex_bpts,s) for s=simplices]
     
     ibz_area = epm.ibz.volume
-    max_sheet = round(Int,epm.electrons/2)
+    # max_sheet = round(Int,epm.electrons/2)
+    max_sheet = epm.sheets
 
     if window == nothing
         E₁ = minimum(ebs.eigenvals[1,5:end])
@@ -1031,7 +1034,7 @@ function calc₋fl(epm::Union{epm₋model,epm₋model2D},ebs::bandstructure;
     while abs(f) > ebs.fermiarea_eps
         iters += 1
         if iters > 50
-            error("Failed to converge the Fermi area to within the provided tolerance of $ebs.fermiarea_eps.")
+            error("Failed to converge the Fermi area to within the provided tolerance of $(ebs.fermiarea_eps).")
         end
         println("area error: ", abs((fa₁ + fa₂)/2 - fermi_area))
 
@@ -1084,7 +1087,7 @@ function calc₋fl(epm::Union{epm₋model,epm₋model2D},ebs::bandstructure;
 end
 
 @doc """
-    calc_fl₋be(epm,ebs)
+    calc_fl₋be!(epm,ebs)
 
 Calculate the Fermi level and band energy for a given rep. of the band struct.
 
@@ -1097,7 +1100,7 @@ Calculate the Fermi level and band energy for a given rep. of the band struct.
     Fermi area error, Fermi level interval, Fermi area interval, band energy
     interval, and the partially occupied sheets.
 """
-function calc_fl₋be(epm::Union{epm₋model2D,epm₋model},ebs::bandstructure)
+function calc_fl₋be!(epm::Union{epm₋model2D,epm₋model},ebs::bandstructure)
 
     maxsheet = round(Int,epm.electrons/2)
     window = [minimum(ebs.eigenvals[1:maxsheet+2,5:end]),
@@ -1151,6 +1154,10 @@ function calc_fl₋be(epm::Union{epm₋model2D,epm₋model},ebs::bandstructure)
     ebs.fermiarea_interval = [fa₀,fa₁]
     ebs.bandenergy_interval = [sum(sum(mesh_be₀)),sum(sum(mesh_be₁))]
     ebs.partially_occupied = partial_occ
+
+    # ebs.bandenergy = be*length(epm.pointgroup) + fl*epm.bz.volume
+    ebs.bandenergy = be
+    ebs.fermilevel = fl
 
     ebs
 end
