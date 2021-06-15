@@ -895,8 +895,8 @@ function eval_epm(kpoint::AbstractVector{<:Real},
             ham[i,i] = (kpoint[1] + rlatpts[1,i])^2 + (kpoint[2] + rlatpts[2,i])^2 + (kpoint[3] + rlatpts[3,i])^2
         end
     end
-    # eigvals(Symmetric(ham))[1:sheets]*energy_conversion_factor
-    eigs(SparseMatrixCSC(ham),ritzvec=false,nev=2*sheets,which=:SR)[1][1:sheets]*epm.energy_conv 
+    eigvals(Symmetric(ham))[1:sheets]*energy_conversion_factor
+    # eigs(SparseMatrixCSC(ham),ritzvec=false,nev=2*sheets,which=:SR)[1][1:sheets]*epm.energy_conv 
 end
 
 @doc """
