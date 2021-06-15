@@ -130,7 +130,6 @@ function rectangular_method(epm::Union{epm₋model2D,epm₋model},
 
     maxoccupied_state = ceil(Int,round(epm.electrons*num_kpoints/2,sigdigits=12))
     rectangle_size = abs(det(epm.recip_latvecs))/num_kpoints
-    
     eigenweights = zeros(epm.sheets,num_unique)
     for i=1:num_unique
         eigenweights[:,i] .= kpoint_weights[i]
@@ -153,9 +152,9 @@ function rectangular_method(epm::Union{epm₋model2D,epm₋model},
             break
         end
     end
-    
     fermilevel = eigenvalues[index]
-    bandenergy = rectangle_size*dot(eigenweights[1:index],eigenvalues[1:index])
+    bandenergy = rectangle_size*(dot(eigenweights[1:index],eigenvalues[1:index])
+        + counter*eigenvalues[index])
 
     (num_unique,fermilevel,bandenergy)
 end

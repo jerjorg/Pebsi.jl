@@ -250,19 +250,33 @@ than 1e-12 for all points of a sparse mesh over the IBZ for all eigenvalues
 beneath the Fermi level. The mean deviation is for 5 different consecutive
 expansions where the number of terms in the expansions for all k-points changed.
 =#
-Ag_cutoff = 9.04
-Al_cutoff = 10.56
-Au_cutoff = 11.76
+Ag_cutoff = 9.04 # 1459 terms
+Al_cutoff = 10.56 # 2229 terms
+Au_cutoff = 11.76 # 3143 terms
 Cs_cutoff = 6.4 # 3,456 terms
 Cu_cutoff = 12.92 # 2910 terms 
-In_cutoff = 4.26 
-K_cutoff = 3.14 
-Li_cutoff = 4.74 
-Na_cutoff = 3.88 
-Pb_cutoff = 3.98 
-Rb_cutoff = 2.98
-Sn_cutoff = 3.84 
-Zn_cutoff = 3.7 
+In_cutoff = 4.26 # 231 terms
+K_cutoff = 3.14 # 249 terms
+Li_cutoff = 4.74 # 249 terms
+Na_cutoff = 3.88 # 249 terms
+Pb_cutoff = 3.98 # 229 terms
+Rb_cutoff = 2.98 # 249 terms
+Sn_cutoff = 3.84 # 343 terms
+Zn_cutoff = 3.7 # 173 terms
+
+Ag_terms = 1459
+Al_terms = 2229
+Au_terms = 3143
+Cs_terms = 3456
+Cu_terms = 2910
+In_terms = 231
+K_terms = 249
+Li_terms = 249
+Na_terms = 249
+Pb_terms = 229
+Rb_terms = 249
+Sn_terms = 343
+Zn_terms = 173
 
 # Ag_cutoff = 8.1
 # Al_cutoff = 7.12
@@ -881,6 +895,7 @@ function eval_epm(kpoint::AbstractVector{<:Real},
             ham[i,i] = (kpoint[1] + rlatpts[1,i])^2 + (kpoint[2] + rlatpts[2,i])^2 + (kpoint[3] + rlatpts[3,i])^2
         end
     end
+    # eigvals(Symmetric(ham))[1:sheets]*energy_conversion_factor
     eigs(SparseMatrixCSC(ham),ritzvec=false,nev=2*sheets,which=:SR)[1][1:sheets]*epm.energy_conv 
 end
 
