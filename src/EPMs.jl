@@ -23,8 +23,6 @@ using SparseArrays: SparseMatrixCSC
 using Distances: SqEuclidean, pairwise!
 using Arpack: eigs
 
-
-
 export eval_epm, RytoeV, epm₋model2D, epm₋model
 
 Ag_name = "Ag"

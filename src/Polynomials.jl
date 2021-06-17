@@ -125,10 +125,10 @@ function eval_poly(barypt::AbstractArray,
     dot(coeffs,bernstein_basis(barypt,dim,deg))
 end
 
-function eval_poly(barypt::AbstractArray,
-    coeffs::AbstractArray,dim::Integer,deg::Integer)::Any
-    dot(coeffs,bernstein_basis(barypt,dim,deg))
-end
+# function eval_poly(barypt::AbstractArray,
+#     coeffs::AbstractArray,dim::Integer,deg::Integer)::Any
+#     dot(coeffs,bernstein_basis(barypt,dim,deg))
+# end
 
 @doc """
     eval_poly(barypts,coeffs,dim,deg)

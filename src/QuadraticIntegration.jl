@@ -772,7 +772,7 @@ function two₋intersects_area₋volume(bezpts::AbstractMatrix{<:Real},
     else
         error("The curve may only intersect at most two edges.")
     end
-
+      
     simplex_bpts = sample_simplex(2,2)
     triangleₑ = order_vertices!([all_intersects triangle[:,corner]])
     if quantity == "area"
@@ -956,12 +956,15 @@ function get_intercoeffs(index::Int,mesh::PyObject,ext_mesh::PyObject,
     simplex = Matrix(mesh.points[simplexᵢ,:]')
     neighborsᵢ = reduce(vcat,[get₋neighbors(s,ext_mesh,2) for s=simplexᵢ]) |> unique
     neighborsᵢ = filter(x -> !(x in simplexᵢ),neighborsᵢ)
-
-    b = reduce(hcat,[carttobary(ext_mesh.points[i,:],simplex) for i=neighborsᵢ])
-    M = 2*Matrix(reduce(hcat,[[b[1,i]*b[2,i], b[2,i]*b[3,i], b[3,i]*b[1,i]] for i=1:size(b,2)])')
-    Zm = Matrix(b').^2
-    Dᵢ = [sum((M[i,:]/2).^2) for i=1:size(M,1)]
-    
+     
+    b = carttobary(ext_mesh.points[neighborsᵢ,:]',simplex)
+    # b = reduce(hcat,[carttobary(ext_mesh.points[i,:],simplex) for i=neighborsᵢ])
+    # M = 2*Matrix(reduce(hcat,[[b[1,i]*b[2,i], b[2,i]*b[3,i], b[3,i]*b[1,i]] for i=1:size(b,2)])')
+    M = mapslices(x -> 2*[x[1]*x[2],x[1]*x[3],x[2]*x[3]],b,dims=1)'
+    # Zm = Matrix(b').^2
+    # Dᵢ = [sum((M[i,:]/2).^2) for i=1:size(M,1)]
+    Dᵢ = mapslices(x -> sum((x/2).^2),M,dims=2)
+        
     # Minimum distance from the edges of the triangle.
     # W = diagm([minimum([lineseg₋pt_dist(simplex[:,s],ext_mesh.points[i,:]) for s=[[1,2],[2,3],[3,1]]])
     #     for i=neighborsᵢ])
@@ -975,12 +978,13 @@ function get_intercoeffs(index::Int,mesh::PyObject,ext_mesh::PyObject,
     for sheet = 1:size(eigenvals,1)
         fᵢ = eigenvals[sheet,sym₋unique[neighborsᵢ]]
         q = eigenvals[sheet,sym₋unique[simplexᵢ]]
-        Z = fᵢ - Zm*q
+        Z = fᵢ - (b.^2)'*q
+        # Z = fᵢ - Zm*q
 
         # Weighted least squares
         c = M\Z
         # c = pinv(M)*Z
-
+        
         # c = inv(M'*W*M)*M'*W*Z
         c1,c2,c3 = c
         q1,q2,q3 = q
@@ -1086,6 +1090,12 @@ function calc₋fl(epm::Union{epm₋model,epm₋model2D},ebs::bandstructure;
     (E,fa₁,fa₂)
 end
 
+"""
+The shift of the quadratic polynomial coefficients so that the polynomial is the
+same but shifted by `x`.
+"""
+shift(x)=[x,2x,x,2x,2x,x]
+
 @doc """
     calc_fl₋be!(epm,ebs)
 
@@ -1114,16 +1124,16 @@ function calc_fl₋be!(epm::Union{epm₋model2D,epm₋model},ebs::bandstructure)
     simplices = [Matrix(ebs.mesh.points[s,:]') for s=ebs.simplicesᵢ]
     simplex_pts = [barytocart(simplex_bpts,s) for s=simplices]
         
-    mesh_fa₁ = [[quad_area₋volume([simplex_pts[tri]; ebs.mesh_intcoeffs[tri][sheet][2,:]' .- fl₀]
+    mesh_fa₁ = [[quad_area₋volume([simplex_pts[tri]; (ebs.mesh_intcoeffs[tri][sheet][2,:] - shift(fl₀))']
                     ,"area") for sheet=1:epm.sheets] for tri=1:length(ebs.simplicesᵢ)]
-    mesh_be₁ = [[quad_area₋volume([simplex_pts[tri]; ebs.mesh_intcoeffs[tri][sheet][2,:]' .- fl₀]
+    mesh_be₁ = [[quad_area₋volume([simplex_pts[tri]; (ebs.mesh_intcoeffs[tri][sheet][2,:] - shift(fl₀))']
                     ,"volume") for sheet=1:epm.sheets] for tri=1:length(ebs.simplicesᵢ)]
-    mesh_fa₀ = [[quad_area₋volume([simplex_pts[tri]; ebs.mesh_intcoeffs[tri][sheet][1,:]' .- fl₁]
+    mesh_fa₀ = [[quad_area₋volume([simplex_pts[tri]; (ebs.mesh_intcoeffs[tri][sheet][1,:] - shift(fl₁))']
                     ,"area") for sheet=1:epm.sheets] for tri=1:length(ebs.simplicesᵢ)]
-    mesh_be₀ = [[quad_area₋volume([simplex_pts[tri]; ebs.mesh_intcoeffs[tri][sheet][1,:]' .- fl₁]
+    mesh_be₀ = [[quad_area₋volume([simplex_pts[tri]; (ebs.mesh_intcoeffs[tri][sheet][1,:] - shift(fl₁))']
                     ,"volume") for sheet=1:epm.sheets] for tri=1:length(ebs.simplicesᵢ)]
     
-    be = sum([quad_area₋volume([simplex_pts[tri]; ebs.mesh_intcoeffs[tri][sheet][1,:]' .- fl]
+    be = sum([quad_area₋volume([simplex_pts[tri]; ([mean(ebs.mesh_intcoeffs[tri][sheet],dims=1)...] - shift(fl))']
                     ,"volume") for sheet=1:epm.sheets for tri=1:length(ebs.simplicesᵢ)])
     
     mesh_fa₋errs = mesh_fa₁ .- mesh_fa₀
