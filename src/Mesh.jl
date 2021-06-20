@@ -111,8 +111,12 @@ function ibz_init₋mesh(ibz::Chull{<:Real},n::Int;
     simplices = [Array(mesh.points[mesh.simplices[i,:].+1,:]') 
         for i=1:size(mesh.simplices,1)]
     
-    pt_sizes = [round(Int,sqrt(simplex_size(s)/ibz.volume*n^2/2)) for s=simplices]
-    pt_sizes = [ i == 0 ? 1 : i for i=pt_sizes]
+    # pt_sizes = [round(Int,sqrt(simplex_size(s)/ibz.volume*n^2/2)) for s=simplices]
+    # pt_sizes = [n for s=simplices]
+    # pt_sizes = [ i == 0 ? 1 : i for i=pt_sizes]
+    pt_sizes = [sqrt(simplex_size(s)/ibz.volume*n^2/2) for s=simplices]
+    # Make the number of points integer multiples of the smallest point size.
+    pt_sizes = floor(Int,minimum(pt_sizes)).*round.(Int,pt_sizes./minimum(pt_sizes))
     pts = unique_points(reduce(hcat,[barytocart(sample_simplex(
         dim,pt_sizes[i]),simplices[i]) for i=1:length(pt_sizes)]),atol=atol,rtol=rtol)
     mesh = spatial.Delaunay([box_pts'; pts'])

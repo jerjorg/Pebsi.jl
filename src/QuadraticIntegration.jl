@@ -1090,14 +1090,8 @@ function calc₋fl(epm::Union{epm₋model,epm₋model2D},ebs::bandstructure;
     (E,fa₁,fa₂)
 end
 
-"""
-The shift of the quadratic polynomial coefficients so that the polynomial is the
-same but shifted by `x`.
-"""
-shift(x)=[x,2x,x,2x,2x,x]
-
 @doc """
-    calc_fl₋be!(epm,ebs)
+    calc_flbe!(epm,ebs)
 
 Calculate the Fermi level and band energy for a given rep. of the band struct.
 
@@ -1110,7 +1104,7 @@ Calculate the Fermi level and band energy for a given rep. of the band struct.
     Fermi area error, Fermi level interval, Fermi area interval, band energy
     interval, and the partially occupied sheets.
 """
-function calc_fl₋be!(epm::Union{epm₋model2D,epm₋model},ebs::bandstructure)
+function calc_flbe!(epm::Union{epm₋model2D,epm₋model},ebs::bandstructure)
 
     maxsheet = round(Int,epm.electrons/2)
     window = [minimum(ebs.eigenvals[1:maxsheet+2,5:end]),
@@ -1124,16 +1118,16 @@ function calc_fl₋be!(epm::Union{epm₋model2D,epm₋model},ebs::bandstructure)
     simplices = [Matrix(ebs.mesh.points[s,:]') for s=ebs.simplicesᵢ]
     simplex_pts = [barytocart(simplex_bpts,s) for s=simplices]
         
-    mesh_fa₁ = [[quad_area₋volume([simplex_pts[tri]; (ebs.mesh_intcoeffs[tri][sheet][2,:] - shift(fl₀))']
+    mesh_fa₁ = [[quad_area₋volume([simplex_pts[tri]; (ebs.mesh_intcoeffs[tri][sheet][2,:] .- fl₀)']
                     ,"area") for sheet=1:epm.sheets] for tri=1:length(ebs.simplicesᵢ)]
-    mesh_be₁ = [[quad_area₋volume([simplex_pts[tri]; (ebs.mesh_intcoeffs[tri][sheet][2,:] - shift(fl₀))']
+    mesh_be₁ = [[quad_area₋volume([simplex_pts[tri]; (ebs.mesh_intcoeffs[tri][sheet][2,:] .- fl₀)']
                     ,"volume") for sheet=1:epm.sheets] for tri=1:length(ebs.simplicesᵢ)]
-    mesh_fa₀ = [[quad_area₋volume([simplex_pts[tri]; (ebs.mesh_intcoeffs[tri][sheet][1,:] - shift(fl₁))']
+    mesh_fa₀ = [[quad_area₋volume([simplex_pts[tri]; (ebs.mesh_intcoeffs[tri][sheet][1,:] .- fl₁)']
                     ,"area") for sheet=1:epm.sheets] for tri=1:length(ebs.simplicesᵢ)]
-    mesh_be₀ = [[quad_area₋volume([simplex_pts[tri]; (ebs.mesh_intcoeffs[tri][sheet][1,:] - shift(fl₁))']
+    mesh_be₀ = [[quad_area₋volume([simplex_pts[tri]; (ebs.mesh_intcoeffs[tri][sheet][1,:] .- fl₁)']
                     ,"volume") for sheet=1:epm.sheets] for tri=1:length(ebs.simplicesᵢ)]
     
-    be = sum([quad_area₋volume([simplex_pts[tri]; ([mean(ebs.mesh_intcoeffs[tri][sheet],dims=1)...] - shift(fl))']
+    be = sum([quad_area₋volume([simplex_pts[tri]; mean(ebs.mesh_intcoeffs[tri][sheet],dims=1) .- fl]
                     ,"volume") for sheet=1:epm.sheets for tri=1:length(ebs.simplicesᵢ)])
     
     mesh_fa₋errs = mesh_fa₁ .- mesh_fa₀
@@ -1158,17 +1152,17 @@ function calc_fl₋be!(epm::Union{epm₋model2D,epm₋model},ebs::bandstructure)
             end
         end
     end
-    ebs.bandenergy_errors = abs.(simplices_be₋errs)
-    ebs.fermiarea_errors = sum(mesh_fa₋errs)
+    
+    spg = length(epm.pointgroup)
+    ebs.bandenergy_errors = spg.*abs.(simplices_be₋errs)
+    ebs.fermiarea_errors = spg.*sum(mesh_fa₋errs)
     ebs.fermilevel_interval = [fl₀,fl₁]
-    ebs.fermiarea_interval = [fa₀,fa₁]
-    ebs.bandenergy_interval = [sum(sum(mesh_be₀)),sum(sum(mesh_be₁))]
+    ebs.fermiarea_interval = spg.*[fa₀,fa₁]
+    ebs.bandenergy_interval = spg.*([sum(sum(mesh_be₀)) + fl₁*epm.fermiarea,
+         sum(sum(mesh_be₁)) + fl₀*epm.fermiarea])
     ebs.partially_occupied = partial_occ
-
-    # ebs.bandenergy = be*length(epm.pointgroup) + fl*epm.bz.volume
-    ebs.bandenergy = be
+    ebs.bandenergy = spg*(be + fl*epm.fermiarea)
     ebs.fermilevel = fl
-
     ebs
 end
 
