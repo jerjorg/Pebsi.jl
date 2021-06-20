@@ -41,6 +41,7 @@ Zn_name = "Zn"
 
 epm_names = [Ag_name,Al_name,Au_name,Cs_name,Cu_name,In_name,K_name,Li_name,
     Na_name,Pb_name,Rb_name,Sn_name,Zn_name]
+epm_names2D = ["m"*string(i)*string(j) for i=1:5 for j=1:3]
 
 # The lattice types of the EPMs (follows the naming convention
 # of High-throughput electronic band structure calculations:
