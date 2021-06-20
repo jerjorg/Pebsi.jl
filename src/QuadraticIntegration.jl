@@ -17,6 +17,7 @@ using Statistics: mean
 using Base.Iterators: flatten
 using SparseArrays: findnz
 using PyCall: PyObject, pyimport
+using Distributed: pmap
 
 @doc """
     bandstructure
@@ -145,6 +146,7 @@ function init_bandstructure(
     fermilevel_method::Int=1,
     refine_method::Int=1,
     sample_method::Int=1,
+    num_cores::Integer=1,
     rtol::Real=1e-9,
     atol::Real=1e-9)
 
@@ -152,12 +154,19 @@ function init_bandstructure(
     simplicesᵢ = notbox_simplices(mesh)
     ext_mesh,sym₋unique = get_extmesh(epm.ibz,mesh,epm.pointgroup,epm.recip_latvecs,num_neigh;
         rtol=rtol,atol=atol)
-    
+      
     uniqueᵢ = sort(unique(sym₋unique))[2:end]
-    eigenvals = zeros(epm.sheets,length(uniqueᵢ)+4)
-    for i=uniqueᵢ
-        eigenvals[:,i] = eval_epm(mesh.points[i,:], epm, rtol=rtol, atol=atol)
+     
+    if num_cores == 1    
+        eigenvals = eval_epm(mesh.points[uniqueᵢ,:]', epm, rtol=rtol, atol=atol) 
+    else
+        eigenvals = reduce(hcat,pmap(x->eval_epm(x,epm,rtol=rtol,atol=atol),
+            [mesh.points[i,:] for i=1:size(mesh.points,1)]))        
     end
+    # eigenvals = zeros(epm.sheets,length(uniqueᵢ)+4)
+    # for i=uniqueᵢ
+    #     eigenvals[:,i] = eval_epm(mesh.points[i,:], epm, rtol=rtol, atol=atol)
+    # end
     
     mesh_intcoeffs = [get_intercoeffs(index,mesh,ext_mesh,sym₋unique,eigenvals,
         simplicesᵢ) for index=1:length(simplicesᵢ)];
