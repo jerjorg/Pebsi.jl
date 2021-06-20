@@ -163,6 +163,13 @@ function init_bandstructure(
         eigenvals = reduce(hcat,pmap(x->eval_epm(x,epm,rtol=rtol,atol=atol),
             [mesh.points[i,:] for i=1:size(mesh.points,1)]))        
     end
+
+    if typeof(epm) == epm₋model2D
+        eigenvals = [zeros(epm.sheets,4) eigenvals]
+    else
+        eigenvals = [zeros(epm.sheets,8) eigenvals]
+    end        
+
     # eigenvals = zeros(epm.sheets,length(uniqueᵢ)+4)
     # for i=uniqueᵢ
     #     eigenvals[:,i] = eval_epm(mesh.points[i,:], epm, rtol=rtol, atol=atol)
@@ -1047,7 +1054,8 @@ function calc₋fl(epm::Union{epm₋model,epm₋model2D},ebs::bandstructure;
     while abs(f) > ebs.fermiarea_eps
         iters += 1
         if iters > 50
-            error("Failed to converge the Fermi area to within the provided tolerance of $(ebs.fermiarea_eps).")
+            @warn "Failed to converge the Fermi area to within the provided tolerance of $(ebs.fermiarea_eps)."
+            break
         end
         println("area error: ", abs((fa₁ + fa₂)/2 - fermi_area))
 
