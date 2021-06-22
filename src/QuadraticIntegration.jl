@@ -146,7 +146,6 @@ function init_bandstructure(
     fermilevel_method::Int=1,
     refine_method::Int=1,
     sample_method::Int=1,
-    num_cores::Integer=1,
     rtol::Real=1e-9,
     atol::Real=1e-9)
 
@@ -156,19 +155,23 @@ function init_bandstructure(
         rtol=rtol,atol=atol)
       
     uniqueᵢ = sort(unique(sym₋unique))[2:end]
-     
-    if num_cores == 1    
-        eigenvals = eval_epm(mesh.points[uniqueᵢ,:]', epm, rtol=rtol, atol=atol) 
-    else
-        eigenvals = reduce(hcat,pmap(x->eval_epm(x,epm,rtol=rtol,atol=atol),
-            [mesh.points[i,:] for i=1:size(mesh.points,1)]))        
-    end
 
     if typeof(epm) == epm₋model2D
-        eigenvals = [zeros(epm.sheets,4) eigenvals]
+        eigenvals = zeros(Float64,epm.sheets,size(mesh.points,1)+4)
     else
-        eigenvals = [zeros(epm.sheets,8) eigenvals]
+        eigenvals = zeros(Float64,epm.sheets,size(mesh.points,1)+8)
     end        
+
+    for i=uniqueᵢ
+        eigenvals[:,i] = eval_epm(mesh.points[i,:], epm, rtol=rtol, atol=atol)
+    end
+
+    # if num_cores == 1    
+    #     eigenvals = eval_epm(mesh.points[uniqueᵢ,:]', epm, rtol=rtol, atol=atol) 
+    # else
+    #     eigenvals = reduce(hcat,pmap(x->eval_epm(x,epm,rtol=rtol,atol=atol),
+    #         [mesh.points[i,:] for i=1:size(mesh.points,1)]))        
+    # end
 
     # eigenvals = zeros(epm.sheets,length(uniqueᵢ)+4)
     # for i=uniqueᵢ
@@ -989,7 +992,7 @@ function get_intercoeffs(index::Int,mesh::PyObject,ext_mesh::PyObject,
     # W = diagm([norm(ext_mesh.points[i,:] - mean(simplex,dims=2)) for i=neighborsᵢ])
     
     W=I
-    
+     
     inter_bezcoeffs = [zeros(2,size(eigenvals,1)) for i=1:size(eigenvals,1)]
     for sheet = 1:size(eigenvals,1)
         fᵢ = eigenvals[sheet,sym₋unique[neighborsᵢ]]
@@ -1190,7 +1193,7 @@ end
 Perform one iteration of adaptive refinement. See the composite type 
 `bandstructure` for refinement options. 
 """
-function refine_mesh(epm::Union{epm₋model2D,epm₋model},ebs::bandstructure)
+function refine_mesh!(epm::Union{epm₋model2D,epm₋model},ebs::bandstructure)
     
     spatial = pyimport("scipy.spatial")
     simplices = [Matrix(ebs.mesh.points[s,:]') for s=ebs.simplicesᵢ]
@@ -1205,7 +1208,7 @@ function refine_mesh(epm::Union{epm₋model2D,epm₋model},ebs::bandstructure)
     else
         ArgumentError("The refinement method has to be an integer of 1 or 2.")
     end
-    
+ 
     # A single point at the center of the triangle
     if ebs.sample_method == 1
         new_meshpts = reduce(hcat,[barytocart([1/3,1/3,1/3],s) for s=simplices[splitpos]])
