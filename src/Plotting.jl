@@ -1,13 +1,17 @@
 module Plotting
 
-using PyPlot: subplots, figure, PyObject, figaspect
+using PyPlot: subplots, figure, PyObject, figaspect, plt
 using QHull: chull
 
+using ..QuadraticIntegration: bandstructure
+using ..EPMs: epm₋model2D
 using ..RectangularMethod: sample_unitcell
 using ..Polynomials: eval_poly,sample_simplex,eval_bezcurve
 using ..Geometry: carttobary,barytocart
 
 using SymmetryReduceBZ.Plotting: plot_2Dconvexhull
+
+using Statistics: mean
 
 @doc """
     meshplot(meshpts,ax,color)
@@ -48,6 +52,24 @@ function meshplot(meshpts::AbstractMatrix{<:Real},
     end
     
     ax
+end
+
+@doc """
+    meshplot(epm,ebs,ax)
+
+Plot the triangles in a mesh.
+"""
+function meshplot(epm::epm₋model2D,ebs::bandstructure,ax::Union{PyObject,Nothing}=nothing)
+
+    if ax == nothing
+        (fig,ax) = subplots()
+    end
+    
+    for s = ebs.simplicesᵢ
+        ax.add_patch(plt.Polygon(ebs.mesh.points[s,:],edgecolor="gray",facecolor="none"))
+    end
+    ax = meshplot(ebs.mesh.points[5:end,:]',ax,color="black")
+    ax = plot_2Dconvexhull(epm.ibz,ax,facecolor="none",edgecolor="blue")
 end
 
 
@@ -102,10 +124,29 @@ function contourplot(bezpts::AbstractMatrix{<:Real},
         pts = barytocart(bpts,simplex)
         vals = eval_poly(bpts,coeffs,dim,deg)
         if filled
-            ax.tricontourf(pts[1,:],pts[2,:],vals,0,colors=["black","white"],
+            ax.tricontourf(pts[1,:],pts[2,:],vals,[0],[0],colors=["black","white"],
                 alpha=0.5)
         else
-            ax.tricontour(pts[1,:],pts[2,:],vals,0,colors=["blue"])
+            ax.tricontour(pts[1,:],pts[2,:],vals,[0],[0],colors=["red"])
+        end
+    end
+    ax
+end
+
+function contourplot(epm::epm₋model2D,ebs::bandstructure,ax::Union{PyObject,Nothing}=nothing)
+    bpts = sample_simplex(2,2,)
+
+    if ax == nothing
+        (fig,ax) = subplots()
+    end
+    
+    ax=meshplot(epm,ebs,ax)
+    ax = meshplot(ebs.mesh.points[5:end,:]',ax)
+    for i=1:length(ebs.simplicesᵢ)
+        for j=1:epm.sheets
+            bezpts = [barytocart(bpts,ebs.mesh.points[ebs.simplicesᵢ[i],:]'); 
+                mean(ebs.mesh_intcoeffs[i][j],dims=1) .- ebs.fermilevel]
+            ax = contourplot(bezpts,ax,padded=false)
         end
     end
     ax
@@ -166,7 +207,7 @@ function bezcurve_plot(bezptsᵣ::AbstractMatrix{<:Real},
     
     data = eval_bezcurve(collect(0:1/1000:1),bezptsᵣ,bezwtsᵣ)
     ax = meshplot(bezptsᵣ,ax)
-    ax.plot(data[1,:],data[2,:],color="red")
+    ax.plot(data[1,:],data[2,:],color="blue")
     ax
 end
 

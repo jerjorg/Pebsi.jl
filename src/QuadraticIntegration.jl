@@ -52,6 +52,7 @@ A container for all variables related to the band structure.
     in the mesh.
 - `eigenvals::AbstractMatrix{<:Real}`: the eigenvalues at each of the points unique
     by symmetry.
+- `fatten`:: a variable that scales the size of the interval coefficients.
 - `mesh_intcoeffs::Vector{Vector{Matrix{Float64}}}`:the interval Bezier 
     coefficients for all tiles and sheets. 
 - `approx_fermilevel::Real`: the approximate Fermi level. This is the midpoint of
@@ -86,6 +87,7 @@ mutable struct bandstructure
     ext_mesh::PyObject
     sym₋unique::AbstractVector{<:Int}
     eigenvals::AbstractMatrix{<:Real}
+    fatten::Real
     mesh_intcoeffs::Vector{Vector{Matrix{Float64}}}
     approx_fermilevel::Real
     approx_bandenergy::Real
@@ -100,10 +102,10 @@ mutable struct bandstructure
 end
 
 @doc """
-    init_bandstructure(epm; init_msize,nut_neigh,fermiarea_eps,target_accuracy,
-        fermilevel_method,refine_method,sample_method,rtol,atol)
+    init_bandstructure(epm; init_msize,num_neigh,fermiarea_eps,target_accuracy,
+        fermilevel_method,refine_method,sample_method,fatten,rtol,atol)
 
-Initialize a band structure container
+Initialize a band structure container.
 
 # Arguments
 - `epm::Union{epm₋model,epm₋model2D}`: an empirical pseudopotential. 
@@ -120,6 +122,9 @@ Initialize a band structure container
     1- bisection, 2-Chandrupatla.
 - `refine_method::Int`: the method of refinement. 1-refine the tile with the most
     error. 2-refine the tiles with too much error given the sizes of the tiles.
+    3-refine the tiles with too much error given the sizes of the tiles and 
+    split tiles with less error only once (add a sample point at the center of 
+    the tile instead at each edge midpoint).
 - `sample_method::Int`: the method of sampling a tile with too much error. 1-add
     a single point at the center of the triangle. 2-add point the midpoints of 
     all three edges.
@@ -146,6 +151,7 @@ function init_bandstructure(
     fermilevel_method::Int=1,
     refine_method::Int=1,
     sample_method::Int=1,
+    fatten::Real=1,
     rtol::Real=1e-9,
     atol::Real=1e-9)
 
@@ -155,31 +161,13 @@ function init_bandstructure(
         rtol=rtol,atol=atol)
       
     uniqueᵢ = sort(unique(sym₋unique))[2:end]
-
-    if typeof(epm) == epm₋model2D
-        eigenvals = zeros(Float64,epm.sheets,size(mesh.points,1)+4)
-    else
-        eigenvals = zeros(Float64,epm.sheets,size(mesh.points,1)+8)
-    end        
-
+    eigenvals = zeros(Float64,epm.sheets,size(mesh.points,1))
     for i=uniqueᵢ
         eigenvals[:,i] = eval_epm(mesh.points[i,:], epm, rtol=rtol, atol=atol)
     end
-
-    # if num_cores == 1    
-    #     eigenvals = eval_epm(mesh.points[uniqueᵢ,:]', epm, rtol=rtol, atol=atol) 
-    # else
-    #     eigenvals = reduce(hcat,pmap(x->eval_epm(x,epm,rtol=rtol,atol=atol),
-    #         [mesh.points[i,:] for i=1:size(mesh.points,1)]))        
-    # end
-
-    # eigenvals = zeros(epm.sheets,length(uniqueᵢ)+4)
-    # for i=uniqueᵢ
-    #     eigenvals[:,i] = eval_epm(mesh.points[i,:], epm, rtol=rtol, atol=atol)
-    # end
     
     mesh_intcoeffs = [get_intercoeffs(index,mesh,ext_mesh,sym₋unique,eigenvals,
-        simplicesᵢ) for index=1:length(simplicesᵢ)];
+        simplicesᵢ,fatten) for index=1:length(simplicesᵢ)];
     
     partially_occupied = [zeros(Int,epm.sheets) for _=1:length(simplicesᵢ)]
     bandenergy_errors = zeros(length(simplicesᵢ))
@@ -209,6 +197,7 @@ function init_bandstructure(
         ext_mesh,
         sym₋unique,
         eigenvals,
+        fatten,
         mesh_intcoeffs,
         approx_fermilevel,
         approx_bandenergy,
@@ -914,7 +903,7 @@ function calc_mesh₋bezcoeffs(epm::Union{epm₋model2D,epm₋model} ,mesh::PyOb
 end
 
 @doc """
-    get_intercoeffs(index,mesh,ext_mesh,sym₋unique,eigenvals,simplicesᵢ)
+    get_intercoeffs(index,mesh,ext_mesh,sym₋unique,eigenvals,simplicesᵢ,fatten)
 
 Calculate the interval Bezier points for all sheets.
 
@@ -929,6 +918,7 @@ Calculate the interval Bezier points for all sheets.
     distinc points as columns of a matrix.
 - `simplicesᵢ::Vector{Vector{Int64}}`: the simplices of `mesh` that do not
     include the box points.
+- `fatten::Real`: scale the interval coefficients by this amount.
 
 # Returns
 - `inter_bezpts::Vector{Matrix{Float64}}`: the interval Bezier points
@@ -969,7 +959,7 @@ get_intercoeffs(index,mesh,ext_mesh,sym₋unique,eigenvals,simplicesᵢ)
 """
 function get_intercoeffs(index::Int,mesh::PyObject,ext_mesh::PyObject,
         sym₋unique::AbstractVector{<:Real},eigenvals::AbstractMatrix{<:Real},
-        simplicesᵢ::Vector{Vector{Int64}})::Vector{Matrix{Float64}}
+        simplicesᵢ::Vector{Vector{Int64}},fatten::Real=1)::Vector{Matrix{Float64}}
 
     simplexᵢ = simplicesᵢ[index]
     simplex = Matrix(mesh.points[simplexᵢ,:]')
@@ -1012,6 +1002,9 @@ function get_intercoeffs(index::Int,mesh::PyObject,ext_mesh::PyObject,
         δᵢ = fᵢ - qᵢ;
         ϵ = δᵢ./(2Dᵢ).*M
         ϵ = [minimum(ϵ,dims=1);maximum(ϵ,dims=1)]
+        # Scale the interval to make errors more accurate.
+        δ = [abs(ϵ[1,i] - ϵ[2,i])*fatten/2 for i=1:3]
+        ϵ = reduce(hcat,[[ϵ[1,i] - δ[i], ϵ[2,i] + δ[i]] for i=1:3])
         c = [c[i] .+ ϵ[:,i] for i=1:3]
 
         c1,c2,c3 = c
@@ -1188,16 +1181,16 @@ end
 
 
 @doc """
-    refine_mesh(epm,ebs)
+    refine_mesh!(epm,ebs)
 
 Perform one iteration of adaptive refinement. See the composite type 
 `bandstructure` for refinement options. 
 """
 function refine_mesh!(epm::Union{epm₋model2D,epm₋model},ebs::bandstructure)
-    
+     
     spatial = pyimport("scipy.spatial")
     simplices = [Matrix(ebs.mesh.points[s,:]') for s=ebs.simplicesᵢ]
-
+      
     # Refine the tile with the most error
     if ebs.refine_method == 1
         splitpos = [sortperm(ebs.bandenergy_errors)[end]]
@@ -1205,12 +1198,23 @@ function refine_mesh!(epm::Union{epm₋model2D,epm₋model},ebs::bandstructure)
     elseif ebs.refine_method == 2
         err_cutoff = [simplex_size(s)/epm.ibz.volume for s=simplices]*ebs.target_accuracy
         splitpos = filter(x -> x>0,[ebs.bandenergy_errors[i] > err_cutoff[i] ? i : 0 for i=1:length(err_cutoff)])
+    elseif ebs.refine_method == 3
+        err_cutoff = [simplex_size(s)/epm.ibz.volume for s=simplices]*ebs.target_accuracy
+        splitpos = filter(x -> x>0,[ebs.bandenergy_errors[i] > err_cutoff[i] ? i : 0 for i=1:length(err_cutoff)]) 
+        # If the error is 2x greater than the tolerance, split edges. Otherwise,
+        # sample at the center of the triangle.
+        sample_type = [ebs.bandenergy_errors[i] > 2*err_cutoff[i] ? 2 : 1 for i=splitpos]
     else
         ArgumentError("The refinement method has to be an integer of 1 or 2.")
     end
- 
+
     # A single point at the center of the triangle
-    if ebs.sample_method == 1
+    if ebs.refine_method == 3
+        new_meshpts = reduce(hcat,[sample_type[i] == 1 ? 
+        barytocart([1/3,1/3,1/3],simplices[splitpos[i]]) :
+        barytocart([0 1/2 1/2; 1/2 0 1/2; 1/2 1/2 0],simplices[splitpos[i]])
+        for i=1:length(splitpos)])
+    elseif ebs.sample_method == 1
         new_meshpts = reduce(hcat,[barytocart([1/3,1/3,1/3],s) for s=simplices[splitpos]])
     # Point at the midpoints of all edges of the triangle
     elseif ebs.sample_method == 2
@@ -1218,9 +1222,18 @@ function refine_mesh!(epm::Union{epm₋model2D,epm₋model},ebs::bandstructure)
     else
         ArgumentError("The sample method for refinement has to be an integer of 1 or 2.")
     end
-
+     
+    # The number of points in the mesh before adding new points.
+    s = size(ebs.mesh.points,1)
     # Remove duplicates from the new mesh points.
     new_meshpts = unique_points(new_meshpts,rtol=ebs.rtol,atol=ebs.atol)
+
+    # There should technically be an additional step at this point where
+    # symmetrically equivalent points are removed from `new_meshpts` (points
+    # on different boundaries of the IBZ may be rotationally or translationally
+    # equivalent, but I figure the chances of two points being equivalent are
+    # pretty slim and the extra cost isn't too great, but I could be wrong, so 
+    # I'm making a note.
 
     cv_pointsᵢ = get_cvpts(ebs.mesh,epm.ibz,atol=ebs.atol)
     # Calculate the maximum distance between neighboring points
@@ -1234,20 +1247,19 @@ function refine_mesh!(epm::Union{epm₋model2D,epm₋model},ebs::bandstructure)
     bztrans = [[[i,j] for i=-1:1,j=-1:1]...]
     
     # Indices of the new mesh points.
-    new_ind = size(ebs.mesh.points,1):size(ebs.mesh.points,1)+size(new_meshpts,2) - 1
-    ebs.sym₋unique = [ebs.sym₋unique; new_ind]
-    
+    new_ind = size(ebs.mesh.points,1) + 1:size(ebs.mesh.points,1)+size(new_meshpts,2)
+    ebs.sym₋unique = [ebs.sym₋unique[1:s]; new_ind; ebs.sym₋unique[s+1:end]]
     # Indices of sym. equiv. points on the boundary of and nearby the IBZ. Points
     # to the symmetrically unique point.
     sym_mesh = zeros(Int,size(new_meshpts,2)*length(epm.pointgroup)*length(bztrans))
-    
+  
     # Keep track of points on the IBZ boundaries.
     n = 0
     # Add points to the mesh on the boundary of the IBZ.
     neighbors = zeros(Float64,2,size(new_meshpts,2)*length(epm.pointgroup)*length(bztrans))
     for i=1:length(new_ind),op=epm.pointgroup,trans=bztrans
         pt = op*new_meshpts[:,i] + epm.recip_latvecs*trans
-
+      
         if (any([isapprox(lineseg₋pt_dist(line_seg,pt,false),0,atol=ebs.atol) for line_seg=ibz_linesegs]) &&
             !any(mapslices(x->isapprox(x,pt,atol=ebs.atol,rtol=ebs.rtol),
                         [ebs.mesh.points' new_meshpts neighbors[:,1:n]],dims=1)))
@@ -1257,7 +1269,7 @@ function refine_mesh!(epm::Union{epm₋model2D,epm₋model},ebs::bandstructure)
         end
     end
     ebs.mesh = spatial.Delaunay([ebs.mesh.points; new_meshpts'; neighbors[:,1:n]'])
-    
+     
     # Add points to the extended mesh nearby but outside of the IBZ
     for i=1:length(new_ind),op=epm.pointgroup,trans=bztrans
         pt = op*new_meshpts[:,i] + epm.recip_latvecs*trans
@@ -1270,21 +1282,54 @@ function refine_mesh!(epm::Union{epm₋model2D,epm₋model},ebs::bandstructure)
             neighbors[:,n] = pt
         end
     end
-    
     ebs.sym₋unique = [ebs.sym₋unique; sym_mesh[1:n]]
-    ebs.ext_mesh = spatial.Delaunay([ebs.ext_mesh.points; new_meshpts'; neighbors[:,1:n]'])
-    new_eigvals = zeros(epm.sheets,size(new_meshpts,2))
+    ebs.ext_mesh = spatial.Delaunay([ebs.ext_mesh.points[1:s,:]; new_meshpts'; 
+        ebs.ext_mesh.points[s+1:end,:]; neighbors[:,1:n]'])
 
-    for i=1:size(new_meshpts,2)
-        new_eigvals[:,i] = eval_epm(new_meshpts[:,i],epm,rtol=ebs.rtol,atol=ebs.atol)
-    end
+    # new_eigvals = zeros(epm.sheets,size(new_meshpts,2))
+    # for i=1:size(new_meshpts,2)
+    #     new_eigvals[:,i] = eval_epm(new_meshpts[:,i],epm,rtol=ebs.rtol,atol=ebs.atol)
+    # end
+
+    new_eigvals = eval_epm(new_meshpts,epm,rtol=ebs.rtol,atol=ebs.atol)
 
     ebs.simplicesᵢ = notbox_simplices(ebs.mesh)
     ebs.eigenvals = [ebs.eigenvals new_eigvals]
     ebs.mesh_intcoeffs = [get_intercoeffs(index,ebs.mesh,ebs.ext_mesh,ebs.sym₋unique,ebs.eigenvals,
-        ebs.simplicesᵢ) for index=1:length(ebs.simplicesᵢ)]
-    
+        ebs.simplicesᵢ,ebs.fatten) for index=1:length(ebs.simplicesᵢ)]    
     ebs
 end
- 
+
+@doc """
+    quadratic_method!(epm,ebs,init_msize,num_neigh,fermiarea_eps,target_accuracy,
+        fermilevel_method,refine_method,sample_method,rtol,atol,uniform)
+
+Calculate the band energy using uniform or adaptive quadratic integation.
+"""
+function quadratic_method!(epm::Union{epm₋model2D,epm₋model};
+    init_msize::Int=4, num_neigh::Int=1, fermiarea_eps::Real=1e-6,
+    target_accuracy::Real=1e-4, fermilevel_method::Int=1, refine_method::Int=3,
+    sample_method::Int=1, fatten::Real=-1, rtol::Real=1e-9, atol::Real=1e-9,uniform::Bool=true)::bandstructure
+
+    ebs = init_bandstructure(epm,init_msize=init_msize, num_neigh=num_neigh,
+        fermiarea_eps=fermiarea_eps, target_accuracy=target_accuracy, 
+        fermilevel_method=fermilevel_method, refine_method=refine_method,
+        sample_method=sample_method, fatten=fatten, rtol=rtol, atol=atol);
+    calc_flbe!(epm,ebs)
+    if uniform
+        return ebs
+    end
+    counter = 0
+    while abs(ebs.bandenergy - epm.bandenergy) > ebs.target_accuracy
+        counter += 1
+        refine_mesh!(epm,ebs)
+        calc_flbe!(epm,ebs)
+        if counter > 20
+            @warn "Failed to calculate the band energy to within the desired accuracy $(ebs.target_accuracy) after 50 iterations."
+            break
+        end
+    end
+    ebs
+end
+
 end # module
