@@ -1205,7 +1205,7 @@ function refine_mesh!(epm::Union{epm₋model2D,epm₋model},ebs::bandstructure)
         # sample at the center of the triangle.
         sample_type = [ebs.bandenergy_errors[i] > 2*err_cutoff[i] ? 2 : 1 for i=splitpos]
     else
-        ArgumentError("The refinement method has to be an integer of 1 or 2.")
+        ArgumentError("The refinement method has to be and integer and 1, 2 or 3.")
     end
 
     # A single point at the center of the triangle
@@ -1220,7 +1220,7 @@ function refine_mesh!(epm::Union{epm₋model2D,epm₋model},ebs::bandstructure)
     elseif ebs.sample_method == 2
         new_meshpts = reduce(hcat,[barytocart([0 1/2 1/2; 1/2 0 1/2; 1/2 1/2 0],s) for s=simplices[splitpos]])
     else
-        ArgumentError("The sample method for refinement has to be an integer of 1 or 2.")
+        ArgumentError("The sample method for refinement has to be an integer with a value of 1 or 2.")
     end
      
     # The number of points in the mesh before adding new points.
@@ -1285,11 +1285,6 @@ function refine_mesh!(epm::Union{epm₋model2D,epm₋model},ebs::bandstructure)
     ebs.sym₋unique = [ebs.sym₋unique; sym_mesh[1:n]]
     ebs.ext_mesh = spatial.Delaunay([ebs.ext_mesh.points[1:s,:]; new_meshpts'; 
         ebs.ext_mesh.points[s+1:end,:]; neighbors[:,1:n]'])
-
-    # new_eigvals = zeros(epm.sheets,size(new_meshpts,2))
-    # for i=1:size(new_meshpts,2)
-    #     new_eigvals[:,i] = eval_epm(new_meshpts[:,i],epm,rtol=ebs.rtol,atol=ebs.atol)
-    # end
 
     new_eigvals = eval_epm(new_meshpts,epm,rtol=ebs.rtol,atol=ebs.atol)
 

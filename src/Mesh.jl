@@ -96,7 +96,7 @@ function ibz_init₋mesh(ibz::Chull{<:Real},n::Int;
 
     dim = size(ibz.points,2)
     # We need to enclose the IBZ in a box to prevent collinear triangles.
-    box_length = 2*maximum(abs.(ibz.points))
+    box_length = 100*maximum(abs.(ibz.points))
     if dim == 2
         box_pts = reduce(hcat,[[mean(ibz.points,dims=1)...] + box_length*[i,j] 
             for i=[-1,1] for j=[-1,1]])
