@@ -71,7 +71,7 @@ function sample_unitcell(latvecs::AbstractMatrix{<:Real},
 end
 
 @doc """
-    rectangular_method(epm,N,num_cores=1;rtol,atol,func)
+    rectangular_method(epm,N,num_cores=1;partial=false,rtol,atol)
 
 # Arguments
 - `epm::Union{epm₋model2D,epm₋model}`: an empirical pseudopotential.
@@ -82,6 +82,7 @@ end
 - `rtol::Real=sqrt(eps(float(maximum(real_latvecs))))` a relative tolerance for
     floating point comparisons.
 - `atol::Real=1e-9`: an absolute tolerance for floating point comparisons.
+
 
 # Returns
 - `num_unique::Integer`: the number of symmetrically unique points in the grid.
@@ -99,6 +100,7 @@ rectangular_method(m11,3)
 """
 function rectangular_method(epm::Union{epm₋model2D,epm₋model},
     N::Union{Integer,AbstractMatrix{<:Integer}},num_cores::Integer=1;
+    partial::Bool=false,
     rtol::Real=sqrt(eps(float(maximum(epm.recip_latvecs)))), 
     atol::Real=1e-9)::Tuple{Int64,Float64,Float64}
 
@@ -128,7 +130,13 @@ function rectangular_method(epm::Union{epm₋model2D,epm₋model},
     num_unique = size(unique_kpoints,2)
     num_kpoints = sum(kpoint_weights)
 
-    maxoccupied_state = ceil(Int,round(epm.electrons*num_kpoints/2,sigdigits=12))
+    # pos = partially occupied state
+    if partial
+        (maxoccupied_state,pos) = divrem(epm.electrons*num_kpoints/2,1)
+    else
+        maxoccupied_state = ceil(Int,round(epm.electrons*num_kpoints/2,sigdigits=12))
+    end
+
     rectangle_size = abs(det(epm.recip_latvecs))/num_kpoints
     eigenweights = zeros(epm.sheets,num_unique)
     for i=1:num_unique
@@ -156,6 +164,12 @@ function rectangular_method(epm::Union{epm₋model2D,epm₋model},
     bandenergy = rectangle_size*(dot(eigenweights[1:index],eigenvalues[1:index])
         + counter*eigenvalues[index])
 
+    if partial
+        # weighted last eigenvalue
+        wle = (1-pos)*eigenvalues[index] + pos*eigenvalues[index+1]
+        fermilevel = wle
+        bandenergy += wle*rectangle_size
+    end
     (num_unique,fermilevel,bandenergy)
 end
 

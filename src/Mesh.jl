@@ -96,7 +96,7 @@ function ibz_init₋mesh(ibz::Chull{<:Real},n::Int;
 
     dim = size(ibz.points,2)
     # We need to enclose the IBZ in a box to prevent collinear triangles.
-    box_length = maximum(abs.(ibz.points))
+    box_length = 2*maximum(abs.(ibz.points))
     if dim == 2
         box_pts = reduce(hcat,[[mean(ibz.points,dims=1)...] + box_length*[i,j] 
             for i=[-1,1] for j=[-1,1]])
@@ -239,7 +239,7 @@ function notbox_simplices(mesh::PyObject)::Vector{Vector{Int}}
     simplicesᵢ = Vector{Any}(zeros(size(mesh.simplices,1)))
     n = 0
     for i=1:size(mesh.simplices,1)
-        if !any([j in mesh.simplices[i,:] .+ 1 for j=1:4])
+        if !any([j in (mesh.simplices[i,:] .+ 1) for j=1:4])
             n += 1
             simplicesᵢ[n] = mesh.simplices[i,:] .+ 1
         end
