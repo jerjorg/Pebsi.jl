@@ -153,7 +153,7 @@ function rectangular_method(epm::Union{epm₋model2D,epm₋model},
     totalstates = epm.sheets*num_kpoints
     counter = maxoccupied_state
     index = 0
-    for i=1:num_kpoints*epm.sheets
+    for i=1:totalstates
         counter -= eigenweights[i]
         if counter <= 0
             index = i
@@ -166,9 +166,9 @@ function rectangular_method(epm::Union{epm₋model2D,epm₋model},
 
     if partial
         # weighted last eigenvalue
-        wle = (1-pos)*eigenvalues[index] + pos*eigenvalues[index+1]
-        fermilevel = wle
-        bandenergy += wle*rectangle_size
+        # wle = (1-pos)*eigenvalues[index] + pos*eigenvalues[index+1]
+        # fermilevel = wle
+        bandenergy -= pos*rectangle_size*eigenvalues[index]
     end
     (num_unique,fermilevel,bandenergy)
 end

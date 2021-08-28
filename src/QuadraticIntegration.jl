@@ -1309,7 +1309,7 @@ function quadratic_method!(epm::Union{epm₋model2D,epm₋model};
     ebs = init_bandstructure(epm,init_msize=init_msize, num_neigh=num_neigh,
         fermiarea_eps=fermiarea_eps, target_accuracy=target_accuracy, 
         fermilevel_method=fermilevel_method, refine_method=refine_method,
-        sample_method=sample_method, fatten=fatten, rtol=rtol, atol=atol);
+        sample_method=sample_method, fatten=fatten, rtol=rtol, atol=atol)
     calc_flbe!(epm,ebs)
     if uniform
         return ebs
