@@ -1,8 +1,10 @@
 module Simpson
 
-using LinearAlgebra: dot,inv
+using LinearAlgebra: dot,inv, norm
 using SymmetryReduceBZ.Utilities: remove_duplicates
-
+using Statistics: mean
+using Pebsi.Geometry: barytocart
+using Pebsi.Polynomials: eval_poly
 
 eval_1Dquad_basis(t) = [(1 - t)^2, 2*(1 - t)*t, t^2]
 get_1Dquad_coeffs(values) = inv(reduce(hcat,[eval_1Dquad_basis(t) for t=[0,1/2,1]]))*values
@@ -259,19 +261,19 @@ simpson(v,4)
 function simpson(y::AbstractVector{<:Real},int_len::Real)
     n = length(y)-1
     n % 2 == 0 || error("The number of intervals must be odd for Simpson's method.")
-    return int_len/(3n) * sum(y[1:2:n] + 4*y[2:2:n] + y[3:2:n+1])
+    int_len/(3n) * sum(y[1:2:n] + 4*y[2:2:n] + y[3:2:n+1])
 end
 
 function simpson2D(coeffs,triangle,n,q=0)
     
-    lengths = [norm(simplex[:,mod1(i,3)] - simplex[:,mod1(i+1,3)]) for i=1:3]
-    corner_midpoint_lens = [norm([mean(simplex[:,[mod1(i,3),mod1(i+1,3)]],dims=1)...] - simplex[:,mod1(i+2,3)]) for i=1:3]
+    lengths = [norm(triangle[:,mod1(i,3)] - triangle[:,mod1(i+1,3)]) for i=1:3]
+    corner_midpoint_lens = [norm([mean(triangle[:,[mod1(i,3),mod1(i+1,3)]],dims=2)...] - triangle[:,mod1(i+2,3)]) for i=1:3]
     
     edge_ind = findmax(lengths)[2]
     
     dt = 1/(n-1)
-    it = range(dt/2,1-dt/2,step=dt)
-    
+    it = range(0,1,step=dt)
+  
     if edge_ind == 1
        order = [2,3,1]  
     elseif edge_ind == 2
@@ -288,12 +290,9 @@ function simpson2D(coeffs,triangle,n,q=0)
 
         bpts = [e1bpt bpt e2bpt]
         pts = barytocart(bpts,triangle)
-        # @show bpts
         vals = eval_poly(bpts,coeffs,2,2)
-        # @show vals
         bezcoeffs = get_1Dquad_coeffs(vals)
         domain = getdomain(bezcoeffs)
-        # @show domain
         if q == 0
             if domain == []
                 continue
@@ -314,8 +313,6 @@ function simpson2D(coeffs,triangle,n,q=0)
             error("Invalid value for `q`.")
         end
     end
-    @show integral_vals
-    # @show corner_midpoint_lens[edge_ind]
     simpson(integral_vals,corner_midpoint_lens[edge_ind])
 end
 

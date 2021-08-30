@@ -133,6 +133,9 @@ function rectangular_method(epm::Union{epm₋model2D,epm₋model},
     # pos = partially occupied state
     if partial
         (maxoccupied_state,pos) = divrem(epm.electrons*num_kpoints/2,1)
+        if pos ≈ 1/2
+            maxoccupied_state += 1
+        end
     else
         maxoccupied_state = ceil(Int,round(epm.electrons*num_kpoints/2,sigdigits=12))
     end
@@ -168,9 +171,9 @@ function rectangular_method(epm::Union{epm₋model2D,epm₋model},
         # weighted last eigenvalue
         # wle = (1-pos)*eigenvalues[index] + pos*eigenvalues[index+1]
         # fermilevel = wle
-        bandenergy -= pos*rectangle_size*eigenvalues[index]
+        bandenergy += pos*rectangle_size*eigenvalues[index]
     end
-    (num_unique,fermilevel,bandenergy)
+    (num_unique,fermilevel,2*bandenergy)
 end
 
 @doc """
