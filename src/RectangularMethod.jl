@@ -100,7 +100,7 @@ rectangular_method(m11,3)
 """
 function rectangular_method(epm::Union{epm₋model2D,epm₋model},
     N::Union{Integer,AbstractMatrix{<:Integer}},num_cores::Integer=1;
-    partial::Bool=false,
+    partial::Bool=true,
     rtol::Real=sqrt(eps(float(maximum(epm.recip_latvecs)))), 
     atol::Real=1e-9)::Tuple{Int64,Float64,Float64}
 
@@ -168,9 +168,6 @@ function rectangular_method(epm::Union{epm₋model2D,epm₋model},
         + counter*eigenvalues[index])
 
     if partial
-        # weighted last eigenvalue
-        # wle = (1-pos)*eigenvalues[index] + pos*eigenvalues[index+1]
-        # fermilevel = wle
         bandenergy += pos*rectangle_size*eigenvalues[index]
     end
     (num_unique,fermilevel,2*bandenergy)
