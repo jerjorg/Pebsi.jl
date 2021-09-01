@@ -1039,7 +1039,9 @@ function calc₋fl(epm::Union{epm₋model,epm₋model2D},ebs::bandstructure;
     end
     E = (E₁ + E₂)/2
 
-    f₁ = sum([quad_area₋volume([simplex_pts[tri]; ebs.mesh_intcoeffs[tri][sheet][1,:]' .- E₁]
+    # f₁ = sum([quad_area₋volume([simplex_pts[tri]; ebs.mesh_intcoeffs[tri][sheet][1,:]' .- E₁]
+    #     ,"area") for tri=1:length(ebs.simplicesᵢ) for sheet=1:epm.sheets]) - fermi_area
+    f₁ = sum([quad_area₋volume([simplex_pts[tri]; [mean(ebs.mesh_intcoeffs[tri][sheet],dims=1)...]' .- E₁]
         ,"area") for tri=1:length(ebs.simplicesᵢ) for sheet=1:epm.sheets]) - fermi_area
 
     f₂ = max_sheet*ibz_area - fermi_area
@@ -1053,12 +1055,14 @@ function calc₋fl(epm::Union{epm₋model,epm₋model2D},ebs::bandstructure;
             @warn "Failed to converge the Fermi area to within the provided tolerance of $(ebs.fermiarea_eps)."
             break
         end
-        println("area error: ", abs((fa₁ + fa₂)/2 - fermi_area))
 
-        fa₁ = sum([quad_area₋volume([simplex_pts[tri]; ebs.mesh_intcoeffs[tri][sheet][1,:]' .- E]
-                ,"area") for tri=1:length(ebs.simplicesᵢ) for sheet=1:epm.sheets])
-        fa₂ = sum([quad_area₋volume([simplex_pts[tri]; ebs.mesh_intcoeffs[tri][sheet][2,:]' .- E]
-                ,"area") for tri=1:length(ebs.simplicesᵢ) for sheet=1:epm.sheets])
+        # fa₁ = sum([quad_area₋volume([simplex_pts[tri]; ebs.mesh_intcoeffs[tri][sheet][1,:]' .- E]
+        #         ,"area") for tri=1:length(ebs.simplicesᵢ) for sheet=1:epm.sheets])
+        # fa₂ = sum([quad_area₋volume([simplex_pts[tri]; ebs.mesh_intcoeffs[tri][sheet][2,:]' .- E]
+        #         ,"area") for tri=1:length(ebs.simplicesᵢ) for sheet=1:epm.sheets])
+        fa₁ = sum([quad_area₋volume([simplex_pts[tri]; [mean(ebs.mesh_intcoeffs[tri][sheet],dims=1)...]'  .- E₁],"area") for tri=1:length(ebs.simplicesᵢ) for sheet=1:epm.sheets])
+        fa₂ = sum([quad_area₋volume([simplex_pts[tri]; [mean(ebs.mesh_intcoeffs[tri][sheet],dims=1)...]'  .- E₂],"area") for tri=1:length(ebs.simplicesᵢ) for sheet=1:epm.sheets])
+
         f = (fa₁ + fa₂)/2 - fermi_area
 
         if sign(f) != sign(f₁)
@@ -1207,7 +1211,6 @@ function refine_mesh!(epm::Union{epm₋model2D,epm₋model},ebs::bandstructure)
     else
         ArgumentError("The refinement method has to be and integer and 1, 2 or 3.")
     end
-
     # A single point at the center of the triangle
     if ebs.refine_method == 3
         new_meshpts = reduce(hcat,[sample_type[i] == 1 ? 
@@ -1225,6 +1228,7 @@ function refine_mesh!(epm::Union{epm₋model2D,epm₋model},ebs::bandstructure)
      
     # The number of points in the mesh before adding new points.
     s = size(ebs.mesh.points,1)
+
     # Remove duplicates from the new mesh points.
     new_meshpts = unique_points(new_meshpts,rtol=ebs.rtol,atol=ebs.atol)
 

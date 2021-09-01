@@ -140,8 +140,6 @@ function contourplot(epm::epm₋model2D,ebs::bandstructure,ax::Union{PyObject,No
         (fig,ax) = subplots()
     end
     
-    ax=meshplot(epm,ebs,ax)
-    ax = meshplot(ebs.mesh.points[5:end,:]',ax)
     for i=1:length(ebs.simplicesᵢ)
         for j=1:epm.sheets
             bezpts = [barytocart(bpts,ebs.mesh.points[ebs.simplicesᵢ[i],:]'); 
@@ -149,6 +147,9 @@ function contourplot(epm::epm₋model2D,ebs::bandstructure,ax::Union{PyObject,No
             ax = contourplot(bezpts,ax,padded=false)
         end
     end
+    ax=meshplot(epm,ebs,ax)
+    ax = meshplot(ebs.mesh.points[5:end,:]',ax)
+
     ax
 end
 

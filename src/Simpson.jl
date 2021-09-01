@@ -3,11 +3,13 @@ module Simpson
 using LinearAlgebra: dot,inv, norm
 using SymmetryReduceBZ.Utilities: remove_duplicates
 using Statistics: mean
-using Pebsi.Geometry: barytocart
+using Pebsi.Geometry: barytocart, carttobary
 using Pebsi.Polynomials: eval_poly
 
 eval_1Dquad_basis(t) = [(1 - t)^2, 2*(1 - t)*t, t^2]
-get_1Dquad_coeffs(values) = inv(reduce(hcat,[eval_1Dquad_basis(t) for t=[0,1/2,1]]))*values
+# basis_mat = inv(reduce(hcat,[eval_1Dquad_basis(t) for t=[0,1/2,1]])')
+basis_mat = [1 0 0; -0.5 2 -0.5; 0 0 1]
+get_1Dquad_coeffs(values) = basis_mat*values
 evalpoly1D(t,coeffs)=dot(coeffs,eval_1Dquad_basis(t))
 
 @doc """
@@ -270,10 +272,6 @@ function simpson2D(coeffs,triangle,n,q=0)
     corner_midpoint_lens = [norm([mean(triangle[:,[mod1(i,3),mod1(i+1,3)]],dims=2)...] - triangle[:,mod1(i+2,3)]) for i=1:3]
     
     edge_ind = findmax(lengths)[2]
-    
-    dt = 1/(n-1)
-    it = range(0,1,step=dt)
-  
     if edge_ind == 1
        order = [2,3,1]  
     elseif edge_ind == 2
@@ -281,7 +279,10 @@ function simpson2D(coeffs,triangle,n,q=0)
     else
         order = [3,1,2]
     end
-        
+
+    m = if iseven(n) n + 1 else n end
+    dt = 1/(m-1)
+    it = range(0,1,step=dt)
     integral_vals = zeros(length(it))
     for (i,t) in enumerate(it)
         bpt = [t,(1-t)/2,(1-t)/2][order]
@@ -293,6 +294,14 @@ function simpson2D(coeffs,triangle,n,q=0)
         vals = eval_poly(bpts,coeffs,2,2)
         bezcoeffs = get_1Dquad_coeffs(vals)
         domain = getdomain(bezcoeffs)
+
+        # @show bpts
+        # @show pts
+        # @show vals
+        # @show bezcoeffs
+        # @show domain
+        # println()
+
         if q == 0
             if domain == []
                 continue
@@ -313,7 +322,34 @@ function simpson2D(coeffs,triangle,n,q=0)
             error("Invalid value for `q`.")
         end
     end
-    simpson(integral_vals,corner_midpoint_lens[edge_ind])
+
+    edge = triangle[:,[edge_ind,mod1(edge_ind+1,3)]]
+    opp_corner = triangle[:,mod1(edge_ind+2,3)]
+    # simpson(integral_vals,corner_midpoint_lens[edge_ind])
+    @show integral_vals
+    simpson(integral_vals,linept_dist(edge,opp_corner))
+end
+
+@doc """
+    linept_dist(line,pt)
+
+Calculate the shortest distance between a point and a line embedded in 2D.
+
+# Arguments
+- `line::Matrix{<:Real}`: the endpoints of a line segment as columns of an matrix.
+- `pt::Vector{<:Real}`: the coordinates of a point in a vector
+
+# Example
+```jldoctest
+using Pebsi.Simpson: linept_dist
+line = [0 1; 0 0]
+pt = [0,2]
+# output
+2.0
+"""
+function linept_dist(line,pt)
+    unit_vec = [0 -1; 1 0]*(line[:,2] - line[:,1])/norm(line[:,2] - line[:,1])
+    abs(dot(unit_vec,pt-line[:,1]))
 end
 
 end # module

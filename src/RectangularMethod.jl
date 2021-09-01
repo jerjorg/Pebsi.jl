@@ -71,7 +71,7 @@ function sample_unitcell(latvecs::AbstractMatrix{<:Real},
 end
 
 @doc """
-    rectangular_method(epm,N,num_cores=1;partial=false,rtol,atol)
+    rectangular_method(epm,N,num_cores=1;partial=true,rtol,atol)
 
 # Arguments
 - `epm::Union{epm₋model2D,epm₋model}`: an empirical pseudopotential.
