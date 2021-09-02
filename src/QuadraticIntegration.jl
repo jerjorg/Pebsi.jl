@@ -965,7 +965,15 @@ function get_intercoeffs(index::Int,mesh::PyObject,ext_mesh::PyObject,
     simplex = Matrix(mesh.points[simplexᵢ,:]')
     neighborsᵢ = reduce(vcat,[get₋neighbors(s,ext_mesh,2) for s=simplexᵢ]) |> unique
     neighborsᵢ = filter(x -> !(x in simplexᵢ),neighborsᵢ)
-     
+
+    if length(neighborsᵢ) > 15
+        neighbors = ext_mesh.points[neighborsᵢ,:]'
+        dist = [minimum([norm(ext_mesh.points[i,:] - simplex[:,j]) for j=1:3]) 
+            for i=neighborsᵢ]
+
+        neighborsᵢ = neighborsᵢ[sortperm(dist)][1:15]
+    end
+
     b = carttobary(ext_mesh.points[neighborsᵢ,:]',simplex)
     # b = reduce(hcat,[carttobary(ext_mesh.points[i,:],simplex) for i=neighborsᵢ])
     # M = 2*Matrix(reduce(hcat,[[b[1,i]*b[2,i], b[2,i]*b[3,i], b[3,i]*b[1,i]] for i=1:size(b,2)])')
@@ -981,7 +989,11 @@ function get_intercoeffs(index::Int,mesh::PyObject,ext_mesh::PyObject,
     # Distance from the center of the triangle.
     # W = diagm([norm(ext_mesh.points[i,:] - mean(simplex,dims=2)) for i=neighborsᵢ])
     
-    W=I
+    # Shortest distance from one of the corners of the triangle.
+    W = diagm([1/minimum([norm(ext_mesh.points[i,:] - simplex[:,j]) for j=1:3]) 
+        for i=neighborsᵢ])
+
+    # W=I
      
     inter_bezcoeffs = [zeros(2,size(eigenvals,1)) for i=1:size(eigenvals,1)]
     for sheet = 1:size(eigenvals,1)
@@ -991,10 +1003,10 @@ function get_intercoeffs(index::Int,mesh::PyObject,ext_mesh::PyObject,
         # Z = fᵢ - Zm*q
 
         # Weighted least squares
-        c = M\Z
+        # c = M\Z
         # c = pinv(M)*Z
         
-        # c = inv(M'*W*M)*M'*W*Z
+        c = inv(M'*W*M)*M'*W*Z
         c1,c2,c3 = c
         q1,q2,q3 = q
 
@@ -1048,22 +1060,26 @@ function calc₋fl(epm::Union{epm₋model,epm₋model2D},ebs::bandstructure;
     f₃ = 0
     E₃ = 0
     iters = 0
-    f,fa₁,fa₂ = 1e9,1e9,1e9
+    f = 1e9
+    # f,fa₁,fa₂ = 1e9,1e9,1e9
     while abs(f) > ebs.fermiarea_eps
         iters += 1
         if iters > 50
             @warn "Failed to converge the Fermi area to within the provided tolerance of $(ebs.fermiarea_eps)."
             break
         end
-
+        println("Area error: ", abs(f))
+        println("Interval: ", [E₁,E₂])
         # fa₁ = sum([quad_area₋volume([simplex_pts[tri]; ebs.mesh_intcoeffs[tri][sheet][1,:]' .- E]
         #         ,"area") for tri=1:length(ebs.simplicesᵢ) for sheet=1:epm.sheets])
         # fa₂ = sum([quad_area₋volume([simplex_pts[tri]; ebs.mesh_intcoeffs[tri][sheet][2,:]' .- E]
         #         ,"area") for tri=1:length(ebs.simplicesᵢ) for sheet=1:epm.sheets])
-        fa₁ = sum([quad_area₋volume([simplex_pts[tri]; [mean(ebs.mesh_intcoeffs[tri][sheet],dims=1)...]'  .- E₁],"area") for tri=1:length(ebs.simplicesᵢ) for sheet=1:epm.sheets])
-        fa₂ = sum([quad_area₋volume([simplex_pts[tri]; [mean(ebs.mesh_intcoeffs[tri][sheet],dims=1)...]'  .- E₂],"area") for tri=1:length(ebs.simplicesᵢ) for sheet=1:epm.sheets])
+        # fa₁ = sum([quad_area₋volume([simplex_pts[tri]; [mean(ebs.mesh_intcoeffs[tri][sheet],dims=1)...]'  .- E₁],"area") for tri=1:length(ebs.simplicesᵢ) for sheet=1:epm.sheets])
+        # fa₂ = sum([quad_area₋volume([simplex_pts[tri]; [mean(ebs.mesh_intcoeffs[tri][sheet],dims=1)...]'  .- E₂],"area") for tri=1:length(ebs.simplicesᵢ) for sheet=1:epm.sheets])
 
-        f = (fa₁ + fa₂)/2 - fermi_area
+        # f = (f₁ + f₂)/2 - fermi_area
+
+        f = sum([quad_area₋volume([simplex_pts[tri]; [mean(ebs.mesh_intcoeffs[tri][sheet],dims=1)...]' .- E],"area") for tri=1:length(ebs.simplicesᵢ) for sheet=1:epm.sheets]) - fermi_area
 
         if sign(f) != sign(f₁)
             E₃ = E₂
@@ -1093,18 +1109,20 @@ function calc₋fl(epm::Union{epm₋model,epm₋model2D},ebs::bandstructure;
                 t = 0.5
             end
 
-            if t < 0
-                t = 1e-9
-            elseif t > 1
-                t = 1 - 1e-9
+            if t < 1e-3
+                t = 1e-3
+            elseif t > 1-1e-3
+                t = 1 - 1e-3
             end
         else
             ArgumentError("The method for calculating the Fermi is either 1 or 2.")
         end
         E = E₁ + t*(E₂ - E₁)
     end
+
     
-    (E,fa₁,fa₂)
+
+    (E,f₁+fermi_area,f₂+fermi_area)
 end
 
 @doc """

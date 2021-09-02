@@ -266,7 +266,7 @@ function simpson(y::AbstractVector{<:Real},int_len::Real)
     int_len/(3n) * sum(y[1:2:n] + 4*y[2:2:n] + y[3:2:n+1])
 end
 
-function simpson2D(coeffs,triangle,n,q=0)
+function simpson2D(coeffs,triangle,n,q=0;values=false)
     
     lengths = [norm(triangle[:,mod1(i,3)] - triangle[:,mod1(i+1,3)]) for i=1:3]
     corner_midpoint_lens = [norm([mean(triangle[:,[mod1(i,3),mod1(i+1,3)]],dims=2)...] - triangle[:,mod1(i+2,3)]) for i=1:3]
@@ -295,13 +295,6 @@ function simpson2D(coeffs,triangle,n,q=0)
         bezcoeffs = get_1Dquad_coeffs(vals)
         domain = getdomain(bezcoeffs)
 
-        # @show bpts
-        # @show pts
-        # @show vals
-        # @show bezcoeffs
-        # @show domain
-        # println()
-
         if q == 0
             if domain == []
                 continue
@@ -322,11 +315,13 @@ function simpson2D(coeffs,triangle,n,q=0)
             error("Invalid value for `q`.")
         end
     end
+    
+    if values
+        return integral_vals
+    end
 
     edge = triangle[:,[edge_ind,mod1(edge_ind+1,3)]]
     opp_corner = triangle[:,mod1(edge_ind+2,3)]
-    # simpson(integral_vals,corner_midpoint_lens[edge_ind])
-    @show integral_vals
     simpson(integral_vals,linept_dist(edge,opp_corner))
 end
 
