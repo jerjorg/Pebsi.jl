@@ -459,18 +459,18 @@ m1electrons1 = 6
 
 m1cutoff = 6.1
 m1fermiarea1 = m1electrons1/2*m1ibz.volume
-m1fermilevel1 = 0.9381309375519309
-m1bandenergy1 = 1.0423513259405526
+m1fermilevel1 = 0.9381315758593213
+m1bandenergy1 = 2.0847026416334566
 
 m1electrons2 = 7
 m1fermiarea2 = m1electrons2/2*m1ibz.volume
-m1fermilevel2 = 1.1057574662181007
-m1bandenergy2 = 1.5535874027360785
+m1fermilevel2 = 1.1057572321938793
+m1bandenergy2 = 3.1071748126261194
 
 m1electrons3 = 8
 m1fermiarea3 = m1electrons3/2*m1ibz.volume
-m1fermilevel3 = 1.258616280256323
-m1bandenergy3 = 2.145219996962875
+m1fermilevel3 = 1.2586162855650544
+m1bandenergy3 = 4.290439984378344
 
 # Model 2 - hexagonal symmetry
 convention = "ordinary"
@@ -484,18 +484,18 @@ m2cutoff = 5.9
 
 m2electrons1 = 5
 m2fermiarea1 = m2electrons1/2*m2ibz.volume
-m2fermilevel1 = 0.06138423898212197
-m2bandenergy1 = -0.4302312741509512
+m2fermilevel1 = 0.06138424418565408
+m2bandenergy1 = -0.8604625488331478
 
 m2electrons2 = 7
 m2fermiarea2 = m2electrons2/2*m2ibz.volume
-m2fermilevel2 = 0.9021827685803184
-m2bandenergy2 = -0.024599327665460413
+m2fermilevel2 = 0.9021825445425549
+m2bandenergy2 = -0.04919865182028289
 
 m2electrons3 = 8
 m2fermiarea3 = m2electrons3/2*m2ibz.volume
-m2fermilevel3 = 0.9968615721784458
-m2bandenergy3 = 0.38884262264868563
+m2fermilevel3 = 0.9968617138996022
+m2bandenergy3 = 0.7776852360677527
 
 # Model 3 - centered rectangular symmetry
 convention = "ordinary"
@@ -509,18 +509,18 @@ m3cutoff = 5.95
 
 m3electrons1 = 5
 m3fermiarea1 = m3electrons1/2*m3ibz.volume
-m3fermilevel1 = 0.5833433206577795
-m3bandenergy1 = 0.0035066586253235665
+m3fermilevel1 = 0.5833432358255468
+m3bandenergy1 = 0.00701331787620594
 
 m3electrons2 = 7
 m3fermiarea2 = m3electrons2/2*m3ibz.volume
-m3fermilevel2 = 0.9911138305912597
-m3bandenergy2 = 0.71444638735834
+m3fermilevel2 = 0.9911139157275141
+m3bandenergy2 = 1.4288927687637207
 
 m3electrons3 = 8
 m3fermiarea3 = m3electrons3/2*m3ibz.volume
-m3fermilevel3 = 1.1117071929086504
-m3bandenergy3 = 1.1860046687293682
+m3fermilevel3 = 1.1117072243047657
+m3bandenergy3 = 2.3720093195726544
 
 # Model 4 - rectangular symmetry
 convention = "ordinary"
@@ -534,18 +534,18 @@ m4cutoff = 8.6
 
 m4electrons1 = 6
 m4fermiarea1 = m4electrons1/2*m4ibz.volume
-m4fermilevel1 = 1.9034249381001005
-m4bandenergy1 = 5.1056578173306795
+m4fermilevel1 = 1.903425381487544
+m4bandenergy1 = 10.211315560646229
 
 m4electrons2 = 7
 m4fermiarea2 = m4electrons2/2*m4ibz.volume
-m4fermilevel2 = 2.2266488438956333
-m4bandenergy2 = 7.1685536634386136
+m4fermilevel2 = 2.226648774191113
+m4bandenergy2 = 14.337107296326025
 
 m4electrons3 = 8
 m4fermiarea3 = m4electrons3/2*m4ibz.volume
-m4fermilevel3 = 2.551004975931985
-m4bandenergy3 = 9.555193758896971
+m4fermilevel3 = 2.551004740311015
+m4bandenergy3 = 19.110387472863806
 
 # Model 5 - oblique symmetry
 convention = "ordinary"
@@ -559,18 +559,18 @@ m5cutoff = 6.3
 
 m5electrons1 = 5
 m5fermiarea1 = m5electrons1/2*m5ibz.volume
-m5fermilevel1 = 0.7916464535133585
-m5bandenergy1 = 0.47750270146629903
+m5fermilevel1 = 0.7916464458184772
+m5bandenergy1 = 0.9550054084089977
 
 m5electrons2 = 7
 m5fermiarea2 = m5electrons2/2*m5ibz.volume
-m5fermilevel2 = 1.1470444743280181
-m5bandenergy2 = 1.4588171623200643
+m5fermilevel2 = 1.1470443875522593
+m5bandenergy2 = 2.9176343264803615
 
 m5electrons3 = 9
 m5fermiarea3 = m5electrons3/2*m5ibz.volume
-m5fermilevel3 = 1.4883816210907215
-m5bandenergy3 = 2.8258962133639556
+m5fermilevel3 = 1.488381886133316
+m5bandenergy3 = 5.651792436020065
 
 @doc """
     epm₋model2D(energy_conv,sheets,real_latvecs,recip_latvecs,bz,ibz,pointgroup,
