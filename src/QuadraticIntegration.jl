@@ -1133,7 +1133,7 @@ function calc_flbe!(epm::Union{epm₋model2D,epm₋model},ebs::bandstructure)
     maxsheet = round(Int,epm.electrons/2)
     window = [minimum(ebs.eigenvals[1:maxsheet+2,5:end]),
         maximum(ebs.eigenvals[1:maxsheet+2,5:end])]
-
+     
     if ebs.fermilevel_interval == [0,0]
         maxsheet = round(Int,epm.electrons/2)
         window = [minimum(ebs.eigenvals[1:maxsheet+2,5:end]),

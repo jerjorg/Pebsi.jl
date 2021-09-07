@@ -168,7 +168,7 @@ function rectangular_method(epm::Union{epm₋model2D,epm₋model},
         + counter*eigenvalues[index])
 
     if partial
-        bandenergy += pos*rectangle_size*eigenvalues[index]
+        bandenergy -= pos*rectangle_size*eigenvalues[index]
     end
     (num_unique,fermilevel,2*bandenergy)
 end
