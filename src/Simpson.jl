@@ -23,7 +23,7 @@ Determine where a quadratic curve is equal to zero.
 - `atol::Real`: an absolute tolerance for floating point comparisons.
 
 # Returns
-- `solutions::AbstractVector`: the locations between (0,1) where the quadratic
+- `solutions::AbstractVector`: the locations between [0,1) where the quadratic
     equals 0.
 
 # Examples
@@ -35,8 +35,7 @@ bezcurve_intersects(coeffs)
 [2/3]
 ```
 """
-function bezcurve_intersects(bezcoeffs::AbstractVector{<:Real};
-    rtol::Real=1e-9,atol::Real=1e-9)::AbstractVector
+function bezcurve_intersects(bezcoeffs::AbstractVector{<:Real};atol::Real=1e-12)::AbstractVector
     a,b,c = bezcoeffs
     
     quadterm = a - 2*b + c
@@ -70,37 +69,37 @@ function bezcurve_intersects(bezcoeffs::AbstractVector{<:Real};
     
     # Case 3: [0,b,0]
     if isapprox(a,0,atol=0) && isapprox(c,0,atol=0)
-        # intersections at t = (0,1) are excluded.
-        return []
+        # intersections at t = (0,1). 
+        return [0]
     end
     
     # Case 2: [0,0,c]
     if isapprox(a,0,atol=0) && isapprox(b,0,atol=0)
-        # intersections at t = (0,0) are excluded.
+        # intersections at t = (0,0).
         return []
     end
         
     # Case 7: [a,b,0]
     if isapprox(c,0,atol=atol)
-        if isapprox(a,2b,atol=atol,rtol=rtol)
+        if isapprox(a,2b,atol=atol)
             # Solution at t = 1 excluded.
             return []
         else
             solutions = [a/(a-2*b)]
             solutions = filter(t -> (t > 0 || isapprox(t,0,atol=atol)) 
-                && (t < 1 || isapprox(t,1,atol=atol,rtol=rtol)), solutions)
+                && (t < 1 && !isapprox(t,1,atol=atol)), solutions)
             return solutions
         end
     end
     
     # Case 4: [0,b,c]
     if isapprox(a,0,atol=0)
-        if isapprox(2*b,c,atol=atol,rtol=rtol)
+        if isapprox(2*b,c,atol=atol)
             return []
         else
             solutions = [2*b/(2*b-c)]
             solutions = filter(t -> (t > 0 || isapprox(t,0,atol=atol)) 
-                && (t < 1 || isapprox(t,1,atol=atol,rtol=rtol)), solutions)
+                && (t < 1 && !isapprox(t,1,atol=atol)), solutions)
             return solutions
         end
     end
@@ -109,14 +108,14 @@ function bezcurve_intersects(bezcoeffs::AbstractVector{<:Real};
     if isapprox(b,0,atol=atol)
         if (a < 0 && c < 0) || (a > 0 && c > 0)
             return []
-        elseif isapprox(a,-c,atol=atol,rtol=rtol)
+        elseif isapprox(a+c,0,atol=atol)
             solutions = [0.5]
             return solutions
         else
             solutions = real.([(a - im*sqrt(complex(a))*sqrt(complex(c)))/(a + c), 
                 (a + im*sqrt(complex(a))*sqrt(complex(c)))/(a + c)])
             solutions = filter(t -> (t > 0 || isapprox(t,0,atol=atol)) 
-                && (t < 1 || isapprox(t,1,atol=atol,rtol=rtol)), solutions)
+                && (t < 1 && !isapprox(t,1,atol=atol)), solutions)
             return sort(solutions)
         end
     end
@@ -125,19 +124,19 @@ function bezcurve_intersects(bezcoeffs::AbstractVector{<:Real};
     if isapprox(a - 2*b + c,0,atol=atol)
         solutions = [a/(2*(a-b))]
         solutions = filter(t -> (t > 0 || isapprox(t,0,atol=atol)) 
-            && (t < 1 || isapprox(t,1,atol=atol,rtol=rtol)), solutions)
+            && (t < 1 && !isapprox(t,1,atol=atol)), solutions)
         return solutions
     elseif isapprox(b^2 - a*c,0,atol=atol)
         solutions = [(a - b)/(a - 2*b + c)]
         solutions = filter(t -> (t > 0 || isapprox(t,0,atol=atol)) 
-            && (t < 1 || isapprox(t,1,atol=atol,rtol=rtol)), solutions)
+            && (t < 1 && !isapprox(t,1,atol=atol)), solutions)
         return solutions
     elseif !isapprox(b^2 - a*c,0,atol=atol) && b^2 - a*c < 0
         return []
     else 
         solutions = [(a - b - sqrt(b^2 - a*c))/(a - 2*b + c), (a - b + sqrt(b^2 - a*c))/(a - 2*b + c)]
         solutions = filter(t -> (t > 0 || isapprox(t,0,atol=atol)) 
-            && (t < 1 || isapprox(t,1,atol=atol,rtol=rtol)), solutions)
+            && (t < 1 && !isapprox(t,1,atol=atol)), solutions)
         return sort(solutions)
     end
     solutions

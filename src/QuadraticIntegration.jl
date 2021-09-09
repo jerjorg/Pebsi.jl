@@ -10,6 +10,7 @@ using ..Mesh: get₋neighbors,notbox_simplices,get_cvpts,ibz_init₋mesh,
     get_extmesh
 using ..Geometry: order_vertices!,simplex_size,insimplex,barytocart,carttobary,
     sample_simplex,lineseg₋pt_dist
+using ..Simpson: bezcurve_intersects
 
 using QHull: chull,Chull
 using LinearAlgebra: cross,det,norm,dot,I,diagm,pinv
@@ -378,7 +379,8 @@ function simplex_intersects(bezpts::AbstractMatrix{<:Real};
     intersects = Array{Array,1}([[],[],[]])
     for i=1:3
         edge_bezpts = bezpts[:,edge_indices[i]]
-        edge_ints = edge_intersects(edge_bezpts,atol=atol)
+        edge_ints = bezcurve_intersects(edge_bezpts[end,:];atol=1e-10)
+        # edge_ints = edge_intersects(edge_bezpts,atol=atol)
         if edge_ints != []
             intersects[i] = reduce(hcat,[edge_bezpts[1:2,1] .+ 
                 i*(edge_bezpts[1:2,end] .- edge_bezpts[1:2,1]) for i=edge_ints])
@@ -417,7 +419,7 @@ saddlepoint(coeffs)
 ```
 """
 function saddlepoint(coeffs::AbstractVector{<:Real};
-    atol::Real=1e-9)::AbstractVector{<:Real}
+    atol::Real=1e-12)::AbstractVector{<:Real}
     (z₀₀₂, z₁₀₁, z₂₀₀, z₀₁₁, z₁₁₀, z₀₂₀)=coeffs
     denom = z₀₁₁^2+(z₁₀₁-z₁₁₀)^2+z₀₂₀*(2z₁₀₁-z₂₀₀)-2z₀₁₁*(z₁₀₁+z₁₁₀-z₂₀₀)-z₀₀₂*(z₀₂₀-2z₁₁₀+z₂₀₀)
     
@@ -463,8 +465,8 @@ function split_bezsurf₁(bezpts::AbstractMatrix{<:Real},
     coeffs = bezpts[end,:]
     pts = bezpts[1:2,:]
     simplex_bpts = sample_simplex(dim,deg)
-    intersects = simplex_intersects(bezpts,atol=atol)
-    spt = saddlepoint(coeffs,atol=atol)
+    intersects = simplex_intersects(bezpts,atol=1e-10)
+    spt = saddlepoint(coeffs)
     if intersects == [[],[],[]]
         if insimplex(spt)
             allpts = [pts barytocart(spt,triangle)]
@@ -539,7 +541,7 @@ function split_bezsurf(bezpts::AbstractMatrix{<:Real};atol=1e-9)::AbstractArray
         return [bezpts]
     else
         sub_bezpts = split_bezsurf₁(bezpts)
-        sub_intersects = [simplex_intersects(b) for b=sub_bezpts]
+        sub_intersects = [simplex_intersects(b,atol=atol) for b=sub_bezpts]
         num_intersects = [sum([size(sub_intersects[i][j])[1] == 0 ? 0 : 
             size(sub_intersects[i][j])[2] for j=1:3]) for i=1:length(sub_intersects)]
         while any(num_intersects .> 2)
@@ -547,7 +549,7 @@ function split_bezsurf(bezpts::AbstractMatrix{<:Real};atol=1e-9)::AbstractArray
                 if num_intersects[i] <= 2 continue end
                 append!(sub_bezpts,split_bezsurf₁(sub_bezpts[i]))
                 deleteat!(sub_bezpts,i)
-                sub_intersects = [simplex_intersects(b) for b=sub_bezpts]
+                sub_intersects = [simplex_intersects(b,atol=atol) for b=sub_bezpts]
                 num_intersects = [sum([size(sub_intersects[i][j])[1] == 0 ? 0 : 
                     size(sub_intersects[i][j])[2] for j=1:3]) for i=1:length(sub_intersects)]
             end
@@ -611,8 +613,7 @@ analytic_volume(coeffs,w)
 0.4426972170733675
 ```
 """
-function analytic_volume(coeffs::AbstractVector{<:Real},w::Real;
-        atol::Real=1e-9)::Real
+function analytic_volume(coeffs::AbstractVector{<:Real},w::Real)::Real
     
     (c₅,c₃,c₀,c₄,c₁,c₂) = coeffs
     d = c₀+c₁+c₂+c₃+c₄+c₅
@@ -716,10 +717,10 @@ function two₋intersects_area₋volume(bezpts::AbstractMatrix{<:Real},
         (bezptsᵣ,bezwtsᵣ) = getbez_pts₋wts(bezpts,p₀,p₂,atol=atol)
         ptᵣ = eval_bezcurve(0.5,bezptsᵣ,bezwtsᵣ)
         # Make sure the weight of the middle Bezier point has the correct sign.
-        if !insimplex(carttobary(ptᵣ,triangle),atol=atol)
+        if !insimplex(carttobary(ptᵣ,triangle))
             bezwtsᵣ[2] *= -1
             ptᵣ = eval_bezcurve(0.5,bezptsᵣ,bezwtsᵣ)
-            if !insimplex(carttobary(ptᵣ,triangle),atol=atol)
+            if !insimplex(carttobary(ptᵣ,triangle))
                 intersects = [[],[],[]]
             end
         end
@@ -730,9 +731,9 @@ function two₋intersects_area₋volume(bezpts::AbstractMatrix{<:Real},
     # this by splitting the surface up and recalculating.
     # Also, split the surface if the level curve isn't linear and the saddle point 
     # is within the triangle.
-    cstype = conicsection(bezpts[end,:],atol=atol)
+    cstype = conicsection(bezpts[end,:]) # using the default tolerance of 1e-12
     linear = any(cstype .== ["line","rectangular hyperbola","parallel lines"])
-    if maximum(abs.(bezptsᵣ)) > 1e6 || (insimplex(saddlepoint(bezpts[end,:],atol=atol),atol=atol) && !linear)
+    if maximum(abs.(bezptsᵣ)) > 1e6 || (insimplex(saddlepoint(bezpts[end,:],atol=atol)) && !linear)
         bezptsᵤ = [split_bezsurf(b,atol=atol) for b=split_bezsurf₁(bezpts)] |> flatten |> collect
         return sum([two₋intersects_area₋volume(b,quantity,atol=atol) for b=bezptsᵤ])
     end
@@ -789,7 +790,7 @@ function two₋intersects_area₋volume(bezpts::AbstractMatrix{<:Real},
     elseif quantity == "volume"
         coeffsᵣ = sub₋coeffs(bezpts,bezptsᵣ)
         #areaₒᵣvolumeᵣ = simplex_size(bezptsᵣ)*mean(coeffsᵣ)*analytic_volume(coeffsᵣ,bezwtsᵣ[2],atol=atol)
-        areaₒᵣvolumeᵣ = simplex_size(bezptsᵣ)*analytic_volume(coeffsᵣ,bezwtsᵣ[2],atol=atol)
+        areaₒᵣvolumeᵣ = simplex_size(bezptsᵣ)*analytic_volume(coeffsᵣ,bezwtsᵣ[2])
     else
         throw(ArgumentError("The quantity calculated is either \"area\" or \"volume\"."))
     end
@@ -798,7 +799,7 @@ function two₋intersects_area₋volume(bezpts::AbstractMatrix{<:Real},
     inside = false
     # Get exception when corners of triangleₑ all lie on a straight line.
     try
-        inside = insimplex(carttobary(ptᵣ,triangleₑ),atol=atol)
+        inside = insimplex(carttobary(ptᵣ,triangleₑ))
     catch SingularException
         nothing
     end
@@ -959,7 +960,8 @@ get_intercoeffs(index,mesh,ext_mesh,sym₋unique,eigenvals,simplicesᵢ)
 """
 function get_intercoeffs(index::Int,mesh::PyObject,ext_mesh::PyObject,
         sym₋unique::AbstractVector{<:Real},eigenvals::AbstractMatrix{<:Real},
-        simplicesᵢ::Vector{Vector{Int64}},fatten::Real=1)::Vector{Matrix{Float64}}
+        simplicesᵢ::Vector{Vector{Int64}},fatten::Real=1;
+        sigma::Int=0)::Vector{Matrix{Float64}}
 
     simplexᵢ = simplicesᵢ[index]
     simplex = Matrix(mesh.points[simplexᵢ,:]')
@@ -995,11 +997,21 @@ function get_intercoeffs(index::Int,mesh::PyObject,ext_mesh::PyObject,
     
     # W=I
 
-     
-    inter_bezcoeffs = [zeros(2,size(eigenvals,1)) for i=1:size(eigenvals,1)]
+    if sigma == 0
+        inter_bezcoeffs = [zeros(2,size(eigenvals,1)) for i=1:size(eigenvals,1)]
+    else
+        inter_bezcoeffs = [zeros(2,size(eigenvals,1)) for i=1:1]
+    end
+
     for sheet = 1:size(eigenvals,1)
-        fᵢ = eigenvals[sheet,sym₋unique[neighborsᵢ]]
-        q = eigenvals[sheet,sym₋unique[simplexᵢ]]
+        if sigma == 0
+            fᵢ = eigenvals[sheet,sym₋unique[neighborsᵢ]]
+            q = eigenvals[sheet,sym₋unique[simplexᵢ]]
+        else
+            fᵢ = [sum(eigenvals[1:sigma,sym₋unique[neighborsᵢ]],dims=1)...]
+            q = [sum(eigenvals[1:sigma,sym₋unique[simplexᵢ]],dims=1)...]
+        end
+
         Z = fᵢ - (b.^2)'*q
         # Z = fᵢ - Zm*q
 
@@ -1022,7 +1034,12 @@ function get_intercoeffs(index::Int,mesh::PyObject,ext_mesh::PyObject,
 
         c1,c2,c3 = c
         intercoeffs = reduce(hcat,[[q1,q1],c1,[q2,q2],c2,c3,[q3,q3]])
-        inter_bezcoeffs[sheet] = intercoeffs
+        if sigma == 0
+            inter_bezcoeffs[sheet] = intercoeffs
+        else
+            inter_bezcoeffs[1] = intercoeffs
+            break
+        end
     end
 
     Vector{Matrix{Float64}}(inter_bezcoeffs)
@@ -1069,6 +1086,7 @@ function calc₋fl(epm::Union{epm₋model,epm₋model2D},ebs::bandstructure;
         iters += 1
         if iters > maxiters
             @warn "Failed to converge the Fermi area to within the provided tolerance of $(ebs.fermiarea_eps) after $(maxiters) iterations. Fermi area converged within $(f)."
+            @show E
             break
         end
         f = sum([quad_area₋volume([simplex_pts[tri]; [cfun(ebs.mesh_intcoeffs[tri][sheet],dims=1)...]' .- E],"area") for tri=1:length(ebs.simplicesᵢ) for sheet=1:epm.sheets]) - fermi_area 
@@ -1134,75 +1152,98 @@ function calc_flbe!(epm::Union{epm₋model2D,epm₋model},ebs::bandstructure)
     window = [minimum(ebs.eigenvals[1:maxsheet+2,5:end]),
         maximum(ebs.eigenvals[1:maxsheet+2,5:end])]
      
-    if ebs.fermilevel_interval == [0,0]
-        maxsheet = round(Int,epm.electrons/2)
-        window = [minimum(ebs.eigenvals[1:maxsheet+2,5:end]),
-            maximum(ebs.eigenvals[1:maxsheet+2,5:end])]
-    else
-        window = ebs.fermilevel_interval
-    end
+    # if ebs.fermilevel_interval == [0,0]
+    #     maxsheet = round(Int,epm.electrons/2)
+    #     window = [minimum(ebs.eigenvals[1:maxsheet+2,5:end]),
+    #         maximum(ebs.eigenvals[1:maxsheet+2,5:end])]
+    # else
+    #     window = ebs.fermilevel_interval
+    # end
 
     simplex_bpts = sample_simplex(2,2)
+    simplices = [Matrix(ebs.mesh.points[s,:]') for s=ebs.simplicesᵢ]
+    simplex_pts = [barytocart(simplex_bpts,s) for s=simplices]
     fl = calc₋fl(epm,ebs,window=nothing,fermi_area=epm.fermiarea,ctype="mean")
     fl₁ = calc₋fl(epm,ebs,window=nothing,fermi_area=epm.fermiarea,ctype = "max")
     fl₀ = calc₋fl(epm,ebs,window=nothing,fermi_area=epm.fermiarea,ctype = "min")
-    simplices = [Matrix(ebs.mesh.points[s,:]') for s=ebs.simplicesᵢ]
-    simplex_pts = [barytocart(simplex_bpts,s) for s=simplices]
-
-    # f = sum([quad_area₋volume([simplex_pts[tri]; [cfun(ebs.mesh_intcoeffs[tri][sheet],dims=1)...]' .- E],"area") for tri=1:length(ebs.simplicesᵢ) for sheet=1:epm.sheets]) - fermi_area 
 
     mesh_fa₁ = [[quad_area₋volume([simplex_pts[tri]; (ebs.mesh_intcoeffs[tri][sheet][1,:] .- fl₁)']
                     ,"area") for sheet=1:epm.sheets] for tri=1:length(ebs.simplicesᵢ)]
-    mesh_be₁ = [[quad_area₋volume([simplex_pts[tri]; (ebs.mesh_intcoeffs[tri][sheet][1,:] .- fl₁)']
-                    ,"volume") for sheet=1:epm.sheets] for tri=1:length(ebs.simplicesᵢ)]
     mesh_fa₀ = [[quad_area₋volume([simplex_pts[tri]; (ebs.mesh_intcoeffs[tri][sheet][2,:] .- fl₀)']
                     ,"area") for sheet=1:epm.sheets] for tri=1:length(ebs.simplicesᵢ)]
-    mesh_be₀ = [[quad_area₋volume([simplex_pts[tri]; (ebs.mesh_intcoeffs[tri][sheet][2,:] .- fl₀)']
-                    ,"volume") for sheet=1:epm.sheets] for tri=1:length(ebs.simplicesᵢ)]
 
-    fa₀,fa₁,be₀,be₁ = sum(sum(mesh_fa₀)),sum(sum(mesh_fa₁)),sum(sum(mesh_be₀)),sum(sum(mesh_be₁))
-    @show fa₀,fa₁,fl₀,fl₁,be₀,be₁
+    fa₀,fa₁ = sum(sum(mesh_fa₀)),sum(sum(mesh_fa₁))
+    @show fa₀,fa₁,fl₀,fl₁
     be = sum([quad_area₋volume([simplex_pts[tri]; [mean(ebs.mesh_intcoeffs[tri][sheet],dims=1)...]' .- fl]
                     ,"volume") for tri=1:length(ebs.simplicesᵢ) for sheet=1:epm.sheets])
 
     mesh_fa₋errs = mesh_fa₁ .- mesh_fa₀
-    mesh_be₋errs = mesh_be₁ .- mesh_be₀
-    
+     
     # Determine which triangles and sheets are partially occupied.
     partial_occ = [[(
-        isapprox(mesh_fa₁[tri][sheet],simplex_size(simplices[1]),atol=ebs.atol,rtol=ebs.rtol) ||
-        isapprox(mesh_fa₀[tri][sheet],simplex_size(simplices[1]),atol=ebs.atol,rtol=ebs.rtol) ||
-        isapprox(mesh_fa₁[tri][sheet],0,atol=ebs.atol) ||
-        isapprox(mesh_fa₀[tri][sheet],0,atol=ebs.atol)) ? 0 : 1
-        for sheet=1:epm.sheets] for tri = 1:length(ebs.simplicesᵢ)]
-    # @show partial_occ
-
-    # Calculate the band energy errors. Take the absolute value of errors of sheets
-    # that are parially occupied and sum the errors of sheets are are occupied or unoccupied
-    simplices_be₋errs = zeros(length(ebs.simplicesᵢ))
-    for tri = 1:length(ebs.simplicesᵢ)
-        for sheet = 1:epm.sheets
-            if partial_occ[tri][sheet] == 0
-                simplices_be₋errs[tri] += mesh_be₋errs[tri][sheet]
-            else
-                simplices_be₋errs[tri] += abs(mesh_be₋errs[tri][sheet])
-            end
+        if (isapprox(mesh_fa₁[tri][sheet],0,atol=ebs.atol) &&
+            isapprox(mesh_fa₀[tri][sheet],0,atol=ebs.atol))
+            2
+        elseif isapprox(mesh_fa₋errs[tri][sheet],0,atol=ebs.atol)
+            0
+        else
+            1
         end
-    end
+    ) for sheet=1:epm.sheets] for tri = 1:length(ebs.simplicesᵢ)]
+
+    sigmas = [findlast(x->x==0,partial_occ[i]) for i=1:length(partial_occ)]
+    partials = [findall(x->x==1,partial_occ[i]) for i=1:length(partial_occ)]
+
+    sigma_coeffs = [
+        (if sigmas[i] == nothing
+            zeros(2,6)
+        else
+            get_intercoeffs(i,ebs.mesh,ebs.ext_mesh,ebs.sym₋unique,ebs.eigenvals,ebs.simplicesᵢ,ebs.fatten,sigma=sigmas[i]) 
+        end) for i=1:length(ebs.simplicesᵢ)]
+
+    sigma_be₀ = [(
+        if sigmas[i] == nothing
+            0
+        else
+            simplex_size(simplices[i])*mean(sigma_coeffs[i][1][1,:] .- sigmas[i]*fl)
+        end) for i=1:length(sigma_coeffs)]
+    sigma_be₁ = [(
+        if sigmas[i] == nothing
+            0
+        else
+            simplex_size(simplices[i])*mean(sigma_coeffs[i][1][2,:] .- sigmas[i]*fl)
+        end) for i=1:length(sigma_coeffs)]
+    
+    sigma_be_errs = abs.(sigma_be₁ - sigma_be₀)
+    
+    partial_be₀ = [[quad_area₋volume([simplex_pts[tri]; (ebs.mesh_intcoeffs[tri][sheet][1,:] .- fl₁)']
+                    ,"volume") for sheet=partials[tri]] for tri=1:length(ebs.simplicesᵢ)]
+    partial_be₁ = [[quad_area₋volume([simplex_pts[tri]; (ebs.mesh_intcoeffs[tri][sheet][2,:] .- fl₀)']
+                    ,"volume") for sheet=partials[tri]] for tri=1:length(ebs.simplicesᵢ)]
+    part_be_errs = [(
+        if partial_be₁[i] == []
+            0
+        else
+            sum(abs.(partial_be₁[i] - partial_be₀[i]))
+        end) for i=1:length(partial_be₀)]
+    
+    simplices_be₋errs = abs.(sigma_be_errs + part_be_errs)
+    
+    spg = length(epm.pointgroup)
+    be₀ = 2*spg*(sum(sigma_be₀) + sum(reduce(vcat,partial_be₀)) + fl₁*epm.fermiarea)
+    be₁ = 2*spg*(sum(sigma_be₁) + sum(reduce(vcat,partial_be₁)) + fl₀*epm.fermiarea)
     
     spg = length(epm.pointgroup)
     ebs.bandenergy_errors = 2*spg.*abs.(simplices_be₋errs)
     ebs.fermiarea_errors = spg.*sum(mesh_fa₋errs)
     ebs.fermilevel_interval = [fl₀,fl₁]
     ebs.fermiarea_interval = spg.*[fa₀,fa₁]
-    ebs.bandenergy_interval = 2*spg.*([sum(sum(mesh_be₀)) + fl₁*epm.fermiarea,
-         sum(sum(mesh_be₁)) + fl₀*epm.fermiarea])
+    ebs.bandenergy_interval = [be₀,be₁]
     ebs.partially_occupied = partial_occ
     ebs.bandenergy = 2*spg*(be + fl*epm.fermiarea)
     ebs.fermilevel = fl
     ebs
 end
-
 
 @doc """
     refine_mesh!(epm,ebs)
@@ -1239,7 +1280,7 @@ function refine_mesh!(epm::Union{epm₋model2D,epm₋model},ebs::bandstructure)
     end
 
     # A single point at the center of the triangle
-    if ebs.refine_method == 3
+    if ebs.refine_method == 3 || ebs.sample_method == 3
         new_meshpts = reduce(hcat,[sample_type[i] == 1 ? 
         barytocart([1/3,1/3,1/3],simplices[splitpos[i]]) :
         barytocart([0 1/2 1/2; 1/2 0 1/2; 1/2 1/2 0],simplices[splitpos[i]])

@@ -124,7 +124,7 @@ function contourplot(bezpts::AbstractMatrix{<:Real},
         pts = barytocart(bpts,simplex)
         vals = eval_poly(bpts,coeffs,dim,deg)
         if filled
-            ax.tricontourf(pts[1,:],pts[2,:],vals,[0],[0],colors=["black","white"],
+            ax.tricontourf(pts[1,:],pts[2,:],vals,[-1e19,0],colors=["black","white"],
                 alpha=0.5)
         else
             ax.tricontour(pts[1,:],pts[2,:],vals,[0],[0],colors=["red"])

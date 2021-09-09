@@ -169,7 +169,7 @@ insimplex(bpt)
 true
 ```
 """
-function insimplex(bpt::AbstractVector{<:Real};atol::Real=1e-9)
+function insimplex(bpt::AbstractVector{<:Real};atol::Real=1e-12)
     (isapprox(maximum(bpt),1,atol=atol) || maximum(bpt) < 1) &&
     (isapprox(minimum(bpt),0,atol=atol) || minimum(bpt) > 0) &&
     isapprox(sum(bpt),1,atol=atol)
