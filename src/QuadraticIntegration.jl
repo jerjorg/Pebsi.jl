@@ -379,7 +379,7 @@ function simplex_intersects(bezpts::AbstractMatrix{<:Real};
     intersects = Array{Array,1}([[],[],[]])
     for i=1:3
         edge_bezpts = bezpts[:,edge_indices[i]]
-        edge_ints = bezcurve_intersects(edge_bezpts[end,:];atol=1e-10)
+        edge_ints = bezcurve_intersects(edge_bezpts[end,:];atol=atol)
         # edge_ints = edge_intersects(edge_bezpts,atol=atol)
         if edge_ints != []
             intersects[i] = reduce(hcat,[edge_bezpts[1:2,1] .+ 
@@ -1086,7 +1086,6 @@ function calc₋fl(epm::Union{epm₋model,epm₋model2D},ebs::bandstructure;
         iters += 1
         if iters > maxiters
             @warn "Failed to converge the Fermi area to within the provided tolerance of $(ebs.fermiarea_eps) after $(maxiters) iterations. Fermi area converged within $(f)."
-            @show E
             break
         end
         f = sum([quad_area₋volume([simplex_pts[tri]; [cfun(ebs.mesh_intcoeffs[tri][sheet],dims=1)...]' .- E],"area") for tri=1:length(ebs.simplicesᵢ) for sheet=1:epm.sheets]) - fermi_area 

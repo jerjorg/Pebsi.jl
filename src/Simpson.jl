@@ -95,9 +95,9 @@ function bezcurve_intersects(bezcoeffs::AbstractVector{<:Real};atol::Real=1e-12)
     # Case 4: [0,b,c]
     if isapprox(a,0,atol=0)
         if isapprox(2*b,c,atol=atol)
-            return []
+            return [0]
         else
-            solutions = [2*b/(2*b-c)]
+            solutions = [0,2*b/(2*b-c)]
             solutions = filter(t -> (t > 0 || isapprox(t,0,atol=atol)) 
                 && (t < 1 && !isapprox(t,1,atol=atol)), solutions)
             return solutions
@@ -127,9 +127,7 @@ function bezcurve_intersects(bezcoeffs::AbstractVector{<:Real};atol::Real=1e-12)
             && (t < 1 && !isapprox(t,1,atol=atol)), solutions)
         return solutions
     elseif isapprox(b^2 - a*c,0,atol=atol)
-        solutions = [(a - b)/(a - 2*b + c)]
-        solutions = filter(t -> (t > 0 || isapprox(t,0,atol=atol)) 
-            && (t < 1 && !isapprox(t,1,atol=atol)), solutions)
+        solutions = []
         return solutions
     elseif !isapprox(b^2 - a*c,0,atol=atol) && b^2 - a*c < 0
         return []
