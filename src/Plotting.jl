@@ -1,13 +1,14 @@
 module Plotting
 
-using PyPlot: subplots, figure, PyObject, figaspect, plt
+using PyPlot: subplots, figure, PyObject, figaspect, plt, pyimport
+
 using QHull: chull
 
 using ..QuadraticIntegration: bandstructure
 using ..EPMs: epm₋model2D
 using ..RectangularMethod: sample_unitcell
 using ..Polynomials: eval_poly,sample_simplex,eval_bezcurve
-using ..Geometry: carttobary,barytocart
+using ..Geometry: carttobary,barytocart,simplex_size
 
 using SymmetryReduceBZ.Plotting: plot_2Dconvexhull
 
@@ -91,17 +92,15 @@ Plot the level curves of a polynomial surface.
 """
 function contourplot(bezpts::AbstractMatrix{<:Real},
     ax::Union{PyObject,Nothing}=nothing; filled::Bool=false,
-    padded::Bool=true)::PyObject
-
+    padded::Bool=true,ndivs::Integer=100)::PyObject
     dim = 2
     deg = 2
-    ndivs = 100
     # Plot triangle
     coeffs = bezpts[3,:]
     simplex = bezpts[1:2,[1,3,6]]
     if ax == nothing; (fig,ax)=subplots() end
     shull = chull(Array(simplex'))
-    ax=plot_2Dconvexhull(shull,ax,facecolor="None")
+    # ax=plot_2Dconvexhull(shull,ax,facecolor="None")
     if padded
         N = [ndivs 0; 0 ndivs]
         basis = [simplex[:,2] - simplex[:,1] simplex[:,3] - simplex[:,1]]
@@ -133,25 +132,57 @@ function contourplot(bezpts::AbstractMatrix{<:Real},
     ax
 end
 
-function contourplot(epm::epm₋model2D,ebs::bandstructure,ax::Union{PyObject,Nothing}=nothing)
-    bpts = sample_simplex(2,2,)
+# function contourplot(epm::epm₋model2D,ebs::bandstructure,ax::Union{PyObject,Nothing}=nothing)
+#     bpts = sample_simplex(2,2)
 
-    if ax == nothing
-        (fig,ax) = subplots()
-    end
+#     if ax == nothing
+#         (fig,ax) = subplots()
+#     end
     
-    for i=1:length(ebs.simplicesᵢ)
-        for j=1:epm.sheets
-            bezpts = [barytocart(bpts,ebs.mesh.points[ebs.simplicesᵢ[i],:]'); 
-                mean(ebs.mesh_intcoeffs[i][j],dims=1) .- ebs.fermilevel]
-            ax = contourplot(bezpts,ax,padded=false)
-        end
-    end
-    ax=meshplot(epm,ebs,ax)
-    ax = meshplot(ebs.mesh.points[5:end,:]',ax)
+#     for i=1:length(ebs.simplicesᵢ)
+#         for j=1:epm.sheets
+#             bezpts = [barytocart(bpts,ebs.mesh.points[ebs.simplicesᵢ[i],:]'); 
+#                 mean(ebs.mesh_intcoeffs[i][j],dims=1) .- ebs.fermilevel]
+#             ax = contourplot(bezpts,ax,padded=false)
+#         end
+#     end
+#     ax=meshplot(epm,ebs,ax)
+#     ax = meshplot(ebs.mesh.points[5:end,:]',ax)
 
+#     ax
+# end
+
+function contourplot(ebs::bandstructure,ax::Union{PyObject,Nothing}=nothing;
+    linewidth::Real=1,alpha::Integer=1,ndiv::Integer=100)
+
+    patch=pyimport("matplotlib.patches")
+    collections=pyimport("matplotlib.collections")
+
+    bpts = sample_simplex(2,2);
+    tripts = [Array(ebs.mesh.points[i,:]') for i=ebs.simplicesᵢ];
+
+    if ax == nothing fig,ax=subplots() end
+    for t=tripts
+        ax = plot_polygon(t,ax,facecolor="none",linewidth=1,alpha=1)
+    end
+
+    pocc = [findall(x->x==1,b) for b=ebs.partially_occupied]
+    indices = reduce(vcat,
+        filter(x->!(x==nothing),
+            [pocc[i] == [] ? nothing : [[i,j] for j=pocc[i]] for i=1:length(pocc)]));
+
+    sizes = [simplex_size(t) for t=tripts]
+    ρ = ndiv/maximum(sizes)
+    ndivs = round.(Int,ρ*sizes)
+
+    for i=indices
+        bezpts = [barytocart(bpts,ebs.mesh.points[ebs.simplicesᵢ[i[1]],:]'); 
+            mean(ebs.mesh_intcoeffs[i[1]][i[2]],dims=1) .- ebs.fermilevel]
+        ax = contourplot(bezpts,ax,padded=false,ndivs=ndivs[i[1]])
+    end
     ax
 end
+
 
 """
     bezplot(bezpts)
@@ -209,6 +240,44 @@ function bezcurve_plot(bezptsᵣ::AbstractMatrix{<:Real},
     data = eval_bezcurve(collect(0:1/1000:1),bezptsᵣ,bezwtsᵣ)
     ax = meshplot(bezptsᵣ,ax)
     ax.plot(data[1,:],data[2,:],color="blue")
+    ax
+end
+
+@doc """
+    plot_polygon(pts, ax, color)
+
+Plot a 2D convex hull
+
+# Arguments
+- `pts::Matrix{<:Real}`: cartesian coordinates of a convex polygon as columns of an array.
+- `ax::PyObject`: an axes object from matplotlib.
+- `facecolor::String="blue"`: the color of the area within the convex hull.
+- `alpha::Real=0.3`: the transparency of the convex hull.
+- `linewidth::Real=3`: the width of the edges.
+- `edgecolor::String="black"`: the color of the edges.
+
+# Returns
+- `ax::PyObject`: updated `ax` that includes a plot of the convex polygon.
+```
+"""
+function plot_polygon(pts::Matrix{<:Real},
+    ax::Union{PyObject,Nothing}=nothing;facecolor::String="blue",
+    alpha::Real=0.3,linewidth::Real=3,edgecolor::String="black")::PyObject
+
+    c=[sum(pts[i,:])/size(pts,2) for i=1:2]
+    angles=zeros(size(pts,2))
+    for i=1:size(pts,2)
+        (x,y)=pts[:,i] - c
+        angles[i] = atan(y,x)
+    end
+    perm = sortperm(angles)
+    bzpts = pts[:,perm]
+    (x,y)=[pts[i,:] for i=1:2]
+
+    if ax == nothing fig,ax = subplots() end
+    ax.fill(x,y, facecolor=facecolor,edgecolor=edgecolor,
+        linewidth=linewidth,alpha=alpha)
+    ax.set_aspect(1)
     ax
 end
 

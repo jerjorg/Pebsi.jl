@@ -705,7 +705,27 @@ function two₋intersects_area₋volume(bezpts::AbstractMatrix{<:Real},
     triangle = bezpts[1:2,corner_indices]
     coeffs = bezpts[end,:]
     intersects = simplex_intersects(bezpts,atol=atol)
-    bezptsᵣ = [0;0]
+
+    # No intersections
+    if intersects == [[],[],[]]
+        # Case where the sheet is completely above or below 0.    
+        if all(bezpts[end,:] .< 0) && !all(isapprox.(bezpts[end,:],0))
+            if quantity == "area"
+                areaₒᵣvolume = simplex_size(triangle)
+            elseif quantity == "volume"
+                areaₒᵣvolume = mean(coeffs)*simplex_size(triangle)
+            else
+                throw(ArgumentError("The quantity calculated is either \"area\" or \"volume\"."))
+            end
+            return areaₒᵣvolume
+        end
+        if all(bezpts[end,:] .> 0) && !all(isapprox.(bezpts[end,:],0))
+            areaₒᵣvolume = 0
+            return areaₒᵣvolume
+        end
+    end
+
+    bezptsᵣ = []
     if intersects != [[],[],[]]
         all_intersects = reduce(hcat,[i for i=intersects if i!= []])
         if size(all_intersects,2) != 2
@@ -733,11 +753,24 @@ function two₋intersects_area₋volume(bezpts::AbstractMatrix{<:Real},
     # is within the triangle.
     cstype = conicsection(bezpts[end,:]) # using the default tolerance of 1e-12
     linear = any(cstype .== ["line","rectangular hyperbola","parallel lines"])
-    if maximum(abs.(bezptsᵣ)) > 1e6 || (insimplex(saddlepoint(bezpts[end,:],atol=atol)) && !linear)
+
+    split = false
+    if bezptsᵣ != []
+        if maximum(abs.(bezptsᵣ)) > 1e6 
+            split = true
+        end
+    elseif (insimplex(saddlepoint(bezpts[end,:],atol=atol)) && !linear)
+        split = true
+    else
+        nothing
+    end
+
+    if split
         bezptsᵤ = [split_bezsurf(b,atol=atol) for b=split_bezsurf₁(bezpts)] |> flatten |> collect
         return sum([two₋intersects_area₋volume(b,quantity,atol=atol) for b=bezptsᵤ])
     end
-    # No intersections
+
+    # No intersections but some of the coefficients are less or greater than 0.
     if intersects == [[],[],[]]
         if all(bezpts[end,corner_indices] .< 0 .| 
             isapprox.(bezpts[end,corner_indices],0,atol=atol))
@@ -1016,10 +1049,10 @@ function get_intercoeffs(index::Int,mesh::PyObject,ext_mesh::PyObject,
         # Z = fᵢ - Zm*q
 
         # Weighted least squares
-        # c = M\Z
+        c = M\Z
         # c = pinv(M)*Z
         
-        c = inv(M'*W*M)*M'*W*Z
+        # c = inv(M'*W*M)*M'*W*Z
         c1,c2,c3 = c
         q1,q2,q3 = q
 
@@ -1027,10 +1060,12 @@ function get_intercoeffs(index::Int,mesh::PyObject,ext_mesh::PyObject,
         δᵢ = fᵢ - qᵢ;
         ϵ = δᵢ./(2Dᵢ).*M
         ϵ = [minimum(ϵ,dims=1);maximum(ϵ,dims=1)]
+        # @show c
+        # @show ϵ
         # Scale the interval to make errors more accurate.
-        δ = [abs(ϵ[1,i] - ϵ[2,i])*fatten/2 for i=1:3]
-        ϵ = reduce(hcat,[[ϵ[1,i] - δ[i], ϵ[2,i] + δ[i]] for i=1:3])
-        c = [c[i] .+ ϵ[:,i] for i=1:3]
+        # δ = [abs(ϵ[1,i] - ϵ[2,i])*fatten/2 for i=1:3]
+        # ϵ = reduce(hcat,[[ϵ[1,i] - δ[i], ϵ[2,i] + δ[i]] for i=1:3])
+        c = [c[i] .+ ϵ[:,i]*fatten for i=1:3]
 
         c1,c2,c3 = c
         intercoeffs = reduce(hcat,[[q1,q1],c1,[q2,q2],c2,c3,[q3,q3]])
@@ -1068,7 +1103,6 @@ function calc₋fl(epm::Union{epm₋model,epm₋model2D},ebs::bandstructure;
     simplex_pts = [barytocart(simplex_bpts,s) for s=simplices]
     
     ibz_area = epm.ibz.volume
-    # max_sheet = round(Int,epm.electrons/2)
     max_sheet = epm.sheets
 
     if window == nothing
@@ -1081,8 +1115,9 @@ function calc₋fl(epm::Union{epm₋model,epm₋model2D},ebs::bandstructure;
     f₂ = sum([quad_area₋volume([simplex_pts[tri]; [maximum(ebs.mesh_intcoeffs[tri][sheet],dims=1)...]' .- E₂],"area") for tri=1:length(ebs.simplicesᵢ) for sheet=1:epm.sheets]) - fermi_area
 
     E = (E₁ + E₂)/2
-    f₃,E₃,iters,f,maxiters,ϵ = 0,0,0,1e9,50,1e-2
+    f₃,E₃,iters,f,maxiters,ϵ,t = 0,0,0,1e9,50,1e-2,0
     while abs(f) > ebs.fermiarea_eps
+        # @show E₁,E,E₂,f,t
         iters += 1
         if iters > maxiters
             @warn "Failed to converge the Fermi area to within the provided tolerance of $(ebs.fermiarea_eps) after $(maxiters) iterations. Fermi area converged within $(f)."
