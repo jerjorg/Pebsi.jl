@@ -145,13 +145,13 @@ init_bandstructure(m11)
 """
 function init_bandstructure(
     epm::Union{epm₋model,epm₋model2D};
-    init_msize::Int=5,
+    init_msize::Int=4,
     num_neigh::Int=1,
     fermiarea_eps::Real=1e-6,
     target_accuracy::Real=1e-4,
-    fermilevel_method::Int=1,
-    refine_method::Int=1,
-    sample_method::Int=1,
+    fermilevel_method::Int=2,
+    refine_method::Int=3,
+    sample_method::Int=3,
     fatten::Real=1,
     rtol::Real=1e-9,
     atol::Real=1e-9)
@@ -1010,11 +1010,7 @@ function get_intercoeffs(index::Int,mesh::PyObject,ext_mesh::PyObject,
     end
 
     b = carttobary(ext_mesh.points[neighborsᵢ,:]',simplex)
-    # b = reduce(hcat,[carttobary(ext_mesh.points[i,:],simplex) for i=neighborsᵢ])
-    # M = 2*Matrix(reduce(hcat,[[b[1,i]*b[2,i], b[2,i]*b[3,i], b[3,i]*b[1,i]] for i=1:size(b,2)])')
     M = mapslices(x -> 2*[x[1]*x[2],x[1]*x[3],x[2]*x[3]],b,dims=1)'
-    # Zm = Matrix(b').^2
-    # Dᵢ = [sum((M[i,:]/2).^2) for i=1:size(M,1)]
     Dᵢ = mapslices(x -> sum((x/2).^2),M,dims=2)
         
     # Minimum distance from the edges of the triangle.
@@ -1025,9 +1021,9 @@ function get_intercoeffs(index::Int,mesh::PyObject,ext_mesh::PyObject,
     # W = diagm([norm(ext_mesh.points[i,:] - mean(simplex,dims=2)) for i=neighborsᵢ])
     
     # Shortest distance from one of the corners of the triangle.
-    W = diagm([1/minimum([norm(ext_mesh.points[i,:] - simplex[:,j]) for j=1:3])^2 
-        for i=neighborsᵢ])
-    
+    # W = diagm([1/minimum([norm(ext_mesh.points[i,:] - simplex[:,j]) for j=1:3])^2 
+    #     for i=neighborsᵢ])
+   
     # W=I
 
     if sigma == 0
@@ -1044,27 +1040,21 @@ function get_intercoeffs(index::Int,mesh::PyObject,ext_mesh::PyObject,
             fᵢ = [sum(eigenvals[1:sigma,sym₋unique[neighborsᵢ]],dims=1)...]
             q = [sum(eigenvals[1:sigma,sym₋unique[simplexᵢ]],dims=1)...]
         end
-
         Z = fᵢ - (b.^2)'*q
-        # Z = fᵢ - Zm*q
 
         # Weighted least squares
         c = M\Z
-        # c = pinv(M)*Z
-        
+        # c = pinv(M)*Z        
         # c = inv(M'*W*M)*M'*W*Z
+
         c1,c2,c3 = c
         q1,q2,q3 = q
-
         qᵢ = [eval_poly(b[:,i],[q1,c1,q2,c2,c3,q3],2,2) for i=1:size(b,2)]
         δᵢ = fᵢ - qᵢ;
         ϵ = δᵢ./(2Dᵢ).*M
         ϵ = [minimum(ϵ,dims=1);maximum(ϵ,dims=1)]
-        # @show c
-        # @show ϵ
+
         # Scale the interval to make errors more accurate.
-        # δ = [abs(ϵ[1,i] - ϵ[2,i])*fatten/2 for i=1:3]
-        # ϵ = reduce(hcat,[[ϵ[1,i] - δ[i], ϵ[2,i] + δ[i]] for i=1:3])
         c = [c[i] .+ ϵ[:,i]*fatten for i=1:3]
 
         c1,c2,c3 = c
@@ -1117,7 +1107,6 @@ function calc₋fl(epm::Union{epm₋model,epm₋model2D},ebs::bandstructure;
     E = (E₁ + E₂)/2
     f₃,E₃,iters,f,maxiters,ϵ,t = 0,0,0,1e9,50,1e-2,0
     while abs(f) > ebs.fermiarea_eps
-        # @show E₁,E,E₂,f,t
         iters += 1
         if iters > maxiters
             @warn "Failed to converge the Fermi area to within the provided tolerance of $(ebs.fermiarea_eps) after $(maxiters) iterations. Fermi area converged within $(f)."
@@ -1207,7 +1196,6 @@ function calc_flbe!(epm::Union{epm₋model2D,epm₋model},ebs::bandstructure)
                     ,"area") for sheet=1:epm.sheets] for tri=1:length(ebs.simplicesᵢ)]
 
     fa₀,fa₁ = sum(sum(mesh_fa₀)),sum(sum(mesh_fa₁))
-    @show fa₀,fa₁,fl₀,fl₁
     be = sum([quad_area₋volume([simplex_pts[tri]; [mean(ebs.mesh_intcoeffs[tri][sheet],dims=1)...]' .- fl]
                     ,"volume") for tri=1:length(ebs.simplicesᵢ) for sheet=1:epm.sheets])
 
@@ -1289,41 +1277,37 @@ function refine_mesh!(epm::Union{epm₋model2D,epm₋model},ebs::bandstructure)
      
     spatial = pyimport("scipy.spatial")
     simplices = [Matrix(ebs.mesh.points[s,:]') for s=ebs.simplicesᵢ]
-      
+
+    err_cutoff = [simplex_size(s)/epm.ibz.volume for s=simplices]*ebs.target_accuracy
+
     # Refine the tile with the most error
     if ebs.refine_method == 1
         splitpos = [sortperm(ebs.bandenergy_errors)[end]]
     # Refine the tiles with too much error (given the tiles' sizes).
     elseif ebs.refine_method == 2
-        err_cutoff = [simplex_size(s)/epm.ibz.volume for s=simplices]*ebs.target_accuracy
         splitpos = filter(x -> x>0,[ebs.bandenergy_errors[i] > err_cutoff[i] ? i : 0 for i=1:length(err_cutoff)])
-    elseif ebs.refine_method == 3
-        err_cutoff = [simplex_size(s)/epm.ibz.volume for s=simplices]*ebs.target_accuracy
-        splitpos = filter(x -> x>0,[ebs.bandenergy_errors[i] > err_cutoff[i] ? i : 0 for i=1:length(err_cutoff)])
-        # If the error is 2x greater than the tolerance, split edges. Otherwise,
-        # sample at the center of the triangle.
-        sample_type = [ebs.bandenergy_errors[i] > 2*err_cutoff[i] ? 2 : 1 for i=splitpos]
     else
         ArgumentError("The refinement method has to be and integer and 1, 2 or 3.")
     end
     frac_split = length(splitpos)/length(ebs.bandenergy_errors)
-    @show frac_split
-
     if splitpos == []
         return ebs
     end
 
     # A single point at the center of the triangle
-    if ebs.refine_method == 3 || ebs.sample_method == 3
-        new_meshpts = reduce(hcat,[sample_type[i] == 1 ? 
-        barytocart([1/3,1/3,1/3],simplices[splitpos[i]]) :
-        barytocart([0 1/2 1/2; 1/2 0 1/2; 1/2 1/2 0],simplices[splitpos[i]])
-        for i=1:length(splitpos)])
-    elseif ebs.sample_method == 1
+    if ebs.sample_method == 1
         new_meshpts = reduce(hcat,[barytocart([1/3,1/3,1/3],s) for s=simplices[splitpos]])
     # Point at the midpoints of all edges of the triangle
     elseif ebs.sample_method == 2
         new_meshpts = reduce(hcat,[barytocart([0 1/2 1/2; 1/2 0 1/2; 1/2 1/2 0],s) for s=simplices[splitpos]])
+    # If the error is 2x greater than the tolerance, split edges. Otherwise,
+    # sample at the center of the triangle.
+    elseif ebs.sample_method == 3
+        sample_type = [ebs.bandenergy_errors[i] > 2*err_cutoff[i] ? 2 : 1 for i=splitpos]
+        new_meshpts = reduce(hcat,[sample_type[i] == 1 ? 
+        barytocart([1/3,1/3,1/3],simplices[splitpos[i]]) :
+        barytocart([0 1/2 1/2; 1/2 0 1/2; 1/2 1/2 0],simplices[splitpos[i]])
+        for i=1:length(splitpos)])
     else
         ArgumentError("The sample method for refinement has to be an integer with a value of 1 or 2.")
     end
@@ -1408,9 +1392,10 @@ end
 Calculate the band energy using uniform or adaptive quadratic integation.
 """
 function quadratic_method!(epm::Union{epm₋model2D,epm₋model};
-    init_msize::Int=5, num_neigh::Int=1, fermiarea_eps::Real=1e-10,
-    target_accuracy::Real=1e-4, fermilevel_method::Int=2, refine_method::Int=3,
-    sample_method::Int=2, fatten::Real=-1, rtol::Real=1e-10, atol::Real=1e-10,uniform::Bool=true)::bandstructure
+    init_msize::Int=4, num_neigh::Int=1, fermiarea_eps::Real=1e-10,
+    target_accuracy::Real=1e-4, fermilevel_method::Int=2, refine_method::Int=2,
+    sample_method::Int=3, fatten::Real=1, rtol::Real=1e-10, atol::Real=1e-10,
+    uniform::Bool=false)::bandstructure
 
     ebs = init_bandstructure(epm,init_msize=init_msize, num_neigh=num_neigh,
         fermiarea_eps=fermiarea_eps, target_accuracy=target_accuracy, 
@@ -1425,8 +1410,8 @@ function quadratic_method!(epm::Union{epm₋model2D,epm₋model};
         counter += 1
         refine_mesh!(epm,ebs)
         calc_flbe!(epm,ebs)
-        if counter > 20
-            @warn "Failed to calculate the band energy to within the desired accuracy $(ebs.target_accuracy) after 50 iterations."
+        if counter > 100
+            @warn "Failed to calculate the band energy to within the desired accuracy $(ebs.target_accuracy) after 100 iterations."
             break
         end
     end
