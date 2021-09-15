@@ -455,9 +455,12 @@ m1real_latvecs = [1 0; 0 1]
 m1recip_latvecs = get_recip_latvecs(m1real_latvecs,convention)
 m1dist_ff = [[1.00,2.00],[-0.23,0.12]]
 m1rules = [1.00 => -0.23, 2.00 => 0.12]
-m1electrons1 = 6
 
-m1cutoff = 6.1
+# Cutoffs chosen so the mean deviation of the eigenvalues of 5 consecutive 
+# expansions was around 1e-12 for a sparse mesh over the IBZ (about 30-40 
+# points in the mesh).
+m1cutoff = 7.1
+m1electrons1 = 6
 m1fermiarea1 = m1electrons1/2*m1ibz.volume
 m1fermilevel1 = 0.9381315758593213
 m1bandenergy1 = 2.0847026416334566
@@ -480,7 +483,7 @@ m2real_latvecs = get_recip_latvecs(m2recip_latvecs,convention)
     coordinates)
 m2dist_ff = [[1.00,3.00,4.00],[0.39,0.23,-0.11]]
 m2rules = [1.0 => 0.39, 3.00 => 0.23, 4.00 => -0.11]
-m2cutoff = 5.9
+m2cutoff = 8.6
 
 m2electrons1 = 5
 m2fermiarea1 = m2electrons1/2*m2ibz.volume
@@ -505,7 +508,7 @@ m3real_latvecs = get_recip_latvecs(m3recip_latvecs,convention)
     coordinates)
 m3dist_ff = [[1.00,1.13,2.87],[-0.27,0.2,-0.33]]
 m3rules = [1.0 => -0.27, 1.13 => 0.2, 2.87 => -0.33]
-m3cutoff = 5.95
+m3cutoff = 8.3
 
 m3electrons1 = 5
 m3fermiarea1 = m3electrons1/2*m3ibz.volume
@@ -530,7 +533,7 @@ m4real_latvecs = get_recip_latvecs(m4recip_latvecs,convention)
     coordinates)
 m4dist_ff = [[1.00,4.00,5.00],[0.39,-0.11,0.11]]
 m4rules = [1.0 => 0.39, 4.00 => -0.11, 5.00 => 0.11]
-m4cutoff = 8.6
+m4cutoff = 10.2
 
 m4electrons1 = 6
 m4fermiarea1 = m4electrons1/2*m4ibz.volume
@@ -555,7 +558,7 @@ m5real_latvecs = get_recip_latvecs(m5recip_latvecs,convention)
     coordinates)
 m5dist_ff = [[1.0,1.24,1.44],[0.42,0.02,-0.18]]
 m5rules = [1.0 => 0.42, 1.24 => 0.02, 1.44 => -0.18]
-m5cutoff = 6.3
+m5cutoff = 11.0
 
 m5electrons1 = 5
 m5fermiarea1 = m5electrons1/2*m5ibz.volume
@@ -731,7 +734,7 @@ eval_epm(kpoint, rlatvecs, rules, cutoff, sheets)
 ```
 """
 function eval_epm(kpoint::AbstractVector{<:Real},
-    rbasis::AbstractMatrix{<:Real}, rules::Dict{Float64,Float64}, cutoff::Real,
+    rbasis::AbstractMatrix{<:Real}, rules, cutoff::Real,
     sheets::Int,energy_conversion_factor::Real=RytoeV;
     rtol::Real=sqrt(eps(float(maximum(rbasis)))),
     atol::Real=1e-9,
@@ -754,21 +757,6 @@ function eval_epm(kpoint::AbstractVector{<:Real},
         error("The cutoff is too small for the requested number of sheets. The"*
             " number of terms in the expansion is $npts.")
     end
-    # ham=zeros(Float64,npts,npts)
-    # dist = 0.0
-    # for i=1:npts, j=i:npts
-    #     if i==j
-    #         # ham[i,j] = norm(kpoint + rlatpts[:,i])^2
-    #         ham[i,j] = dot(kpoint + rlatpts[:,i],kpoint + rlatpts[:,i])
-    #     else
-    #         dist = round(norm(rlatpts[:,i] - rlatpts[:,j]),digits=2)
-    #         if haskey(rules,dist)
-    #             ham[i,j] = rules[dist]
-    #         end
-    #     end
-    # end
-
-    # eigvals(Symmetric(ham))[1:sheets]*energy_conversion_factor
 
     ham=zeros(Float64,npts,npts)
     rules = rules
@@ -804,7 +792,7 @@ Evaluate an empirical pseudopotential at each point in an array.
     array.
 """
 function eval_epm(kpoints::AbstractMatrix{<:Real},
-    rbasis::AbstractMatrix{<:Real}, rules::Dict{Float64,Float64}, cutoff::Real,
+    rbasis::AbstractMatrix{<:Real}, rules, cutoff::Real,
     sheets::Int,energy_conversion_factor::Real=RytoeV;
     rtol::Real=sqrt(eps(float(maximum(rbasis)))),
     atol::Real=1e-9,

@@ -57,8 +57,9 @@ function get₋neighbors(index::Int,mesh::PyObject,
          first₋neighborsᵢ = reduce(vcat,[indptr[indices[k]:indices[k+1]-1] for k=neighborsᵢ])
          first₋neighborsᵢ = filter(x->!(x in [1,2,3,4,index]), unique(first₋neighborsᵢ))
          neighborsᵢ = [neighborsᵢ;first₋neighborsᵢ]
-     end
-     unique(neighborsᵢ)
+    end
+    
+    unique(neighborsᵢ)
 end
 
 @doc """
@@ -138,49 +139,27 @@ Calculate the symmetrically unique points within the IBZ.
 # Returns
 - `sym₋unique::AbstractVector{<:Int}`: a vector that gives the position of the k-point
     that is equivalent to each k-point (except for the first 4 points or the
-    points of the box).
+    points of the box). The first k-points, after the first 4, are unique.
 
 # Examples
 ```jldoctest
-import Pebsi.EPMs: m2ibz,m2pointgroup
-import Pebsi.Mesh: ibz_init₋mesh
-n = 5
-mesh = ibz_init₋mesh(ibz,n)
-get_sym₋unique(mesh,m2pointgroup)
-# output
-19-element Vector{Int64}:
-  0
-  0
-  0
-  0
-  5
-  6
-  7
-  8
-  9
- 10
- 11
- 12
- 13
- 14
- 15
- 16
- 17
- 18
- 19
 ```
 """
-function get_sym₋unique(mesh::PyObject,pointgroup::Vector{Matrix{Float64}};
-    rtol::Real=sqrt(eps(maximum(mesh.points))),atol::Real=1e-9)::AbstractVector{<:Int}
+function get_sym₋unique!(mesh::PyObject,pointgroup::Vector{Matrix{Float64}};
+    rtol::Real=sqrt(eps(maximum(mesh.points))),atol::Real=1e-9)
+
+    spatial = pyimport("scipy.spatial")
 
     # Calculate the unique points of the uniform IBZ mesh.
     sym₋unique = zeros(Int,size(mesh.points,1))
+    move = []
     for i=5:size(mesh.points,1)
         # If this point hasn't been added already, add it to the list of unique points.
         if sym₋unique[i] == 0
             sym₋unique[i] = i
+        else
+            push!(move,i)
         end
-
         for pg=pointgroup
             test = [mapslices(x->isapprox(x,pg*mesh.points[i,:],atol=atol,
                 rtol=rtol),mesh.points,dims=2)...]
@@ -192,7 +171,28 @@ function get_sym₋unique(mesh::PyObject,pointgroup::Vector{Matrix{Float64}};
             end
         end
     end
-    sym₋unique
+    if length(move) != 0
+        copy_sym₋unique = sym₋unique
+        moved_elems = sym₋unique[move]
+        for i = move
+            if i == length(move)
+                continue
+            end 
+            for j = i+1:length(sym₋unique)
+                if copy_sym₋unique[j] > i
+                    sym₋unique[j] -= 1
+                end
+            end
+        end
+        n = length(sym₋unique)
+        sym₋unique = [zeros(Int,4); sym₋unique[setdiff(5:n,move)]; moved_elems]
+        if move != []
+            mesh = spatial.Delaunay([
+                mesh.points[1:4,:];
+                mesh.points[setdiff(5:n,move),:]; mesh.points[move,:]])
+        end
+    end
+    sym₋unique,mesh
 end
 
 @doc """
@@ -357,17 +357,16 @@ PyObject (<scipy.spatial.qhull.Delaunay object at 0x1802f7820>, array([ 0,  0,  
 function get_extmesh(ibz::Chull,mesh::PyObject,pointgroup::Vector{Matrix{Float64}},
     recip_latvecs::AbstractMatrix{<:Real},near_neigh::Int=1;
     rtol::Real=sqrt(eps(maximum(abs.(mesh.points)))),atol::Real=1e-9)
-
+     
     spatial = pyimport("scipy.spatial")
-    sym₋unique = get_sym₋unique(mesh,pointgroup);
+    sym₋unique,mesh = get_sym₋unique!(mesh,pointgroup)
     cv_pointsᵢ = get_cvpts(mesh,ibz)
     neighborsᵢ = reduce(vcat,[get₋neighbors(i,mesh,near_neigh) for i=cv_pointsᵢ]) |> unique
-    
     numpts = size(mesh.points,1)
     # Calculate the maximum distance between neighboring points
     bound_limit = 1.01*maximum(reduce(vcat,[[norm(mesh.points[i,:] - mesh.points[j,:]) 
                     for j=get₋neighbors(i,mesh,near_neigh)] for i=cv_pointsᵢ]))
-
+     
     ibz_linesegs = [Matrix(ibz.points[i,:]') for i=ibz.simplices]
     bztrans = [[[i,j] for i=-1:1,j=-1:1]...]
 
@@ -387,8 +386,9 @@ function get_extmesh(ibz::Chull,mesh::PyObject,pointgroup::Vector{Matrix{Float64
     end
     neighbors = neighbors[:,1:n]
     sym₋unique = sym₋unique[1:numpts + n]
-    (spatial.Delaunay(unique_points([mesh.points; neighbors']',
-        rtol=rtol,atol=atol)'),sym₋unique)
+    ext_mesh = spatial.Delaunay(unique_points([mesh.points; neighbors']',
+        rtol=rtol,atol=atol)')   
+    (mesh,ext_mesh,sym₋unique)
 end
 
 end # Module

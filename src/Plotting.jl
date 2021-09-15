@@ -11,6 +11,7 @@ using ..Polynomials: eval_poly,sample_simplex,eval_bezcurve
 using ..Geometry: carttobary,barytocart,simplex_size
 
 using SymmetryReduceBZ.Plotting: plot_2Dconvexhull
+using SymmetryReduceBZ.Utilities: sortpts2D
 
 using Statistics: mean
 
@@ -132,26 +133,6 @@ function contourplot(bezpts::AbstractMatrix{<:Real},
     ax
 end
 
-# function contourplot(epm::epm₋model2D,ebs::bandstructure,ax::Union{PyObject,Nothing}=nothing)
-#     bpts = sample_simplex(2,2)
-
-#     if ax == nothing
-#         (fig,ax) = subplots()
-#     end
-    
-#     for i=1:length(ebs.simplicesᵢ)
-#         for j=1:epm.sheets
-#             bezpts = [barytocart(bpts,ebs.mesh.points[ebs.simplicesᵢ[i],:]'); 
-#                 mean(ebs.mesh_intcoeffs[i][j],dims=1) .- ebs.fermilevel]
-#             ax = contourplot(bezpts,ax,padded=false)
-#         end
-#     end
-#     ax=meshplot(epm,ebs,ax)
-#     ax = meshplot(ebs.mesh.points[5:end,:]',ax)
-
-#     ax
-# end
-
 function contourplot(ebs::bandstructure,ax::Union{PyObject,Nothing}=nothing;
     linewidth::Real=1,alpha::Integer=1,ndiv::Integer=100)
 
@@ -261,18 +242,11 @@ Plot a 2D convex hull
 ```
 """
 function plot_polygon(pts::Matrix{<:Real},
-    ax::Union{PyObject,Nothing}=nothing;facecolor::String="blue",
-    alpha::Real=0.3,linewidth::Real=3,edgecolor::String="black")::PyObject
+    ax::Union{PyObject,Nothing}=nothing;facecolor::String="None",
+    alpha::Real=1.0,linewidth::Real=3,edgecolor::String="black")::PyObject
 
-    c=[sum(pts[i,:])/size(pts,2) for i=1:2]
-    angles=zeros(size(pts,2))
-    for i=1:size(pts,2)
-        (x,y)=pts[:,i] - c
-        angles[i] = atan(y,x)
-    end
-    perm = sortperm(angles)
-    bzpts = pts[:,perm]
-    (x,y)=[pts[i,:] for i=1:2]
+    perm = sortpts2D(pts)
+    (x,y)=[pts[:,perm][i,:] for i=1:2]
 
     if ax == nothing fig,ax = subplots() end
     ax.fill(x,y, facecolor=facecolor,edgecolor=edgecolor,

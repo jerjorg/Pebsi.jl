@@ -157,18 +157,19 @@ function init_bandstructure(
     atol::Real=1e-9)
 
     mesh = ibz_init₋mesh(epm.ibz,init_msize;rtol=rtol,atol=atol)
+    mesh,ext_mesh,sym₋unique = get_extmesh(epm.ibz,mesh,epm.pointgroup,
+        epm.recip_latvecs,num_neigh; rtol=rtol,atol=atol)
     simplicesᵢ = notbox_simplices(mesh)
-    ext_mesh,sym₋unique = get_extmesh(epm.ibz,mesh,epm.pointgroup,epm.recip_latvecs,num_neigh;
-        rtol=rtol,atol=atol)
       
     uniqueᵢ = sort(unique(sym₋unique))[2:end]
-    eigenvals = zeros(Float64,epm.sheets,size(mesh.points,1))
+    # eigenvals = zeros(Float64,epm.sheets,size(mesh.points,1))
+    eigenvals = zeros(Float64,epm.sheets,4+length(uniqueᵢ))
     for i=uniqueᵢ
         eigenvals[:,i] = eval_epm(mesh.points[i,:], epm, rtol=rtol, atol=atol)
     end
     
     mesh_intcoeffs = [get_intercoeffs(index,mesh,ext_mesh,sym₋unique,eigenvals,
-        simplicesᵢ,fatten) for index=1:length(simplicesᵢ)];
+        simplicesᵢ,fatten,num_neigh) for index=1:length(simplicesᵢ)];
     
     partially_occupied = [zeros(Int,epm.sheets) for _=1:length(simplicesᵢ)]
     bandenergy_errors = zeros(length(simplicesᵢ))
@@ -953,6 +954,8 @@ Calculate the interval Bezier points for all sheets.
 - `simplicesᵢ::Vector{Vector{Int64}}`: the simplices of `mesh` that do not
     include the box points.
 - `fatten::Real`: scale the interval coefficients by this amount.
+- `num_neigh::Int`: the number of neighbors included.
+- `sigma::Int`: the number of sheets summed and then interpolated, if any.
 
 # Returns
 - `inter_bezpts::Vector{Matrix{Float64}}`: the interval Bezier points
@@ -993,12 +996,12 @@ get_intercoeffs(index,mesh,ext_mesh,sym₋unique,eigenvals,simplicesᵢ)
 """
 function get_intercoeffs(index::Int,mesh::PyObject,ext_mesh::PyObject,
         sym₋unique::AbstractVector{<:Real},eigenvals::AbstractMatrix{<:Real},
-        simplicesᵢ::Vector{Vector{Int64}},fatten::Real=1;
-        sigma::Int=0)::Vector{Matrix{Float64}}
+        simplicesᵢ::Vector{Vector{Int64}},fatten::Real=1,num_neigh::Int=2;
+        sigma::Real=0)::Vector{Matrix{Float64}}
 
     simplexᵢ = simplicesᵢ[index]
     simplex = Matrix(mesh.points[simplexᵢ,:]')
-    neighborsᵢ = reduce(vcat,[get₋neighbors(s,ext_mesh,2) for s=simplexᵢ]) |> unique
+    neighborsᵢ = reduce(vcat,[get₋neighbors(s,ext_mesh,num_neigh) for s=simplexᵢ]) |> unique
     neighborsᵢ = filter(x -> !(x in simplexᵢ),neighborsᵢ)
 
     if length(neighborsᵢ) > 15
@@ -1021,9 +1024,8 @@ function get_intercoeffs(index::Int,mesh::PyObject,ext_mesh::PyObject,
     # W = diagm([norm(ext_mesh.points[i,:] - mean(simplex,dims=2)) for i=neighborsᵢ])
     
     # Shortest distance from one of the corners of the triangle.
-    # W = diagm([1/minimum([norm(ext_mesh.points[i,:] - simplex[:,j]) for j=1:3])^2 
-    #     for i=neighborsᵢ])
-   
+    W = diagm([1/minimum([norm(ext_mesh.points[i,:] - simplex[:,j]) for j=1:3])^2 
+        for i=neighborsᵢ])
     # W=I
 
     if sigma == 0
@@ -1041,12 +1043,11 @@ function get_intercoeffs(index::Int,mesh::PyObject,ext_mesh::PyObject,
             q = [sum(eigenvals[1:sigma,sym₋unique[simplexᵢ]],dims=1)...]
         end
         Z = fᵢ - (b.^2)'*q
-
+          
         # Weighted least squares
-        c = M\Z
+        # c = M\Z
         # c = pinv(M)*Z        
-        # c = inv(M'*W*M)*M'*W*Z
-
+        c = inv(M'*W*M)*M'*W*Z
         c1,c2,c3 = c
         q1,q2,q3 = q
         qᵢ = [eval_poly(b[:,i],[q1,c1,q2,c2,c3,q3],2,2) for i=1:size(b,2)]
@@ -1220,7 +1221,7 @@ function calc_flbe!(epm::Union{epm₋model2D,epm₋model},ebs::bandstructure)
         (if sigmas[i] == nothing
             zeros(2,6)
         else
-            get_intercoeffs(i,ebs.mesh,ebs.ext_mesh,ebs.sym₋unique,ebs.eigenvals,ebs.simplicesᵢ,ebs.fatten,sigma=sigmas[i]) 
+            get_intercoeffs(i,ebs.mesh,ebs.ext_mesh,ebs.sym₋unique,ebs.eigenvals,ebs.simplicesᵢ,ebs.fatten,ebs.num_neigh,sigma=sigmas[i]) 
         end) for i=1:length(ebs.simplicesᵢ)]
 
     sigma_be₀ = [(
@@ -1277,19 +1278,26 @@ function refine_mesh!(epm::Union{epm₋model2D,epm₋model},ebs::bandstructure)
      
     spatial = pyimport("scipy.spatial")
     simplices = [Matrix(ebs.mesh.points[s,:]') for s=ebs.simplicesᵢ]
-
     err_cutoff = [simplex_size(s)/epm.ibz.volume for s=simplices]*ebs.target_accuracy
 
     # Refine the tile with the most error
     if ebs.refine_method == 1
-        splitpos = [sortperm(ebs.bandenergy_errors)[end]]
+        splitpos = sortperm(ebs.bandenergy_errors,rev=true)
+        if length(splitpos) > 10 splitpos = splitpos[1:10] end
+
     # Refine the tiles with too much error (given the tiles' sizes).
     elseif ebs.refine_method == 2
         splitpos = filter(x -> x>0,[ebs.bandenergy_errors[i] > err_cutoff[i] ? i : 0 for i=1:length(err_cutoff)])
+    elseif ebs.refine_method == 3
+    # Refine a fraction of the number of tiles that have too much error.
+        splitpos = filter(x -> x>0,[ebs.bandenergy_errors[i] > err_cutoff[i] ? i : 0 for i=1:length(err_cutoff)])
+        order = sortperm(ebs.bandenergy_errors[splitpos],rev=true)
+        splitpos = splitpos[order[1:round(Int,length(order)/10)]]
     else
-        ArgumentError("The refinement method has to be and integer and 1, 2 or 3.")
+        ArgumentError("The refinement method has to be and integer equal to 1, 2 or 3.")
     end
     frac_split = length(splitpos)/length(ebs.bandenergy_errors)
+    @show frac_split
     if splitpos == []
         return ebs
     end
@@ -1303,7 +1311,7 @@ function refine_mesh!(epm::Union{epm₋model2D,epm₋model},ebs::bandstructure)
     # If the error is 2x greater than the tolerance, split edges. Otherwise,
     # sample at the center of the triangle.
     elseif ebs.sample_method == 3
-        sample_type = [ebs.bandenergy_errors[i] > 2*err_cutoff[i] ? 2 : 1 for i=splitpos]
+        sample_type = [ebs.bandenergy_errors[i] > 5*err_cutoff[i] ? 2 : 1 for i=splitpos]
         new_meshpts = reduce(hcat,[sample_type[i] == 1 ? 
         barytocart([1/3,1/3,1/3],simplices[splitpos[i]]) :
         barytocart([0 1/2 1/2; 1/2 0 1/2; 1/2 1/2 0],simplices[splitpos[i]])
@@ -1311,12 +1319,11 @@ function refine_mesh!(epm::Union{epm₋model2D,epm₋model},ebs::bandstructure)
     else
         ArgumentError("The sample method for refinement has to be an integer with a value of 1 or 2.")
     end
-     
-    # The number of points in the mesh before adding new points.
-    s = size(ebs.mesh.points,1)
 
     # Remove duplicates from the new mesh points.
     new_meshpts = unique_points(new_meshpts,rtol=ebs.rtol,atol=ebs.atol)
+    new_eigvals = eval_epm(new_meshpts,epm,rtol=ebs.rtol,atol=ebs.atol)
+    ebs.eigenvals = [ebs.eigenvals new_eigvals]
 
     # There should technically be an additional step at this point where
     # symmetrically equivalent points are removed from `new_meshpts` (points
@@ -1334,54 +1341,88 @@ function refine_mesh!(epm::Union{epm₋model2D,epm₋model},ebs::bandstructure)
     ibz_linesegs = [Matrix(epm.ibz.points[i,:]') for i=epm.ibz.simplices]
 
     # Translations that need to be considered when calculating points outside the IBZ.
+    # Assumes the reciprocal latice vectors are Minkowski reduced.
     bztrans = [[[i,j] for i=-1:1,j=-1:1]...]
     
+    # The number of points in the mesh before adding new points.
+    s = size(ebs.mesh.points,1)
+    m = maximum(ebs.sym₋unique)
+
     # Indices of the new mesh points.
-    new_ind = size(ebs.mesh.points,1) + 1:size(ebs.mesh.points,1)+size(new_meshpts,2)
-    ebs.sym₋unique = [ebs.sym₋unique[1:s]; new_ind; ebs.sym₋unique[s+1:end]]
-    # Indices of sym. equiv. points on the boundary of and nearby the IBZ. Points
+    new_ind = (m+1):(m+size(new_meshpts,2))
+    # new_ind = size(ebs.mesh.points,1) + 1:size(ebs.mesh.points,1)+size(new_meshpts,2)
+    # new_ind = maximum(ebs.sym₋unique) + 1:s+maximum(ebs.sym₋unique)
+
+    # Indices of sym. equiv. points on and nearby the boundary of the IBZ. Pointer
     # to the symmetrically unique point.
-    sym_mesh = zeros(Int,size(new_meshpts,2)*length(epm.pointgroup)*length(bztrans))
+    sym_ind = zeros(Int,size(new_meshpts,2)*length(epm.pointgroup)*length(bztrans))
   
     # Keep track of points on the IBZ boundaries.
-    n = 0
+    nₘ = 0
     # Add points to the mesh on the boundary of the IBZ.
     neighbors = zeros(Float64,2,size(new_meshpts,2)*length(epm.pointgroup)*length(bztrans))
+
     for i=1:length(new_ind),op=epm.pointgroup,trans=bztrans
         pt = op*new_meshpts[:,i] + epm.recip_latvecs*trans
       
         if (any([isapprox(lineseg₋pt_dist(line_seg,pt,false),0,atol=ebs.atol) for line_seg=ibz_linesegs]) &&
             !any(mapslices(x->isapprox(x,pt,atol=ebs.atol,rtol=ebs.rtol),
-                        [ebs.mesh.points' new_meshpts neighbors[:,1:n]],dims=1)))
-            n += 1
-            sym_mesh[n] = new_ind[i]
-            neighbors[:,n] = pt
+                        [ebs.mesh.points' new_meshpts neighbors[:,1:nₘ]],dims=1)))
+            nₘ += 1
+            sym_ind[nₘ] = new_ind[i]
+            neighbors[:,nₘ] = pt
         end
     end
-    ebs.mesh = spatial.Delaunay([ebs.mesh.points; new_meshpts'; neighbors[:,1:n]'])
-     
+
+    # ebs.mesh = spatial.Delaunay([ebs.mesh.points; new_meshpts'; neighbors[:,1:n]'])
+    if m == s
+        ebs.mesh = spatial.Delaunay([ebs.mesh.points; new_meshpts'; neighbors[:,1:nₘ]'])
+    else
+        ebs.mesh = spatial.Delaunay([ebs.mesh.points[1:m,:]; new_meshpts'; neighbors[:,1:nₘ]';
+            ebs.mesh.points[m+1:end,:]])        
+    end
+
+    # ebs.sym₋unique = [ebs.sym₋unique[1:s]; new_ind; sym_ind[1:n]; ebs.sym₋unique[s+1:end]]
+
     # Add points to the extended mesh nearby but outside of the IBZ
+    nₑ = nₘ
     for i=1:length(new_ind),op=epm.pointgroup,trans=bztrans
         pt = op*new_meshpts[:,i] + epm.recip_latvecs*trans
 
         if any([lineseg₋pt_dist(line_seg,pt,false) < bound_limit for line_seg=ibz_linesegs]) &&
             !any(mapslices(x->isapprox(x,pt,atol=ebs.atol,rtol=ebs.rtol),
-                    [ebs.ext_mesh.points' new_meshpts neighbors[:,1:n]],dims=1))
-            n += 1
-            sym_mesh[n] = new_ind[i]
-            neighbors[:,n] = pt
+                    [ebs.ext_mesh.points' new_meshpts neighbors[:,1:nₑ]],dims=1))
+            nₑ += 1
+            sym_ind[nₑ] = new_ind[i]
+            neighbors[:,nₑ] = pt
         end
     end
-    ebs.sym₋unique = [ebs.sym₋unique; sym_mesh[1:n]]
-    ebs.ext_mesh = spatial.Delaunay([ebs.ext_mesh.points[1:s,:]; new_meshpts'; 
-        ebs.ext_mesh.points[s+1:end,:]; neighbors[:,1:n]'])
 
-    new_eigvals = eval_epm(new_meshpts,epm,rtol=ebs.rtol,atol=ebs.atol)
+    # ebs.sym₋unique = [ebs.sym₋unique[1:s]; new_ind; sym_mesh[1:n]; ebs.sym₋unique[s+1:end]]
+    if m == s
+        ebs.sym₋unique = [ebs.sym₋unique[1:m]; new_ind; sym_ind[1:nₑ]] 
+        ebs.ext_mesh = spatial.Delaunay([ebs.ext_mesh.points[1:m,:]; new_meshpts'; neighbors[:,1:nₑ]'])
+    else
+        ebs.sym₋unique = [ebs.sym₋unique[1:m]; new_ind; sym_ind[1:nₘ]; ebs.sym₋unique[m+1:end];
+            sym_ind[nₘ+1:nₑ]]
+        ebs.ext_mesh = spatial.Delaunay([ebs.ext_mesh.points[1:m,:]; new_meshpts'; neighbors[:,1:nₘ]';
+            ebs.ext_mesh.points[m+1:end,:]; neighbors[:,nₘ+1:nₑ]']) 
+    end
+
+    # ebs.mesh = spatial.Delaunay([ebs.mesh.points[1:m,:]; new_meshpts'; neighbors[:,1:nₘ]';
+    # ebs.mesh.points[m+1:end,:]])        
+
+
+    # ebs.ext_mesh = spatial.Delaunay([ebs.ext_mesh.points[1:s,:]; new_meshpts'; 
+    #     neighbors[:,1:n]'; ebs.ext_mesh.points[s+1:end,:]])
+
+    # ebs.sym₋unique = [ebs.sym₋unique; sym_mesh[1:n]]
+    # ebs.ext_mesh = spatial.Delaunay([ebs.ext_mesh.points[1:s,:]; new_meshpts'; 
+    #     ebs.ext_mesh.points[s+1:end,:]; neighbors[:,1:n]'])
 
     ebs.simplicesᵢ = notbox_simplices(ebs.mesh)
-    ebs.eigenvals = [ebs.eigenvals new_eigvals]
     ebs.mesh_intcoeffs = [get_intercoeffs(index,ebs.mesh,ebs.ext_mesh,ebs.sym₋unique,ebs.eigenvals,
-        ebs.simplicesᵢ,ebs.fatten) for index=1:length(ebs.simplicesᵢ)]    
+        ebs.simplicesᵢ,ebs.fatten,ebs.num_neigh) for index=1:length(ebs.simplicesᵢ)]    
     ebs
 end
 
@@ -1394,9 +1435,9 @@ Calculate the band energy using uniform or adaptive quadratic integation.
 function quadratic_method!(epm::Union{epm₋model2D,epm₋model};
     init_msize::Int=4, num_neigh::Int=1, fermiarea_eps::Real=1e-10,
     target_accuracy::Real=1e-4, fermilevel_method::Int=2, refine_method::Int=2,
-    sample_method::Int=3, fatten::Real=1, rtol::Real=1e-10, atol::Real=1e-10,
+    sample_method::Int=1, fatten::Real=1, rtol::Real=1e-10, atol::Real=1e-10,
     uniform::Bool=false)::bandstructure
-
+     
     ebs = init_bandstructure(epm,init_msize=init_msize, num_neigh=num_neigh,
         fermiarea_eps=fermiarea_eps, target_accuracy=target_accuracy, 
         fermilevel_method=fermilevel_method, refine_method=refine_method,
