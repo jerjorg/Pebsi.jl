@@ -1433,9 +1433,9 @@ end
 Calculate the band energy using uniform or adaptive quadratic integation.
 """
 function quadratic_method!(epm::Union{epm₋model2D,epm₋model};
-    init_msize::Int=4, num_neigh::Int=1, fermiarea_eps::Real=1e-10,
-    target_accuracy::Real=1e-4, fermilevel_method::Int=2, refine_method::Int=2,
-    sample_method::Int=1, fatten::Real=1, rtol::Real=1e-10, atol::Real=1e-10,
+    init_msize::Int=3, num_neigh::Int=2, fermiarea_eps::Real=1e-10,
+    target_accuracy::Real=1e-4, fermilevel_method::Int=2, refine_method::Int=3,
+    sample_method::Int=3, fatten::Real=0.15, rtol::Real=1e-10, atol::Real=1e-10,
     uniform::Bool=false)::bandstructure
      
     ebs = init_bandstructure(epm,init_msize=init_msize, num_neigh=num_neigh,
