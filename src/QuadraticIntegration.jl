@@ -476,7 +476,7 @@ function split_bezsurf₁(bezpts::AbstractMatrix{<:Real},
         end
     else
         allintersects = reduce(hcat,[i for i=intersects if i!=[]])
-        if insimplex(spt)
+        if insimplex(spt) # Using the default absolute tolerance 1e-12
             allpts = [pts barytocart(spt,triangle) allintersects]
         else
             allpts = [pts allintersects]
@@ -487,10 +487,10 @@ function split_bezsurf₁(bezpts::AbstractMatrix{<:Real},
     # Had to add box points to prevent collinear triangles.
     xmax,ymax = maximum(bezpts[1:2,:],dims=2)
     xmin,ymin = minimum(bezpts[1:2,:],dims=2)
-    xmax += 0.2*abs(xmax - xmin)
-    xmin -= 0.2*abs(xmax - xmin)
-    ymax += 0.2*abs(ymax - ymin)
-    ymin -= 0.2*abs(ymax - ymin)
+    xmax += 100*abs(xmax - xmin)
+    xmin -= 100*abs(xmax - xmin)
+    ymax += 100*abs(ymax - ymin)
+    ymin -= 100*abs(ymax - ymin)
     boxpts = [xmin xmax xmax xmin; ymin ymin ymax ymax]
     allpts = [boxpts allpts]
     del = spatial.Delaunay(Matrix(allpts'))
@@ -1108,6 +1108,7 @@ function calc₋fl(epm::Union{epm₋model,epm₋model2D},ebs::bandstructure;
     E = (E₁ + E₂)/2
     f₃,E₃,iters,f,maxiters,ϵ,t = 0,0,0,1e9,50,1e-2,0
     while abs(f) > ebs.fermiarea_eps
+
         iters += 1
         if iters > maxiters
             @warn "Failed to converge the Fermi area to within the provided tolerance of $(ebs.fermiarea_eps) after $(maxiters) iterations. Fermi area converged within $(f)."
@@ -1190,7 +1191,6 @@ function calc_flbe!(epm::Union{epm₋model2D,epm₋model},ebs::bandstructure)
     fl = calc₋fl(epm,ebs,window=nothing,fermi_area=epm.fermiarea,ctype="mean")
     fl₁ = calc₋fl(epm,ebs,window=nothing,fermi_area=epm.fermiarea,ctype = "max")
     fl₀ = calc₋fl(epm,ebs,window=nothing,fermi_area=epm.fermiarea,ctype = "min")
-
     mesh_fa₁ = [[quad_area₋volume([simplex_pts[tri]; (ebs.mesh_intcoeffs[tri][sheet][1,:] .- fl₁)']
                     ,"area") for sheet=1:epm.sheets] for tri=1:length(ebs.simplicesᵢ)]
     mesh_fa₀ = [[quad_area₋volume([simplex_pts[tri]; (ebs.mesh_intcoeffs[tri][sheet][2,:] .- fl₀)']
