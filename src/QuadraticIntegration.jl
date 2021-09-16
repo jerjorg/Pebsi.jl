@@ -482,7 +482,6 @@ function split_bezsurf₁(bezpts::AbstractMatrix{<:Real},
             allpts = [pts allintersects]
         end
     end
-
     allpts = unique_points(allpts,atol=atol)
     # Had to add box points to prevent collinear triangles.
     xmax,ymax = maximum(bezpts[1:2,:],dims=2)
@@ -1291,8 +1290,11 @@ function refine_mesh!(epm::Union{epm₋model2D,epm₋model},ebs::bandstructure)
     elseif ebs.refine_method == 3
     # Refine a fraction of the number of tiles that have too much error.
         splitpos = filter(x -> x>0,[ebs.bandenergy_errors[i] > err_cutoff[i] ? i : 0 for i=1:length(err_cutoff)])
-        order = sortperm(ebs.bandenergy_errors[splitpos],rev=true)
-        splitpos = splitpos[order[1:round(Int,length(order)/10)]]
+        # Split at least 10 triangles.
+        if length(splitpos) > 10
+            order = sortperm(ebs.bandenergy_errors[splitpos],rev=true)
+            splitpos = splitpos[order[1:round(Int,length(order)/10)]]
+        end            
     else
         ArgumentError("The refinement method has to be and integer equal to 1, 2 or 3.")
     end
@@ -1435,7 +1437,7 @@ Calculate the band energy using uniform or adaptive quadratic integation.
 function quadratic_method!(epm::Union{epm₋model2D,epm₋model};
     init_msize::Int=3, num_neigh::Int=2, fermiarea_eps::Real=1e-10,
     target_accuracy::Real=1e-4, fermilevel_method::Int=2, refine_method::Int=3,
-    sample_method::Int=3, fatten::Real=0.15, rtol::Real=1e-10, atol::Real=1e-10,
+    sample_method::Int=3, fatten::Real=1.0, rtol::Real=1e-10, atol::Real=1e-10,
     uniform::Bool=false)::bandstructure
      
     ebs = init_bandstructure(epm,init_msize=init_msize, num_neigh=num_neigh,
@@ -1455,6 +1457,7 @@ function quadratic_method!(epm::Union{epm₋model2D,epm₋model};
             @warn "Failed to calculate the band energy to within the desired accuracy $(ebs.target_accuracy) after 100 iterations."
             break
         end
+        println("Approx. error: ", sum(ebs.bandenergy_errors))
     end
     ebs
 end
