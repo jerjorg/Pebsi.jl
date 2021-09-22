@@ -75,7 +75,7 @@ Plot the level curves of a polynomial surface.
 """
 function contourplot(bezpts::AbstractMatrix{<:Real},
     ax::Union{PyObject,Nothing}=nothing; filled::Bool=false,
-    padded::Bool=true,ndivs::Integer=100,colors=["black","white"],
+    padded::Bool=true,ndiv::Integer=100,colors=["black","white"],
     alpha::Real=0.5,curvewidths=1,zorder::Int=1)::PyObject
     dim = 2
     deg = 2
@@ -118,16 +118,15 @@ function contourplot(bezpts::AbstractMatrix{<:Real},
 end
 
 function contourplot(ebs::bandstructure, ax::Union{PyObject,Nothing}=nothing;
-    sort=false, facecolor::String="None", alpha_tri::Real=1, linewidth::Real=0.5,
-    edgecolor::String="black", ndiv::Integer=100, filled::Bool=false,
-    ndivs::Integer=100, colors=["black","white"], alpha_curve::Real=0.5,
-    curvewidths::Real=1)::PyObject 
+    sort=false, linewidth::Real=0.5, edgecolor::String="black", 
+    filled::Bool=false, ndiv::Integer=100, colors=["black","white"], 
+    alpha_curve::Real=1, curvewidths::Real=0.5)::PyObject 
      
     patch=pyimport("matplotlib.patches")
     collections=pyimport("matplotlib.collections")
 
-    bpts = sample_simplex(2,2);
-    tripts = [Array(ebs.mesh.points[i,:]') for i=ebs.simplicesᵢ];
+    bpts = sample_simplex(2,2)
+    tripts = [Array(ebs.mesh.points[i,:]') for i=ebs.simplicesᵢ]
 
     if ax == nothing fig,ax=subplots() end
 
@@ -135,23 +134,46 @@ function contourplot(ebs::bandstructure, ax::Union{PyObject,Nothing}=nothing;
     pocc = [findall(x->x==1,b) for b=ebs.partially_occupied]
     indices = reduce(vcat,
         filter(x->!(x==nothing),
-            [pocc[i] == [] ? nothing : [[i,j] for j=pocc[i]] for i=1:length(pocc)]));
+            [pocc[i] == [] ? nothing : [[i,j] for j=pocc[i]] for i=1:length(pocc)]))
 
     sizes = [simplex_size(t) for t=tripts]
     ρ = ndiv/maximum(sizes)
     ndivs = round.(Int,ρ*sizes)
+    
+    contour_colors = ["red","orange","blue"]
+    fls = [ebs.fermilevel_interval[2],ebs.fermilevel,ebs.fermilevel_interval[1]]
 
-    for i=indices
-        bezpts = [barytocart(bpts,ebs.mesh.points[ebs.simplicesᵢ[i[1]],:]'); 
-            mean(ebs.mesh_intcoeffs[i[1]][i[2]],dims=1) .- ebs.fermilevel]
-        ax = contourplot(bezpts,ax,padded=false,ndivs=ndivs[i[1]],
-            alpha=alpha_curve,curvewidths=curvewidths,colors=colors,
-            filled=filled,zorder=2)
+    for (j,cfun) in enumerate([minimum,mean,maximum])
+        for i=indices
+            bezpts = [barytocart(bpts,ebs.mesh.points[ebs.simplicesᵢ[i[1]],:]'); 
+                cfun(ebs.mesh_intcoeffs[i[1]][i[2]],dims=1) .- fls[j]]
+                
+        
+            ax = contourplot(bezpts,ax,padded=false,ndiv=ndivs[i[1]],
+                alpha=alpha_curve,curvewidths=curvewidths,colors=[contour_colors[j]],
+                filled=filled,zorder=2)
+        end
     end
 
     # Plot the triangles.
-    ax = polygonplot(tripts,ax,facecolor=facecolor,sort=sort,alpha=alpha_tri,
-        linewidth=linewidth,edgecolor=edgecolor,zorder=1) 
+    # Values for the color of the filling of triangles.
+    cm = plt.get_cmap("binary")
+    bmin = minimum(ebs.bandenergy_errors)
+    bmax = maximum(ebs.bandenergy_errors)
+    vmin = 0
+    vmax = 200
+    tcolors = round.(Int,map(x->(log(x)-log(bmin))/abs(log(bmax) - log(bmin))*vmax,ebs. bandenergy_errors))
+
+    ibz_volume = sum(sizes)
+    err_cutoff = [simplex_size(s)/ibz_volume for s=tripts]*ebs.target_accuracy;
+    err_ratios = round.(Int,ebs.bandenergy_errors ./ err_cutoff)
+    @show minimum(err_ratios)
+    # tcolors = map(x -> log(x)/log(vmax)*vmax, err_ratios)
+
+    for (i,t) in enumerate(tripts)
+        ax = polygonplot(t,ax,facecolor=cm(tcolors[i]),
+            linewidth=linewidth,edgecolor="gray",zorder=1)
+    end
 
     # Set plot range.
     xrange = [minimum(ebs.mesh.points[5:end,1]), maximum(ebs.mesh.points[5:end,1])]
@@ -162,12 +184,6 @@ function contourplot(ebs::bandstructure, ax::Union{PyObject,Nothing}=nothing;
     ax.set_ylim(yrange)        
     ax
 end
-
-# function contourplot(bezpts::AbstractMatrix{<:Real},
-#     ax::Union{PyObject,Nothing}=nothing; filled::Bool=false,
-#     padded::Bool=true,ndivs::Integer=100,colors=["black","white"],
-#     alpha::Real=0.5,curvewidths=1)::PyObject
-
 
 """
     bezplot(bezpts)
@@ -246,15 +262,19 @@ Make a plot of a polygon.
 ```
 """
 function polygonplot(pts::Matrix{<:Real},
-    ax::Union{PyObject,Nothing}=nothing; sort=false, facecolor::String="None",
-    alpha::Real=1.0, linewidth::Real=0.5, edgecolor::String="black",
+    ax::Union{PyObject,Nothing}=nothing; sort=false, facecolor="None",
+    alpha::Real=1.0, linewidth::Real=0.5, edgecolor="black",
     zorder::Int=0)::PyObject
 
     if sort
         perm = sortpts2D(pts)
         pts = pts[:,perm]
     end
-    if ax == nothing fig,ax = subplots() end
+    if ax == nothing 
+        println("not ok")
+        fig,ax = subplots()
+    end
+
     # ax.add_patch(plt.Polygon(Array(pts'),edgecolor=edgecolor,facecolor=facecolor,
     #     alpha=alpha,linewidth=linewidth))
     ax.fill(pts[1,:],pts[2,:],edgecolor=edgecolor,facecolor=facecolor,
@@ -263,8 +283,8 @@ function polygonplot(pts::Matrix{<:Real},
 end
 
 function polygonplot(polygons::Vector{Matrix{T}} where T<:Real,
-    ax::Union{PyObject,Nothing}=nothing;sort=false, facecolor::String="None",
-    alpha::Real=1.0, linewidth::Real=3, edgecolor::String="black", zorder::Int=0)
+    ax::Union{PyObject,Nothing}=nothing;sort=false, facecolor="None",
+    alpha::Real=1.0, linewidth::Real=0.5, edgecolor="black", zorder::Int=0)
     if ax == nothing fig,ax = subplots() end
 
     for poly in polygons

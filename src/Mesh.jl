@@ -151,14 +151,16 @@ function get_sym₋unique!(mesh::PyObject,pointgroup::Vector{Matrix{Float64}};
     spatial = pyimport("scipy.spatial")
 
     # Calculate the unique points of the uniform IBZ mesh.
-    sym₋unique = zeros(Int,size(mesh.points,1))
+    n = size(mesh.points,1)
+    sym₋unique = zeros(Int,n)
     move = []
-    for i=5:size(mesh.points,1)
+    for i=5:n
         # If this point hasn't been added already, add it to the list of unique points.
         if sym₋unique[i] == 0
             sym₋unique[i] = i
         else
             push!(move,i)
+            continue
         end
         for pg=pointgroup
             test = [mapslices(x->isapprox(x,pg*mesh.points[i,:],atol=atol,
@@ -171,21 +173,20 @@ function get_sym₋unique!(mesh::PyObject,pointgroup::Vector{Matrix{Float64}};
             end
         end
     end
+    # Make the leading points in sym₋unique the unique points in the mesh.
+    copy_sym₋unique = deepcopy(sym₋unique)
     if length(move) != 0
-        copy_sym₋unique = sym₋unique
-        moved_elems = sym₋unique[move]
         for i = move
             if i == length(move)
                 continue
             end 
-            for j = i+1:length(sym₋unique)
+            for j = i+1:n
                 if copy_sym₋unique[j] > i
                     sym₋unique[j] -= 1
                 end
             end
         end
-        n = length(sym₋unique)
-        sym₋unique = [zeros(Int,4); sym₋unique[setdiff(5:n,move)]; moved_elems]
+        sym₋unique = [zeros(Int,4); sym₋unique[setdiff(5:n,move)]; sym₋unique[move]]
         if move != []
             mesh = spatial.Delaunay([
                 mesh.points[1:4,:];

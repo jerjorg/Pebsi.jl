@@ -42,6 +42,8 @@ A container for all variables related to the band structure.
 - `sample_method::Int`: the method of sampling a tile with too much error. 1-add
     a single point at the center of the triangle. 2-add points the midpoints of 
     all three edges.
+- `neighbor_method::Int`: the method for selecting neighboring points in the 
+    calculion of interval coefficients.
 - `rtol::Real`: a relative tolerance for floating point comparisons.
 - `atol::Real`: an absolute tolerance for floating point comparisons.
 - `mesh::PyObject`: a Delaunay triangulation of points over the IBZ.
@@ -81,6 +83,7 @@ mutable struct bandstructure
     fermilevel_method::Int
     refine_method::Int
     sample_method::Int
+    neighbor_method::Int
     rtol::Real
     atol::Real
     mesh::PyObject
@@ -129,6 +132,8 @@ Initialize a band structure container.
 - `sample_method::Int`: the method of sampling a tile with too much error. 1-add
     a single point at the center of the triangle. 2-add point the midpoints of 
     all three edges.
+- `neighbor_method::Int`: the method of selecting neighboring points for the 
+    calculation of interval coefficients.
 - `rtol::Real`: a relative tolerance for floating point comparisons.
 - `atol::Real`: an absolute tolerance for floating point comparisons.
 
@@ -152,15 +157,20 @@ function init_bandstructure(
     fermilevel_method::Int=2,
     refine_method::Int=3,
     sample_method::Int=3,
+    neighbor_method::Int=2,
     fatten::Real=1,
+    inside::Bool=false,
     rtol::Real=1e-9,
     atol::Real=1e-9)
+
+    if inside model = epm else model = nothing end
+    @show typeof(model)
 
     mesh = ibz_init₋mesh(epm.ibz,init_msize;rtol=rtol,atol=atol)
     mesh,ext_mesh,sym₋unique = get_extmesh(epm.ibz,mesh,epm.pointgroup,
         epm.recip_latvecs,num_neigh; rtol=rtol,atol=atol)
     simplicesᵢ = notbox_simplices(mesh)
-      
+ 
     uniqueᵢ = sort(unique(sym₋unique))[2:end]
     # eigenvals = zeros(Float64,epm.sheets,size(mesh.points,1))
     eigenvals = zeros(Float64,epm.sheets,4+length(uniqueᵢ))
@@ -169,7 +179,7 @@ function init_bandstructure(
     end
     
     mesh_intcoeffs = [get_intercoeffs(index,mesh,ext_mesh,sym₋unique,eigenvals,
-        simplicesᵢ,fatten,num_neigh) for index=1:length(simplicesᵢ)];
+        simplicesᵢ,fatten,num_neigh,epm=model) for index=1:length(simplicesᵢ)];
     
     partially_occupied = [zeros(Int,epm.sheets) for _=1:length(simplicesᵢ)]
     bandenergy_errors = zeros(length(simplicesᵢ))
@@ -191,6 +201,7 @@ function init_bandstructure(
         fermilevel_method,
         refine_method,
         sample_method,
+        neighbor_method,
         rtol,
         atol,
         
@@ -996,22 +1007,82 @@ get_intercoeffs(index,mesh,ext_mesh,sym₋unique,eigenvals,simplicesᵢ)
 function get_intercoeffs(index::Int,mesh::PyObject,ext_mesh::PyObject,
         sym₋unique::AbstractVector{<:Real},eigenvals::AbstractMatrix{<:Real},
         simplicesᵢ::Vector{Vector{Int64}},fatten::Real=1,num_neigh::Int=2;
-        sigma::Real=0)::Vector{Matrix{Float64}}
+        sigma::Real=0,epm::Union{Nothing,epm₋model2D}=nothing,method::Int=1)::Vector{Matrix{Float64}}
 
     simplexᵢ = simplicesᵢ[index]
     simplex = Matrix(mesh.points[simplexᵢ,:]')
     neighborsᵢ = reduce(vcat,[get₋neighbors(s,ext_mesh,num_neigh) for s=simplexᵢ]) |> unique
     neighborsᵢ = filter(x -> !(x in simplexᵢ),neighborsᵢ)
+    neigh_cutoff = 15
 
-    if length(neighborsᵢ) > 15
+    if length(neighborsᵢ) < neigh_cutoff neigh_cutoff = length(neighborsᵢ) end
+
+    if method == 1
+        # Select neighbors that are closest to the triangle.
         neighbors = ext_mesh.points[neighborsᵢ,:]'
-        dist = [minimum([norm(ext_mesh.points[i,:] - simplex[:,j]) for j=1:3]) 
-            for i=neighborsᵢ]
+        dist = [minimum([norm(ext_mesh.points[i,:] - simplex[:,j]) for j=1:3]) for i=neighborsᵢ]
+        neighborsᵢ = neighborsᵢ[sortperm(dist)][1:neigh_cutoff]
 
-        neighborsᵢ = neighborsᵢ[sortperm(dist)][1:15]
+    elseif method == 2
+        # An attempt to select neighbors that surround the triangle and are
+        # close to the triangle.
+        neighbors = Matrix(ext_mesh.points[neighborsᵢ,:]')
+        center = vec(mean(simplex,dims=2)) # Measure angles from the center of the triangle
+        angles = [atan(neighbors[2,i]-center[2],neighbors[1,i]-center[1]) for i=1:size(neighbors,2)]
+        order = sortperm(angles); neighbors = neighbors[:,order]; angles = angles[order]
+        distances = [minimum([
+            lineseg₋pt_dist(simplex[:,[i,mod1(i+1,3)]],neighbors[:,j]) for i=1:3]) for j=1:size(neighbors,2)]
+        dorder = sortperm(sortperm(distances))
+
+        # Group neighboring points by angle ranges
+        nbins = round(Int,neigh_cutoff/2) # 2 is an arbitrary number
+        angle_segs = -π:2π/nbins:π;
+        angle_ran = [[] for _=1:nbins] # angle ranges
+        p = 1
+        for (i,θ) in enumerate(angles)
+            if θ <= angle_segs[p+1]
+                push!(angle_ran[p],i)
+            else
+                p+=1
+                push!(angle_ran[p],i)
+            end
+        end
+
+        # Select the points within the angle ranges that are closest to the sample points of the triangle.
+        c = 0
+        neighᵢ = []
+        while length(neighᵢ) < neigh_cutoff
+            c += 1
+            for i=1:nbins
+                # Move on if there are no more points in this angle range to add.
+                if length(angle_ran[i]) < c
+                    continue
+                else
+                    push!(neighᵢ,angle_ran[i][sortperm(dorder[angle_ran[i]])[c]])            
+                end
+            end    
+        end 
+        neighborsᵢ = neighborsᵢ[neighᵢ]
+    
+    # Neighbors are taken from a uniform grid within the triangle.
+    elseif method == 3
+        neighborsᵢ = []
+        if epm == nothing
+            error("Must provide an EPM when computing neighbors within the triangle.")
+        end
+    else
+        error("Only 1, 2, and 3 are valid values of the flag for the method of selecting neighbors.")
     end
 
-    b = carttobary(ext_mesh.points[neighborsᵢ,:]',simplex)
+    eigvals = zeros(size(eigenvals,2),15)
+    if method == 3
+        n = 5 # Number of points for the uniform sampling of the triangle
+        b = sample_simplex(2,n)
+        b = b[:,setdiff(1:length(b),[1,n+1,length(b)])]
+        eigvals = eval_epm(barytocart(b,simplex),epm)
+    else
+        b = carttobary(ext_mesh.points[neighborsᵢ,:]',simplex)
+    end
     M = mapslices(x -> 2*[x[1]*x[2],x[1]*x[3],x[2]*x[3]],b,dims=1)'
     Dᵢ = mapslices(x -> sum((x/2).^2),M,dims=2)
         
@@ -1023,8 +1094,7 @@ function get_intercoeffs(index::Int,mesh::PyObject,ext_mesh::PyObject,
     # W = diagm([norm(ext_mesh.points[i,:] - mean(simplex,dims=2)) for i=neighborsᵢ])
     
     # Shortest distance from one of the corners of the triangle.
-    W = diagm([1/minimum([norm(ext_mesh.points[i,:] - simplex[:,j]) for j=1:3])^2 
-        for i=neighborsᵢ])
+    # W = diagm([1/minimum([norm(ext_mesh.points[i,:] - simplex[:,j]) for j=1:3])^2 for i=neighborsᵢ])
     # W=I
 
     if sigma == 0
@@ -1035,18 +1105,26 @@ function get_intercoeffs(index::Int,mesh::PyObject,ext_mesh::PyObject,
 
     for sheet = 1:size(eigenvals,1)
         if sigma == 0
-            fᵢ = eigenvals[sheet,sym₋unique[neighborsᵢ]]
+            if method != 3
+                fᵢ = eigenvals[sheet,sym₋unique[neighborsᵢ]]
+            else
+                fᵢ = eigvals[sheet,:]
+            end
             q = eigenvals[sheet,sym₋unique[simplexᵢ]]
         else
-            fᵢ = [sum(eigenvals[1:sigma,sym₋unique[neighborsᵢ]],dims=1)...]
+            if method != 3
+                fᵢ = [sum(eigenvals[1:sigma,sym₋unique[neighborsᵢ]],dims=1)...]
+            else
+                fᵢ = [sum(eigvals[1:sigma,:],dims=1)...]
+            end
             q = [sum(eigenvals[1:sigma,sym₋unique[simplexᵢ]],dims=1)...]
         end
         Z = fᵢ - (b.^2)'*q
           
         # Weighted least squares
-        # c = M\Z
+        c = M\Z
         # c = pinv(M)*Z        
-        c = inv(M'*W*M)*M'*W*Z
+        # c = inv(M'*W*M)*M'*W*Z
         c1,c2,c3 = c
         q1,q2,q3 = q
         qᵢ = [eval_poly(b[:,i],[q1,c1,q2,c2,c3,q3],2,2) for i=1:size(b,2)]
@@ -1170,7 +1248,10 @@ Calculate the Fermi level and band energy for a given rep. of the band struct.
     Fermi area error, Fermi level interval, Fermi area interval, band energy
     interval, and the partially occupied sheets.
 """
-function calc_flbe!(epm::Union{epm₋model2D,epm₋model},ebs::bandstructure)
+function calc_flbe!(epm::Union{epm₋model2D,epm₋model},ebs::bandstructure,
+    inside::Bool=false)
+
+    if inside model = epm else model = nothing end
 
     maxsheet = round(Int,epm.electrons/2)
     window = [minimum(ebs.eigenvals[1:maxsheet+2,5:end]),
@@ -1196,8 +1277,7 @@ function calc_flbe!(epm::Union{epm₋model2D,epm₋model},ebs::bandstructure)
                     ,"area") for sheet=1:epm.sheets] for tri=1:length(ebs.simplicesᵢ)]
 
     fa₀,fa₁ = sum(sum(mesh_fa₀)),sum(sum(mesh_fa₁))
-    be = sum([quad_area₋volume([simplex_pts[tri]; [mean(ebs.mesh_intcoeffs[tri][sheet],dims=1)...]' .- fl]
-                    ,"volume") for tri=1:length(ebs.simplicesᵢ) for sheet=1:epm.sheets])
+    be = sum([quad_area₋volume([simplex_pts[tri]; [mean(ebs.mesh_intcoeffs[tri][sheet],dims=1)...]' .- fl], "volume") for tri=1:length(ebs.simplicesᵢ) for sheet=1:epm.sheets])
 
     mesh_fa₋errs = mesh_fa₁ .- mesh_fa₀
      
@@ -1220,7 +1300,7 @@ function calc_flbe!(epm::Union{epm₋model2D,epm₋model},ebs::bandstructure)
         (if sigmas[i] == nothing
             zeros(2,6)
         else
-            get_intercoeffs(i,ebs.mesh,ebs.ext_mesh,ebs.sym₋unique,ebs.eigenvals,ebs.simplicesᵢ,ebs.fatten,ebs.num_neigh,sigma=sigmas[i]) 
+            get_intercoeffs(i,ebs.mesh,ebs.ext_mesh,ebs.sym₋unique,ebs.eigenvals,ebs.simplicesᵢ,ebs.fatten,ebs.num_neigh,sigma=sigmas[i],epm=model) 
         end) for i=1:length(ebs.simplicesᵢ)]
 
     sigma_be₀ = [(
@@ -1242,6 +1322,7 @@ function calc_flbe!(epm::Union{epm₋model2D,epm₋model},ebs::bandstructure)
                     ,"volume") for sheet=partials[tri]] for tri=1:length(ebs.simplicesᵢ)]
     partial_be₁ = [[quad_area₋volume([simplex_pts[tri]; (ebs.mesh_intcoeffs[tri][sheet][2,:] .- fl₀)']
                     ,"volume") for sheet=partials[tri]] for tri=1:length(ebs.simplicesᵢ)]
+
     part_be_errs = [(
         if partial_be₁[i] == []
             0
@@ -1273,7 +1354,10 @@ end
 Perform one iteration of adaptive refinement. See the composite type 
 `bandstructure` for refinement options. 
 """
-function refine_mesh!(epm::Union{epm₋model2D,epm₋model},ebs::bandstructure)
+function refine_mesh!(epm::Union{epm₋model2D,epm₋model},ebs::bandstructure,
+    inside::Bool=false)
+       
+    if inside model = epm else model = nothing end 
      
     spatial = pyimport("scipy.spatial")
     simplices = [Matrix(ebs.mesh.points[s,:]') for s=ebs.simplicesᵢ]
@@ -1423,8 +1507,9 @@ function refine_mesh!(epm::Union{epm₋model2D,epm₋model},ebs::bandstructure)
     #     ebs.ext_mesh.points[s+1:end,:]; neighbors[:,1:n]'])
 
     ebs.simplicesᵢ = notbox_simplices(ebs.mesh)
-    ebs.mesh_intcoeffs = [get_intercoeffs(index,ebs.mesh,ebs.ext_mesh,ebs.sym₋unique,ebs.eigenvals,
-        ebs.simplicesᵢ,ebs.fatten,ebs.num_neigh) for index=1:length(ebs.simplicesᵢ)]    
+    ebs.mesh_intcoeffs = [get_intercoeffs(index,ebs.mesh,ebs.ext_mesh,ebs.sym₋unique,
+        ebs.eigenvals,ebs.simplicesᵢ,ebs.fatten,ebs.num_neigh,method=ebs.neighbor_method,
+        epm=model) for index=1:length(ebs.simplicesᵢ)]    
     ebs
 end
 
@@ -1437,19 +1522,20 @@ Calculate the band energy using uniform or adaptive quadratic integation.
 function quadratic_method!(epm::Union{epm₋model2D,epm₋model};
     init_msize::Int=3, num_neigh::Int=2, fermiarea_eps::Real=1e-10,
     target_accuracy::Real=1e-4, fermilevel_method::Int=2, refine_method::Int=3,
-    sample_method::Int=3, fatten::Real=1.0, rtol::Real=1e-10, atol::Real=1e-10,
-    uniform::Bool=false)::bandstructure
+    sample_method::Int=3, neighbor_method::Int=2, fatten::Real=1.0, rtol::Real=1e-10,
+    atol::Real=1e-10, uniform::Bool=false,inside::Bool=false)::bandstructure
      
     ebs = init_bandstructure(epm,init_msize=init_msize, num_neigh=num_neigh,
         fermiarea_eps=fermiarea_eps, target_accuracy=target_accuracy, 
         fermilevel_method=fermilevel_method, refine_method=refine_method,
-        sample_method=sample_method, fatten=fatten, rtol=rtol, atol=atol)
-    calc_flbe!(epm,ebs)
+        sample_method=sample_method, neighbor_method=neighbor_method,
+        fatten=fatten, inside=inside, rtol=rtol, atol=atol)
+    calc_flbe!(epm,ebs,inside)
     if uniform
         return ebs
     end
     counter = 0
-    while abs(ebs.bandenergy - epm.bandenergy) > ebs.target_accuracy
+    while sum(ebs.bandenergy_errors) > ebs.target_accuracy
         counter += 1
         refine_mesh!(epm,ebs)
         calc_flbe!(epm,ebs)
