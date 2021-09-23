@@ -1,7 +1,7 @@
 module Polynomials
 
+using ..Defaults: def_bez_weight_tol
 using ..Geometry: sample_simplex,barytocart,carttobary
-
 using Base.Iterators: product
 using LinearAlgebra: dot,det,norm
 using Statistics: mean
@@ -125,11 +125,6 @@ function eval_poly(barypt::AbstractArray,
     dot(coeffs,bernstein_basis(barypt,dim,deg))
 end
 
-# function eval_poly(barypt::AbstractArray,
-#     coeffs::AbstractArray,dim::Integer,deg::Integer)::Any
-#     dot(coeffs,bernstein_basis(barypt,dim,deg))
-# end
-
 @doc """
     eval_poly(barypts,coeffs,dim,deg)
 
@@ -189,7 +184,7 @@ getbez_pts₋wts(bezpts,p₀,p₂)
 """
 function getbez_pts₋wts(bezpts::AbstractMatrix{<:Real},
         p₀::AbstractVector{<:Real},
-        p₂::AbstractVector{<:Real}; atol::Real=1e-12)
+        p₂::AbstractVector{<:Real}; atol::Real=def_bez_weight_tol)
 
     triangle = bezpts[1:2,[1,3,6]]
     coeffs = bezpts[3,:]
@@ -288,13 +283,13 @@ function eval_bezcurve(t::AbstractVector{<:Real},
 end
 
 @doc """
-    conicsection(coeffs;atol=1e-12)
+    conicsection(coeffs;atol)
 
 Classify the conic section of a level curve of a quadratic surface.
 
 # Arguments
 - `coeffs::AbstractVector{<:Real}`: the coefficients of the quadratic polynomial.
-- `atol::Real=1e-12`: absolute tolerance.
+- `atol::Real=def_bez_weight_tol`: absolute tolerance.
 
 # Returns
 - `::String`: the type of the conic section.
@@ -308,7 +303,7 @@ coeffs = [0.36, -1.64, 0.36, -0.64, -0.64, 0.36]
 ```
 """
 function conicsection(coeffs::AbstractVector{<:Real};
-    atol::Real=1e-12)::String
+    atol::Real=def_bez_weight_tol)::String
     (z₀₀₂, z₁₀₁, z₂₀₀, z₀₁₁, z₁₁₀, z₀₂₀)=coeffs
     a = z₀₀₂ - 2z₁₀₁ + z₂₀₀
     b = 2z₀₀₂ - 2z₀₁₁ - 2z₁₀₁ + 2z₁₁₀

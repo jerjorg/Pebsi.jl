@@ -1,5 +1,6 @@
 module Geometry
 
+using ..Defaults: def_atol
 using LinearAlgebra: dot,cross,norm,det
 using Base.Iterators: product
 
@@ -48,10 +49,9 @@ sample_simplex(dim,deg)
 ```
 """
 function sample_simplex(dim::Integer,deg::Integer,
-    rtol::Real=sqrt(eps(1.0)),
-    atol::Real=0.0)::AbstractMatrix{<:Real}
+    rtol::Real=sqrt(eps(1.0)))::AbstractMatrix{<:Real}
     reduce(hcat,filter(x->length(x)>0, 
-        [isapprox(sum(p),1,rtol=rtol,atol=atol) ? collect(p) : [] 
+        [isapprox(sum(p),1,rtol=rtol,atol=def_atol) ? collect(p) : [] 
         for p=collect(product([0:1/deg:1 for i=0:dim]...))]))
 end
 
@@ -169,7 +169,7 @@ insimplex(bpt)
 true
 ```
 """
-function insimplex(bpt::AbstractVector{<:Real};atol::Real=1e-12)
+function insimplex(bpt::AbstractVector{<:Real};atol::Real=def_atol)
     (isapprox(maximum(bpt),1,atol=atol) || maximum(bpt) < 1) &&
     (isapprox(minimum(bpt),0,atol=atol) || minimum(bpt) > 0) &&
     isapprox(sum(bpt),1,atol=atol)
@@ -185,7 +185,7 @@ Check if an array of points in Barycentric coordinates lie within a simplex.
     as columns of an array.
 - `atol::Real=1e-9`: absolute tolerance.
 """
-function insimplex(bpts::AbstractMatrix{<:Real},atol::Real=1e-9)
+function insimplex(bpts::AbstractMatrix{<:Real},atol::Real=def_atol)
     all(mapslices(x->insimplex(x,atol=atol),bpts,dims=1))
 end
 
@@ -216,7 +216,7 @@ lineseg₋pt_dist(lineseg,pt)
 ```
 """
 function lineseg₋pt_dist(line_seg::AbstractMatrix{<:Real},p3::AbstractVector{<:Real},
-    line::Bool=false;atol::Real=1e-9)::Real
+    line::Bool=false;atol::Real=def_atol)::Real
     
     p1 = line_seg[:,1]
     p2 = line_seg[:,2]

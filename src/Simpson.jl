@@ -3,8 +3,9 @@ module Simpson
 using LinearAlgebra: dot,inv, norm
 using SymmetryReduceBZ.Utilities: remove_duplicates
 using Statistics: mean
-using Pebsi.Geometry: barytocart, carttobary
-using Pebsi.Polynomials: eval_poly
+using ..Geometry: barytocart, carttobary
+using ..Polynomials: eval_poly
+using ..Defaults: def_atol,def_rtol
 
 eval_1Dquad_basis(t) = [(1 - t)^2, 2*(1 - t)*t, t^2]
 # basis_mat = inv(reduce(hcat,[eval_1Dquad_basis(t) for t=[0,1/2,1]])')
@@ -35,7 +36,8 @@ bezcurve_intersects(coeffs)
 [2/3]
 ```
 """
-function bezcurve_intersects(bezcoeffs::AbstractVector{<:Real};atol::Real=1e-12)::AbstractVector
+function bezcurve_intersects(bezcoeffs::AbstractVector{<:Real};
+    atol::Real=def_atol)::AbstractVector
     a,b,c = bezcoeffs
     
     quadterm = a - 2*b + c
@@ -162,7 +164,8 @@ getdomain(coeffs)
 [2/3,1]
 ```
 """
-function getdomain(bezcoeffs::AbstractVector{<:Real};atol::Real=1e-9)::AbstractVector
+function getdomain(bezcoeffs::AbstractVector{<:Real};
+    atol::Real=def_atol)::AbstractVector
     vals = [evalpoly1D(t,bezcoeffs) for t=[0,1/2,1]]
     if all(vals .< 0) && !any(isapprox.(vals,0,atol=atol))
         return [0,1]
@@ -257,13 +260,13 @@ simpson(v,4)
 33.333333333333336
 ``` 
 """
-function simpson(y::AbstractVector{<:Real},int_len::Real)
+function simpson(y::AbstractVector{<:Real},int_len::Real)::Real
     n = length(y)-1
     n % 2 == 0 || error("The number of intervals must be odd for Simpson's method.")
     int_len/(3n) * sum(y[1:2:n] + 4*y[2:2:n] + y[3:2:n+1])
 end
 
-function simpson2D(coeffs,triangle,n,q=0;values=false)
+function simpson2D(coeffs,triangle,n,q=0;values=false)::Real
     
     lengths = [norm(triangle[:,mod1(i,3)] - triangle[:,mod1(i+1,3)]) for i=1:3]
     corner_midpoint_lens = [norm([mean(triangle[:,[mod1(i,3),mod1(i+1,3)]],dims=2)...] - triangle[:,mod1(i+2,3)]) for i=1:3]
@@ -339,7 +342,7 @@ pt = [0,2]
 # output
 2.0
 """
-function linept_dist(line,pt)
+function linept_dist(line,pt)::Real
     unit_vec = [0 -1; 1 0]*(line[:,2] - line[:,1])/norm(line[:,2] - line[:,1])
     abs(dot(unit_vec,pt-line[:,1]))
 end

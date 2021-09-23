@@ -1,5 +1,6 @@
 module Pebsi
 
+include("Defaults.jl")
 include("Geometry.jl")
 include("Polynomials.jl")
 include("EPMs.jl")
@@ -10,5 +11,4 @@ include("QuadraticIntegration.jl")
 include("Plotting.jl")
 
 export eval_epm
-
 end

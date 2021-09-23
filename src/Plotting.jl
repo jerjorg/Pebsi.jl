@@ -5,10 +5,10 @@ using PyPlot: subplots, figure, PyObject, figaspect, plt, pyimport
 using QHull: chull
 
 using ..QuadraticIntegration: bandstructure
-using ..EPMs: epm₋model2D
+using ..EPMs: epm₋model2D, epm₋model
 using ..RectangularMethod: sample_unitcell
-using ..Polynomials: eval_poly,sample_simplex,eval_bezcurve
-using ..Geometry: carttobary,barytocart,simplex_size
+using ..Polynomials: eval_poly, sample_simplex ,eval_bezcurve
+using ..Geometry: carttobary, barytocart, simplex_size
 
 using SymmetryReduceBZ.Plotting: plot_2Dconvexhull
 using SymmetryReduceBZ.Utilities: sortpts2D
@@ -293,4 +293,210 @@ function polygonplot(polygons::Vector{Matrix{T}} where T<:Real,
     end
     ax
 end
+
+@doc """
+    plot_bandstructure(name,basis,rules,expansion_size,sheets,kpoint_dist,
+        convention,coordinates)
+
+Plot the band structure of an empirical pseudopotential.
+
+# Arguments
+- `epm::Union{epm₋model2D,epm₋model}`: an empirical pseudopotential.
+- `kpoint_dist::Real`: the distance between k-points in the band plot.
+- `expansion_size::Integer`: the desired number of terms in the Fourier
+    expansion.
+- `sheets::Int`: the sheets included in the electronic band structure plot.
+
+# Returns
+- (`fig::PyPlot.Figure`,`ax::PyCall.PyObject`): the band structure plot
+    as a `PyPlot.Figure`.
+"""
+function plot_bandstructure(epm::Union{epm₋model2D,epm₋model},
+    kpoint_dist::Real,expansion_size::Integer;
+    func::Union{Nothing,Function}=nothing,sheets::Integer=10)
+
+    sp=pyimport("seekpath")
+
+    basis = [epm.real_latvecs[:,i] for i=1:size(epm.real_latvecs,1)]
+    # basis = epm.real_latvecs
+    rbasis=epm.recip_latvecs
+    atomtypes=epm.atom_types
+    atompos=[[0,0,0]]
+
+    # Calculate the energy cutoff of Fourier expansion.
+    cutoff=1
+    num_terms=0
+    rtol=0.2
+    atol=10
+    while (abs(num_terms - expansion_size) > expansion_size*rtol &&
+        abs(num_terms - expansion_size) > atol)
+        if num_terms - expansion_size > 0
+            cutoff *= 0.95
+        else
+            cutoff *= 1.1
+        end
+        num_terms = size(sample_sphere(rbasis,cutoff,[0,0,0]),2)
+    end
+    
+    # Calculate points along symmetry paths using `seekpath` Python package.
+    # Currently uses high symmetry paths from the paper: Y. Hinuma, G. Pizzi,
+    # Y. Kumagai, F. Oba, I. Tanaka, Band structure diagram paths based on
+    # crystallography, Comp. Mat. Sci. 128, 140 (2017).
+    # DOI: 10.1016/j.commatsci.2016.10.015
+    structure=[basis,atompos,atomtypes]
+    timereversal=true
+
+    spdict=sp[:get_explicit_k_path](structure,timereversal,kpoint_dist)
+    sympath_pts=Array(spdict["explicit_kpoints_abs"]')
+
+    if coordinates == "lattice"
+        m=spdict["reciprocal_primitive_lattice"]
+        sympath_pts=inv(m)*sympath_pts
+    elseif convention == "ordinary"
+        sympath_pts=1/(2π).*sympath_pts
+    end
+
+    # Determine the x-axis tick positions and labels.
+    labels=spdict["explicit_kpoints_labels"]
+    sympts_pos = filter(x->x>0,[if labels[i]==""; -1 else i end for i=1:length(labels)])
+    λ=spdict["explicit_kpoints_linearcoord"]
+
+    tmp_labels=[labels_dict[l] for l=labels[sympts_pos]]
+    tick_labels=tmp_labels
+    for i=2:(length(tmp_labels)-1)
+        if (sympts_pos[i-1]+1) == sympts_pos[i]
+            tick_labels[i]=""
+        elseif (sympts_pos[i]+1) == sympts_pos[i+1]
+            tick_labels[i]=tmp_labels[i]*"|"*tmp_labels[i+1]
+        else
+            tick_labels[i]=tmp_labels[i]
+        end
+    end
+
+    # Eigenvalues in band structure plot
+    evals = eval_epm(sympath_pts,epm,sheets=sheets)
+
+    fig,ax=subplots()
+    for i=1:epm.sheets ax.scatter(λ,evals[i,:],s=0.1) end
+    ax.set_xticklabels(tick_labels)
+    ax.set_xticks(λ[sympts_pos])
+    ax.grid(axis="x",linestyle="dashed")
+    ax.set_xlabel("High symmetry points")
+    ax.set_ylabel("Total energy (eV)")
+    ax.set_title(epm.name*" band structure plot")
+    (fig,ax)
+end
+
+@doc """
+    plot_bandstructure(name,basis,rules,expansion_size,sheets,kpoint_dist,
+        convention,coordinates)
+Plot the band structure of an empirical pseudopotential.
+# Arguments
+- `name`::String: the name of metal.
+- `basis::AbstractMatrix{<:Real}`: the lattice vectors of the crystal
+    as columns of a 3x3 array.
+- `rules::Dict{Float64,Float64}`: a dictionary whose keys are distances between
+    reciprocal lattice points rounded to two decimals places and whose values
+    are the empirical pseudopotential form factors.
+- `expansion_size::Integer`: the desired number of terms in the Fourier
+    expansion.
+- `sheets::Int`: the sheets included in the electronic
+    band structure plot.
+- `kpoint_dist::Real`: the distance between k-points in the band plot.
+- `convention::String="angular"`: the convention for going from real to
+    reciprocal space. Options include "angular" and "ordinary".
+- `coordinates::String="Cartesian"`: the coordinates of the k-points in
+    the band structure plot. Options include "Cartesian" and "lattice".
+# Returns
+- (`fig::PyPlot.Figure`,`ax::PyCall.PyObject`): the band structure plot
+    as a `PyPlot.Figure`.
+# Examples
+```jldoctest
+import Pebsi.EPMs: eval_epm,plot_bandstructure
+name="Al"
+Al_latvecs=[0.0 3.8262 3.8262; 3.8262 0.0 3.8262; 3.8262 3.8262 0.0]
+Al_rules=Dict(2.84 => 0.0562,1.42 => 0.0179)
+cutoff=100
+sheets=10
+kpoint_dist=0.001
+plot_bandstructure(name,Al_latvecs,Al_rules,cutoff,sheets,kpoint_dist)
+# returns
+(PyPlot.Figure(PyObject <Figure size 1280x960 with 1 Axes>),
+PyObject <AxesSubplot:title={'center':'Al band structure plot'},
+xlabel='High symmetry points', ylabel='Total energy (Ry)'>)
+"""
+function plot_bandstructure(name::String,basis::AbstractMatrix{<:Real},
+        rules::Dict{<:Real,<:Real},expansion_size::Integer,
+        sheets::Int,kpoint_dist::Real,
+        convention::String="angular",coordinates::String="Cartesian";
+        func::Union{Nothing,Function}=nothing)
+
+    sp=pyimport("seekpath")
+
+    rbasis=get_recip_latvecs(basis,convention)
+    atomtypes=[0]
+    atompos=[[0,0,0]]
+
+    # Calculate the energy cutoff of Fourier expansion.
+    cutoff=1
+    num_terms=0
+    tol=0.2
+    while abs(num_terms - expansion_size) > expansion_size*tol
+        if num_terms - expansion_size > 0
+            cutoff *= 0.95
+        else
+            cutoff *= 1.1
+        end
+        num_terms = size(sample_sphere(rbasis,cutoff,[0,0,0]),2)
+    end
+
+    # Calculate points along symmetry paths using `seekpath` Python package.
+    # Currently uses high symmetry paths from the paper: Y. Hinuma, G. Pizzi,
+    # Y. Kumagai, F. Oba, I. Tanaka, Band structure diagram paths based on
+    # crystallography, Comp. Mat. Sci. 128, 140 (2017).
+    # DOI: 10.1016/j.commatsci.2016.10.015
+    structure=[basis,atompos,atomtypes]
+    timereversal=true
+
+    spdict=sp[:get_explicit_k_path](structure,timereversal,kpoint_dist)
+    sympath_pts=Array(spdict["explicit_kpoints_abs"]')
+
+    if coordinates == "lattice"
+        m=spdict["reciprocal_primitive_lattice"]
+        sympath_pts=inv(m)*sympath_pts
+    elseif convention == "ordinary"
+        sympath_pts=1/(2π).*sympath_pts
+    end
+
+    # Determine the x-axis tick positions and labels.
+    labels=spdict["explicit_kpoints_labels"];
+    sympts_pos = filter(x->x>0,[if labels[i]==""; -1 else i end for i=1:length(labels)])
+    λ=spdict["explicit_kpoints_linearcoord"];
+
+    tmp_labels=[labels_dict[l] for l=labels[sympts_pos]]
+    tick_labels=tmp_labels
+    for i=2:(length(tmp_labels)-1)
+        if (sympts_pos[i-1]+1) == sympts_pos[i]
+            tick_labels[i]=""
+        elseif (sympts_pos[i]+1) == sympts_pos[i+1]
+            tick_labels[i]=tmp_labels[i]*"|"*tmp_labels[i+1]
+        else
+            tick_labels[i]=tmp_labels[i]
+        end
+    end
+
+    # Eigenvalues in band structure plot
+    evals = eval_epm(sympath_pts,rbasis,rules,cutoff,sheets,func=func)
+
+    fig,ax=subplots()
+    for i=1:10 ax.scatter(λ,evals[i,:],s=0.1) end
+    ax.set_xticklabels(tick_labels)
+    ax.set_xticks(λ[sympts_pos])
+    ax.grid(axis="x",linestyle="dashed")
+    ax.set_xlabel("High symmetry points")
+    ax.set_ylabel("Total energy (Ry)")
+    ax.set_title(name*" band structure plot")
+    (fig,ax)
+end
+
 end # module

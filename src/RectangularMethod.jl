@@ -8,7 +8,8 @@ using LinearAlgebra: det, diag, dot, inv
 using AbstractAlgebra: ZZ, matrix, snf_with_transform, hnf_with_transform, hnf
 using Distributed: pmap
 
-import ..EPMs: eval_epm,RytoeV,eVtoRy,epm₋model,epm₋model2D,sym_offset
+using ..EPMs: eval_epm,RytoeV,eVtoRy,epm₋model,epm₋model2D,sym_offset
+using ..Defaults: def_atol,def_rtol
 
 @doc """
     sample_unitcell(latvecs,N,grid_offset,rtol,atol)
@@ -47,7 +48,7 @@ function sample_unitcell(latvecs::AbstractMatrix{<:Real},
     N::AbstractArray{<:Integer,2},
     grid_offset::AbstractVector{<:Real}=zeros(size(N,1));
     rtol::Real=sqrt(eps(float(maximum(latvecs)))),
-    atol::Real=1e-9)::Array{Float64,2}
+    atol::Real=def_atol)::Array{Float64,2}
 
     H = hnf(matrix(ZZ,N))
     H = convert(Array{Int,2},Array(H))
@@ -81,7 +82,7 @@ end
     in parallel.
 - `rtol::Real=sqrt(eps(float(maximum(real_latvecs))))` a relative tolerance for
     floating point comparisons.
-- `atol::Real=1e-9`: an absolute tolerance for floating point comparisons.
+- `atol::Real=def_atol`: an absolute tolerance for floating point comparisons.
 
 
 # Returns
@@ -102,7 +103,7 @@ function rectangular_method(epm::Union{epm₋model2D,epm₋model},
     N::Union{Integer,AbstractMatrix{<:Integer}},num_cores::Integer=1;
     partial::Bool=true,
     rtol::Real=sqrt(eps(float(maximum(epm.recip_latvecs)))), 
-    atol::Real=1e-9)::Tuple{Int64,Float64,Float64}
+    atol::Real=def_atol)::Tuple{Int64,Float64,Float64}
 
     grid_offset = sym_offset[epm.rlat_type]
     if typeof(N) <: Integer
@@ -184,17 +185,17 @@ function rectangular_method(recip_latvecs::AbstractMatrix{<:Real},
     sheets::Int, N::AbstractMatrix{<:Real},
     grid_offset::AbstractVector{<:Real}=[0,0], energy_factor::Real=RytoeV;
     rtol::Real=sqrt(eps(float(maximum(recip_latvecs)))),
-    atol::Real=1e-9,
+    atol::Real=def_atol,
     func::Union{Nothing,Function}=nothing)::Tuple{Int64,Float64,Float64}
 
-    integration_points = sample_unitcell(recip_latvecs, N, grid_offset,rtol,
-        atol)
+    integration_points = sample_unitcell(recip_latvecs, N, grid_offset,rtol=rtol,
+        atol=atol)
     num_kpoints = size(integration_points,2)
     num_states = num_kpoints*sheets
     eigenvalues = zeros(num_states)
 
     for i=1:num_kpoints
-        if func == nothing
+        if func === nothing
         eigenvalues[1+(i-1)*sheets:(sheets*i)] = eval_epm(
             integration_points[:,i],recip_latvecs,rules,cutoff,sheets,
             energy_factor,rtol=rtol,atol=atol)
@@ -230,7 +231,7 @@ Calculate the symmetrically unique points and their weights in a GR grid.
 - `rtol::Real=sqrt(eps(float(maximum(recip_latvecs))))`: relative tolerance for
     floating point comparisons. This is needed when mapping points into the
     first unit cell.
-- `atol::Real=1e-9`: an absolute tolerance for floating point comparisons. Also
+- `atol::Real=def_atol`: an absolute tolerance for floating point comparisons. Also
     used for mapping points to the first unit cell.
 
 # Returns
@@ -257,7 +258,7 @@ function symreduce_grid(recip_latvecs::AbstractMatrix{<:Real},
     N::AbstractArray{<:Integer,2}, grid_offset::AbstractVector{<:Real},
     pointgroup::AbstractArray;
     rtol::Real=sqrt(eps(float(maximum(recip_latvecs)))),
-    atol::Real=1e-9)
+    atol::Real=def_atol)
 
     dim = length(grid_offset)
 
@@ -435,7 +436,7 @@ Calculate the points of the grid in each orbit the hard way.
 - `latvecs::AbstractMatrix{<:Real}`: the lattice vectors as columns of an
     array.
 - `rtol::Real=sqrt(eps(float(maximum(grid))))`: relative tolerance.
-- `atol::Real=1e-9`: absolute tolerance.
+- `atol::Real=def_atol`: absolute tolerance.
 
 # Returns
 - `orbits::AbstractArray`: the points of the grid in each orbit in a nested
@@ -459,7 +460,7 @@ calculate_orbits(grid,pointgroup,recip_latvecs)
 """
 function calculate_orbits(grid::AbstractMatrix{<:Real},
     pointgroup,latvecs::AbstractMatrix{<:Real};
-    rtol::Real=sqrt(eps(float(maximum(grid)))),atol::Real=1e-9)::AbstractArray
+    rtol::Real=sqrt(eps(float(maximum(grid)))),atol::Real=def_atol)::AbstractArray
 
     inv_latvecs = inv(latvecs)
     coordinates = "Cartesian"

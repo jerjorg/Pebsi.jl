@@ -1,12 +1,9 @@
 module Mesh
 
-# include("Geometry.jl")
-# include("Polynomials.jl")
-
 using ..Geometry: simplex_size, barytocart,lineseg₋pt_dist
 using ..Polynomials: sample_simplex
+using ..Defaults: def_atol, def_rtol, def_mesh_scale, def_max_neighbor_tol
 using SymmetryReduceBZ.Utilities: unique_points
-
 using PyCall: pyimport,PyObject
 using QHull: Chull
 using Statistics: mean
@@ -92,12 +89,12 @@ PyObject <scipy.spatial.qhull.Delaunay object at 0x19483d130>
 ```
 """
 function ibz_init₋mesh(ibz::Chull{<:Real},n::Int;
-    rtol::Real=sqrt(eps(maximum(ibz.points))),atol::Real=1e-9)::PyObject
+    rtol::Real=sqrt(eps(maximum(ibz.points))),atol::Real=def_atol)::PyObject
     spatial = pyimport("scipy.spatial")
 
     dim = size(ibz.points,2)
     # We need to enclose the IBZ in a box to prevent collinear triangles.
-    box_length = 100*maximum(abs.(ibz.points))
+    box_length = def_mesh_scale*maximum(abs.(ibz.points))
     if dim == 2
         box_pts = reduce(hcat,[[mean(ibz.points,dims=1)...] + box_length*[i,j] 
             for i=[-1,1] for j=[-1,1]])
@@ -146,7 +143,7 @@ Calculate the symmetrically unique points within the IBZ.
 ```
 """
 function get_sym₋unique!(mesh::PyObject,pointgroup::Vector{Matrix{Float64}};
-    rtol::Real=sqrt(eps(maximum(mesh.points))),atol::Real=1e-9)
+    rtol::Real=sqrt(eps(maximum(mesh.points))),atol::Real=def_atol)
 
     spatial = pyimport("scipy.spatial")
 
@@ -249,7 +246,7 @@ function notbox_simplices(mesh::PyObject)::Vector{Vector{Int}}
 end
 
 @doc """
-    get_cvpts(mesh,ibz,atol=1e-9)
+    get_cvpts(mesh,ibz,atol)
 
 Determine which points are on the boundary of the IBZ (or any convex hull).
 
@@ -296,7 +293,7 @@ get_cvpts(mesh,m2ibz)
  40
 ```
 """
-function get_cvpts(mesh::PyObject,ibz::Chull;atol::Real=1e-9)::AbstractVector{<:Int}
+function get_cvpts(mesh::PyObject,ibz::Chull;atol::Real=def_atol)::AbstractVector{<:Int}
     
     ibz_linesegs = [Matrix(ibz.points[i,:]') for i=ibz.simplices]
     cv_pointsᵢ = [0 for i=1:size(mesh.points,1)]
@@ -357,7 +354,7 @@ PyObject (<scipy.spatial.qhull.Delaunay object at 0x1802f7820>, array([ 0,  0,  
 """
 function get_extmesh(ibz::Chull,mesh::PyObject,pointgroup::Vector{Matrix{Float64}},
     recip_latvecs::AbstractMatrix{<:Real},near_neigh::Int=1;
-    rtol::Real=sqrt(eps(maximum(abs.(mesh.points)))),atol::Real=1e-9)
+    rtol::Real=sqrt(eps(maximum(abs.(mesh.points)))),atol::Real=def_atol)
      
     spatial = pyimport("scipy.spatial")
     sym₋unique,mesh = get_sym₋unique!(mesh,pointgroup)
@@ -365,7 +362,8 @@ function get_extmesh(ibz::Chull,mesh::PyObject,pointgroup::Vector{Matrix{Float64
     neighborsᵢ = reduce(vcat,[get₋neighbors(i,mesh,near_neigh) for i=cv_pointsᵢ]) |> unique
     numpts = size(mesh.points,1)
     # Calculate the maximum distance between neighboring points
-    bound_limit = 1.01*maximum(reduce(vcat,[[norm(mesh.points[i,:] - mesh.points[j,:]) 
+    bound_limit = def_max_neighbor_tol*maximum(
+        reduce(vcat,[[norm(mesh.points[i,:] - mesh.points[j,:]) 
                     for j=get₋neighbors(i,mesh,near_neigh)] for i=cv_pointsᵢ]))
      
     ibz_linesegs = [Matrix(ibz.points[i,:]') for i=ibz.simplices]
