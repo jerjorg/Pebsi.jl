@@ -2,7 +2,8 @@ module Mesh
 
 using ..Geometry: simplex_size, barytocart,lineseg₋pt_dist
 using ..Polynomials: sample_simplex
-using ..Defaults: def_atol, def_rtol, def_mesh_scale, def_max_neighbor_tol
+using ..Defaults: def_atol, def_rtol, def_mesh_scale, def_max_neighbor_tol,
+    def_neighbors_per_bin, def_num_neighbors
 using SymmetryReduceBZ.Utilities: unique_points
 using PyCall: pyimport,PyObject
 using QHull: Chull
@@ -10,7 +11,7 @@ using Statistics: mean
 using LinearAlgebra: norm
 
 @doc """
-    get₋neighbors(index,mesh,num₋neighbors=2)
+    get_neighbors(index,mesh,num₋neighbors=2)
 
 Calculate the nth-nearest neighbors of a point in a mesh.
 
@@ -26,13 +27,13 @@ Calculate the nth-nearest neighbors of a point in a mesh.
 
 # Examples
 ```jldoctest
-import Pebsi.Mesh: get₋neighbors
+import Pebsi.Mesh: get_neighbors
 import PyCall: pyimport
 spatial = pyimport("scipy.spatial")
 pts = [0.0 0.0; 0.25 0.0; 0.5 0.0; 0.25 0.25; 0.5 0.25; 0.5 0.5]
 index = 2
 mesh = spatial.Delaunay(pts)
-get₋neighbors(index,mesh)
+get_neighbors(index,mesh)
 # output
 5-element Array{Int64,1}:
  4
@@ -41,7 +42,7 @@ get₋neighbors(index,mesh)
  3
 ```
 """
-function get₋neighbors(index::Int,mesh::PyObject,
+function get_neighbors(index::Int,mesh::PyObject,
     num₋neighbors::Int=2)::AbstractVector{Int}
     indices,indptr = mesh.vertex_neighbor_vertices
     indices .+= 1
@@ -57,6 +58,58 @@ function get₋neighbors(index::Int,mesh::PyObject,
     end
     
     unique(neighborsᵢ)
+end
+
+function choose_neighbors(simplex,neighborsᵢ,neighbors;num_neighbors=def_num_neighbors)
+
+    center = vec(mean(simplex,dims=2)) # Measure angles from the center of the triangle
+    angles = [atan(neighbors[2,i]-center[2],neighbors[1,i]-center[1]) for i=1:size(neighbors,2)]
+    order = sortperm(angles); neighbors = neighbors[:,order]; angles = angles[order]
+    neighborsᵢ = neighborsᵢ[order]
+    distances = [minimum([
+        lineseg₋pt_dist(simplex[:,[i,mod1(i+1,3)]],neighbors[:,j]) for i=1:3]) for j=1:size(neighbors,2)]
+    # dorder = sortperm(sortperm(distances))
+    
+    # Group neighboring points by angle ranges
+    nbins = round(Int,num_neighbors/def_neighbors_per_bin)
+    angle_segs = -π:2π/nbins:π;
+    angle_ran = [[] for _=1:nbins] # angle ranges
+
+
+    p = 1
+    for (i,θ) in enumerate(angles)
+        if θ <= angle_segs[p+1]
+            push!(angle_ran[p],i)
+        else
+            p += 1
+            push!(angle_ran[p],i)
+        end
+    end
+
+    for p=1:nbins
+        # Order the points in each bin by distance
+        distances = [minimum([lineseg₋pt_dist(
+            simplex[:,[i,mod1(i+1,3)]],neighbors[:,j]) for i=1:3]) for j=angle_ran[p]]
+        dorder = sortperm(distances)
+        angle_ran[p] = neighborsᵢ[angle_ran[p][dorder]]
+        # angle_ran[p] = neighborsᵢ[angle_ran[p][sortperm(dorder[angle_ran[p]])]]
+    end
+    # angle_ran[p] = angle_ran[p][sortperm(dorder[angle_ran[p]])]
+    # Select the points within the angle ranges that are closest to the sample points of the triangle.
+    c = 0
+    neighᵢ = []
+    while length(neighᵢ) < num_neighbors
+        c += 1
+        for i=1:nbins
+            # Move on if there are no more points in this angle range to add.
+            if length(angle_ran[i]) < c
+                continue
+            else
+                push!(neighᵢ,angle_ran[i][c])            
+            end
+        end    
+    end
+    neighᵢ
 end
 
 @doc """
@@ -359,12 +412,12 @@ function get_extmesh(ibz::Chull,mesh::PyObject,pointgroup::Vector{Matrix{Float64
     spatial = pyimport("scipy.spatial")
     sym₋unique,mesh = get_sym₋unique!(mesh,pointgroup)
     cv_pointsᵢ = get_cvpts(mesh,ibz)
-    neighborsᵢ = reduce(vcat,[get₋neighbors(i,mesh,near_neigh) for i=cv_pointsᵢ]) |> unique
+    neighborsᵢ = reduce(vcat,[get_neighbors(i,mesh,near_neigh) for i=cv_pointsᵢ]) |> unique
     numpts = size(mesh.points,1)
     # Calculate the maximum distance between neighboring points
     bound_limit = def_max_neighbor_tol*maximum(
         reduce(vcat,[[norm(mesh.points[i,:] - mesh.points[j,:]) 
-                    for j=get₋neighbors(i,mesh,near_neigh)] for i=cv_pointsᵢ]))
+                    for j=get_neighbors(i,mesh,near_neigh)] for i=cv_pointsᵢ]))
      
     ibz_linesegs = [Matrix(ibz.points[i,:]') for i=ibz.simplices]
     bztrans = [[[i,j] for i=-1:1,j=-1:1]...]

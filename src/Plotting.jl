@@ -21,7 +21,7 @@ using Statistics: mean
 Plot the points within a mesh in 2D or 3D.
 """
 function meshplot(meshpts::AbstractMatrix{<:Real},
-    ax::Union{PyObject,Nothing}=nothing; color::String="blue", alpha=0.5,
+    ax::Union{PyObject,Nothing}=nothing; color::String="blue", alpha=1.,
     zorder::Int=0)
 
     dim = size(meshpts,1)

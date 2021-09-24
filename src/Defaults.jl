@@ -2,8 +2,8 @@ module Defaults
 
 # Default values, tolerances, and hyperparameter constants
 def_init_msize = 3 # The initial size of the mesh
-def_num_neigh = 2 # the number of neighbors included
-def_fermiarea_eps = 1e-10 # The convergence param. for the Fermi area
+def_num_near_neigh = 2 # the number of nearest neighbors included in neighbor calculations
+def_fermiarea_eps = 1e-10 # The convergence tolerance for the Fermi area
 def_target_accuracy = 1e-4 # The target accuracy for the band energy
 def_fermilevel_method = 2 # Chandrupatla's root finding algorithm
 def_refine_method = 3 # Split a fraction of triangles with more than allowed error
@@ -16,7 +16,7 @@ def_rtol = 1e-9 # Relative tolerance for floating point comparisons
 def_atol = 1e-9 # absolute tolerance for floating point comparisons
 def_fatten = 0.15 # A parameter for scaling the interval coefficients
 max_refine_steps = 100 # The maximum number of refinement iterations
-def_neighbor_cutoff = 15 # The desired number of neighbors in interval coefficient calculation
+def_num_neighbors = 15 # The desired number of neighbors in interval coefficient calculation
 def_neighbors_per_bin = 2 # The number of neighbors per bin (angle range)
 def_mesh_scale = 100 # Determines the size of square that surrounds the triangle or mesh
 def_taylor_exp_tol = 1e-2 # Tolerance for analytic areas and volumes when weight close to zero

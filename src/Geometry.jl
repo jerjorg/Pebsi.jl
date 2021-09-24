@@ -218,8 +218,7 @@ lineseg₋pt_dist(lineseg,pt)
 function lineseg₋pt_dist(line_seg::AbstractMatrix{<:Real},p3::AbstractVector{<:Real},
     line::Bool=false;atol::Real=def_atol)::Real
     
-    p1 = line_seg[:,1]
-    p2 = line_seg[:,2]
+    p1 = line_seg[:,1]; p2 = line_seg[:,2]
     proj = dot((p2-p1)/norm(p2 - p1),p3-p1)
 
     if proj <= norm(p2 - p1) && 0 <= proj || line
