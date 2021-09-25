@@ -587,11 +587,18 @@ mutable struct epm₋model2D
     cutoff::Real
     rlat_type::String
     
+    name::String
     electrons::Real
     fermiarea::Real
     fermilevel::Real
     bandenergy::Real
 end
+
+m1name1 = "m11"; m1name2 = "m12"; m1name3 = "m13"
+m2name1 = "m21"; m2name2 = "m22"; m2name3 = "m23"
+m3name1 = "m31"; m3name2 = "m32"; m3name3 = "m33"
+m4name1 = "m41"; m4name2 = "m42"; m4name3 = "m43"
+m5name1 = "m51"; m5name2 = "m52"; m5name3 = "m53"
 
 energy_conv = 1
 sheets = 10
@@ -603,7 +610,7 @@ vars₀ = ["energy_conv","sheets","atom_types","atom_pos","coordinates",
         "convention"]
 vars₁ = ["real_latvecs","recip_latvecs","bz","ibz","pointgroup","frac_trans",
         "dist_ff","rules","cutoff","rlat_type"]
-vars₂ = ["electrons","fermiarea","fermilevel","bandenergy"];
+vars₂ = ["name","electrons","fermiarea","fermilevel","bandenergy"];
 v = Dict()
 for i=1:5
     [v[var] = (var |> Symbol |> eval) for var=vars₀]

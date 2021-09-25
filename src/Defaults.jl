@@ -10,7 +10,6 @@ def_refine_method = 3 # Split a fraction of triangles with more than allowed err
 def_frac_refined = 0.1 # The fraction of triangles refined
 def_sample_method = 3 # Add one or three sample points depending on mag. of error ratio
 def_neighbor_method = 2 # Select neighbors close and surrounding the triangle
-def_inside = false # Don't select neighbors from inside the triangle
 def_uniform = false # Do adaptive refinement by default
 def_rtol = 1e-9 # Relative tolerance for floating point comparisons
 def_atol = 1e-9 # absolute tolerance for floating point comparisons

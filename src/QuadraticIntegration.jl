@@ -79,6 +79,7 @@ A container for all variables related to the band structure.
 mutable struct bandstructure
     init_msize::Int
     num_near_neigh::Int
+    num_neighbors::Int
     fermiarea_eps::Real
     target_accuracy::Real
     fermilevel_method::Int
@@ -153,6 +154,7 @@ function init_bandstructure(
     epm::Union{epm₋model,epm₋model2D};
     init_msize::Int=def_init_msize,
     num_near_neigh::Int=def_num_near_neigh,
+    num_neighbors::Int=def_num_neighbors,
     fermiarea_eps::Real=def_fermiarea_eps,
     target_accuracy::Real=def_target_accuracy,
     fermilevel_method::Int=def_fermilevel_method,
@@ -160,11 +162,8 @@ function init_bandstructure(
     sample_method::Int=def_sample_method,
     neighbor_method::Int=def_neighbor_method,
     fatten::Real=def_fatten,
-    inside::Bool=def_inside,
     rtol::Real=def_rtol,
     atol::Real=def_atol)
-
-    if inside model = epm else model = nothing end
 
     mesh = ibz_init₋mesh(epm.ibz,init_msize;rtol=rtol,atol=atol)
     mesh,ext_mesh,sym₋unique = get_extmesh(epm.ibz,mesh,epm.pointgroup,
@@ -179,7 +178,7 @@ function init_bandstructure(
     end
     
     mesh_intcoeffs = [get_intercoeffs(index,mesh,ext_mesh,sym₋unique,eigenvals,
-        simplicesᵢ,fatten,num_near_neigh,epm=model,neighbor_method=neighbor_method) for index=1:length(simplicesᵢ)];
+        simplicesᵢ,fatten,num_near_neigh,epm=epm,neighbor_method=neighbor_method) for index=1:length(simplicesᵢ)];
     
     partially_occupied = [zeros(Int,epm.sheets) for _=1:length(simplicesᵢ)]
     bandenergy_errors = zeros(length(simplicesᵢ))
@@ -196,6 +195,7 @@ function init_bandstructure(
     bandstructure(
         init_msize,
         num_near_neigh,
+        num_neighbors,
         fermiarea_eps,
         target_accuracy,
         fermilevel_method,
@@ -917,7 +917,7 @@ function get_intercoeffs(index::Int,mesh::PyObject,ext_mesh::PyObject,
     if neighbor_method == 3
         n = def_inside_neighbors_divs # Number of points for the uniform sampling of the triangle
         b = sample_simplex(2,n)
-        b = b[:,setdiff(1:length(b),[1,n+1,length(b)])]
+        b = b[:,setdiff(1:size(b,2),[1,n+1,size(b,2)])]
         eigvals = eval_epm(barytocart(b,simplex),epm)
     else
         b = carttobary(ext_mesh.points[neighborsᵢ,:]',simplex)
@@ -1107,10 +1107,7 @@ Calculate the Fermi level and band energy for a given rep. of the band struct.
     Fermi area error, Fermi level interval, Fermi area interval, band energy
     interval, and the partially occupied sheets.
 """
-function calc_flbe!(epm::Union{epm₋model2D,epm₋model},ebs::bandstructure,
-    inside::Bool=def_inside)
-
-    if inside model = epm else model = nothing end
+function calc_flbe!(epm::Union{epm₋model2D,epm₋model},ebs::bandstructure)
 
     simplex_bpts = sample_simplex(2,2)
     simplices = [Matrix(ebs.mesh.points[s,:]') for s=ebs.simplicesᵢ]
@@ -1149,7 +1146,7 @@ function calc_flbe!(epm::Union{epm₋model2D,epm₋model},ebs::bandstructure,
         (if sigmas[i] == nothing
             zeros(2,6)
         else
-            get_intercoeffs(i,ebs.mesh,ebs.ext_mesh,ebs.sym₋unique,ebs.eigenvals,ebs.simplicesᵢ,ebs.fatten,ebs.num_near_neigh,sigma=sigmas[i],epm=model,
+            get_intercoeffs(i,ebs.mesh,ebs.ext_mesh,ebs.sym₋unique,ebs.eigenvals,ebs.simplicesᵢ,ebs.fatten,ebs.num_near_neigh,sigma=sigmas[i],epm=epm,
             neighbor_method = ebs.neighbor_method) 
         end) for i=1:length(ebs.simplicesᵢ)]
 
@@ -1204,11 +1201,8 @@ end
 Perform one iteration of adaptive refinement. See the composite type 
 `bandstructure` for refinement options. 
 """
-function refine_mesh!(epm::Union{epm₋model2D,epm₋model},ebs::bandstructure,
-    inside::Bool=def_inside)
+function refine_mesh!(epm::Union{epm₋model2D,epm₋model},ebs::bandstructure)
        
-    if inside model = epm else model = nothing end 
-     
     spatial = pyimport("scipy.spatial")
     simplices = [Matrix(ebs.mesh.points[s,:]') for s=ebs.simplicesᵢ]
     err_cutoff = [simplex_size(s)/epm.ibz.volume for s=simplices]*ebs.target_accuracy
@@ -1343,7 +1337,7 @@ function refine_mesh!(epm::Union{epm₋model2D,epm₋model},ebs::bandstructure,
     ebs.simplicesᵢ = notbox_simplices(ebs.mesh)
     ebs.mesh_intcoeffs = [get_intercoeffs(index,ebs.mesh,ebs.ext_mesh,
     ebs.sym₋unique,ebs.eigenvals,ebs.simplicesᵢ,ebs.fatten,ebs.num_near_neigh,
-    neighbor_method=ebs.neighbor_method,epm=model) for index=1:length(ebs.simplicesᵢ)]    
+    neighbor_method=ebs.neighbor_method,epm=epm) for index=1:length(ebs.simplicesᵢ)]    
     ebs
 end
 
@@ -1355,7 +1349,9 @@ Calculate the band energy using uniform or adaptive quadratic integation.
 """
 function quadratic_method!(epm::Union{epm₋model2D,epm₋model};
     init_msize::Int=def_init_msize, num_near_neigh::Int=def_num_near_neigh,
-    fermiarea_eps::Real=def_fermiarea_eps,target_accuracy::Real=def_target_accuracy,
+    num_neighbors::Int=def_num_neighbors,
+    fermiarea_eps::Real=def_fermiarea_eps,
+    target_accuracy::Real=def_target_accuracy,
     fermilevel_method::Int=def_fermilevel_method, 
     refine_method::Int=def_refine_method,
     sample_method::Int=def_sample_method, 
@@ -1363,15 +1359,13 @@ function quadratic_method!(epm::Union{epm₋model2D,epm₋model};
     fatten::Real=def_fatten,
     rtol::Real=def_rtol,
     atol::Real=def_atol,
-    uniform::Bool=def_uniform,
-    inside::Bool=def_inside)
+    uniform::Bool=def_uniform)
     
     ebs = init_bandstructure(epm,init_msize=init_msize, num_near_neigh=num_near_neigh,
-        fermiarea_eps=fermiarea_eps, target_accuracy=target_accuracy, 
-        fermilevel_method=fermilevel_method, refine_method=refine_method,
-        sample_method=sample_method, neighbor_method=neighbor_method,
-        fatten=fatten, inside=inside, rtol=rtol, atol=atol)
-    calc_flbe!(epm,ebs,inside)
+        num_neighbors=num_neighbors,fermiarea_eps=fermiarea_eps, 
+        target_accuracy=target_accuracy, fermilevel_method=fermilevel_method, refine_method=refine_method, sample_method=sample_method, 
+        neighbor_method=neighbor_method, fatten=fatten, rtol=rtol, atol=atol)
+    calc_flbe!(epm,ebs)
 
     if uniform return ebs end
     
