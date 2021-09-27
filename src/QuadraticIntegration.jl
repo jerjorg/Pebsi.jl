@@ -396,6 +396,10 @@ function split_bezsurf₁(bezpts::AbstractMatrix{<:Real},
     dim = 2
     deg = 2
     triangle = bezpts[1:2,corner_indices]
+    if simplex_size(triangle) < def_min_simplex_size
+        return [bezpts]
+    end
+
     coeffs = bezpts[end,:]
     pts = bezpts[1:2,:]
     simplex_bpts = sample_simplex(dim,deg)
@@ -1004,7 +1008,7 @@ function calc_fl(epm::Union{epm₋model,epm₋model2D},ebs::bandstructure;
     else 
         error("Invalid ctype.")
     end
-    
+      
     simplex_bpts = sample_simplex(2,2)
     simplices = [Matrix(ebs.mesh.points[s,:]') for s=ebs.simplicesᵢ]
     simplex_pts = [barytocart(simplex_bpts,s) for s=simplices]
@@ -1019,26 +1023,24 @@ function calc_fl(epm::Union{epm₋model,epm₋model2D},ebs::bandstructure;
        E₁,E₂ = window
     end
     # Make sure the window contains the approx. Fermi level.
-    dE = 2(E₂ - E₁)
+    dE = 2*abs(E₂ - E₁)
     f₁ = sum([quad_area₋volume([simplex_pts[tri]; [minimum(ebs.mesh_intcoeffs[tri][sheet],dims=1)...]' .- E₁],"area") for tri=1:length(ebs.simplicesᵢ) for sheet=1:epm.sheets]) - fermi_area
     iters₁ = 0
     while f₁ > 0
         iters₁ += 1; E₁ -= dE; dE *= 2
-        if iters₁ > def_fl_max_iters
-            error("Unable to find a lower limit for the rooting finding algorithm after
-            $(def_fl_max_iters) iterations.")
+        if iters₁ > def_fl_max_iters || dE == 0
+            E₁ = minimum(ebs.eigenvals[1,:5:end])
         end
         f₁ = sum([quad_area₋volume([simplex_pts[tri]; [minimum(ebs.mesh_intcoeffs[tri][sheet],dims=1)...]' .- E₁],"area") for tri=1:length(ebs.simplicesᵢ) for sheet=1:epm.sheets]) - fermi_area
     end
 
-    dE = 2(E₂ - E₁)
+    dE = 2*abs(E₂ - E₁)
     f₂ = sum([quad_area₋volume([simplex_pts[tri]; [maximum(ebs.mesh_intcoeffs[tri][sheet],dims=1)...]' .- E₂],"area") for tri=1:length(ebs.simplicesᵢ) for sheet=1:epm.sheets]) - fermi_area
     iters₂ = 0
     while f₂ < 0
         iters₂ += 1; E₂ += dE; dE *= 2
-        if iters₂ > def_fl_max_iters
-            error("Unable to find an upper limit for the rooting finding algorithm after
-            $(def_fl_max_iters) iterations.")
+        if iters₂ > def_fl_max_iters || dE == 0
+            E₂ = maximum(ebs.eigenvals[maxsheet,5:end])
         end
         f₂ = sum([quad_area₋volume([simplex_pts[tri]; [maximum(ebs.mesh_intcoeffs[tri][sheet],dims=1)...]' .- E₂],"area") for tri=1:length(ebs.simplicesᵢ) for sheet=1:epm.sheets]) - fermi_area
     end
