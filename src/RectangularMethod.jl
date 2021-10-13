@@ -211,7 +211,7 @@ function rectangular_method(recip_latvecs::AbstractMatrix{<:Real},
     fermi_level = eigenvalues[occupied_states[end]]
     band_energy = rectangle_size*sum(eigenvalues[occupied_states])
 
-    (num_kpoints,fermi_level,band_energy)
+    (num_kpoints,fermi_level,2*band_energy)
 end
 
 @doc """

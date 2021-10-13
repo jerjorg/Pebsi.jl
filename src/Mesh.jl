@@ -443,4 +443,32 @@ function get_extmesh(ibz::Chull,mesh::PyObject,pointgroup::Vector{Matrix{Float64
     (mesh,ext_mesh,sym₋unique)
 end
 
+"""
+    trimesh(triangle,ndivs)
+
+Split a triangle uniformly into smaller triangles and sample each subtriangle at its center.
+"""
+function trimesh(ndivs)
+    dim = 2
+    bpts = sample_simplex(dim,ndivs) 
+    mesh = zeros(3,ndivs*ndivs)
+    r0,r1 = 0,0 # row offset
+    n = ndivs+1
+    counter = 0
+    for j=1:ndivs
+        for i=1:ndivs+1-j
+            counter += 1
+            r0,r1 = sum(n:-1:n-j+2),sum(n:-1:n-j+1)
+            # Take the average of the point at the corners of the subtriangle      
+            mesh[:,counter] = mean(bpts[:,[i+r0,i+r0+1,i+r1]],dims=2)
+            if i < ndivs-j+1 && j != ndivs
+                counter += 1
+                # Add two triangles if not at the boundary
+                mesh[:,counter] = mean(bpts[:,[i+r0+1,i+1+r1,i+r1]],dims=2)
+            end
+        end
+    end
+    mesh
+end
+
 end # Module

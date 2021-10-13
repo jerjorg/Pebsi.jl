@@ -381,19 +381,19 @@ Rb_bestd = 2*6.910086337481342e-7
 Sn_bestd = 2*0.0018233084032896424
 Zn_bestd = 2*4.026081648014471e-6
 
-Ag_fermiarea = Ag_electrons/2*Ag_ibz.volume
-Al_fermiarea = Al_electrons/2*Al_ibz.volume
-Au_fermiarea = Au_electrons/2*Au_ibz.volume
-Cs_fermiarea = Cs_electrons/2*Cs_ibz.volume
-Cu_fermiarea = Cu_electrons/2*Cu_ibz.volume
-In_fermiarea = In_electrons/2*In_ibz.volume
-K_fermiarea = K_electrons/2*K_ibz.volume
-Li_fermiarea = Li_electrons/2*Li_ibz.volume
-Na_fermiarea = Na_electrons/2*Na_ibz.volume
-Pb_fermiarea = Pb_electrons/2*Pb_ibz.volume
-Rb_fermiarea = Rb_electrons/2*Rb_ibz.volume
-Sn_fermiarea = Sn_electrons/2*Sn_ibz.volume
-Zn_fermiarea = Zn_electrons/2*Zn_ibz.volume
+Ag_fermiarea = Ag_electrons/2*Ag_bz.volume
+Al_fermiarea = Al_electrons/2*Al_bz.volume
+Au_fermiarea = Au_electrons/2*Au_bz.volume
+Cs_fermiarea = Cs_electrons/2*Cs_bz.volume
+Cu_fermiarea = Cu_electrons/2*Cu_bz.volume
+In_fermiarea = In_electrons/2*In_bz.volume
+K_fermiarea = K_electrons/2*K_bz.volume
+Li_fermiarea = Li_electrons/2*Li_bz.volume
+Na_fermiarea = Na_electrons/2*Na_bz.volume
+Pb_fermiarea = Pb_electrons/2*Pb_bz.volume
+Rb_fermiarea = Rb_electrons/2*Rb_bz.volume
+Sn_fermiarea = Sn_electrons/2*Sn_bz.volume
+Zn_fermiarea = Zn_electrons/2*Zn_bz.volume
 
 atom_types = [0]
 atom_pos = Array([0 0 0;]')
@@ -448,19 +448,19 @@ m1rules = [1.00 => -0.23, 2.00 => 0.12]
 # points in the mesh).
 m1cutoff = 7.1
 m1electrons1 = 6
-m1fermiarea1 = m1electrons1/2*m1ibz.volume
-m1fermilevel1 = 0.9381315758593213
-m1bandenergy1 = 2.0847026416334566
+m1fermiarea1 = m1electrons1/2*m1bz.volume
+m1fermilevel1 = 0.9381315758588166
+m1bandenergy1 = 2.084702641629632
 
 m1electrons2 = 7
-m1fermiarea2 = m1electrons2/2*m1ibz.volume
-m1fermilevel2 = 1.1057572321938793
-m1bandenergy2 = 3.1071748126261194
+m1fermiarea2 = m1electrons2/2*m1bz.volume
+m1fermilevel2 = 1.1057572321905484
+m1bandenergy2 = 3.107174803147335
 
 m1electrons3 = 8
-m1fermiarea3 = m1electrons3/2*m1ibz.volume
-m1fermilevel3 = 1.2586162855650544
-m1bandenergy3 = 4.290439984378344
+m1fermiarea3 = m1electrons3/2*m1bz.volume
+m1fermilevel3 = 1.2586162855632768
+m1bandenergy3 = 4.290439984369496
 
 # Model 2 - hexagonal symmetry
 convention = "ordinary"
@@ -473,19 +473,19 @@ m2rules = [1.0 => 0.39, 3.00 => 0.23, 4.00 => -0.11]
 m2cutoff = 8.6
 
 m2electrons1 = 5
-m2fermiarea1 = m2electrons1/2*m2ibz.volume
-m2fermilevel1 = 0.06138424418565408
-m2bandenergy1 = -0.8604625488331478
+m2fermiarea1 = m2electrons1/2*m2bz.volume
+m2fermilevel1 = 0.06138421135450979
+m2bandenergy1 = -0.8604627275820277
 
 m2electrons2 = 7
-m2fermiarea2 = m2electrons2/2*m2ibz.volume
-m2fermilevel2 = 0.9021825445425549
-m2bandenergy2 = -0.04919865182028289
+m2fermiarea2 = m2electrons2/2*m2bz.volume
+m2fermilevel2 = 0.9021825178151658
+m2bandenergy2 = -0.04919886993114208
 
 m2electrons3 = 8
-m2fermiarea3 = m2electrons3/2*m2ibz.volume
-m2fermilevel3 = 0.9968617138996022
-m2bandenergy3 = 0.7776852360677527
+m2fermiarea3 = m2electrons3/2*m2bz.volume
+m2fermilevel3 = 0.9968616967367666
+m2bandenergy3 = 0.777685005191354
 
 # Model 3 - centered rectangular symmetry
 convention = "ordinary"
@@ -498,19 +498,19 @@ m3rules = [1.0 => -0.27, 1.13 => 0.2, 2.87 => -0.33]
 m3cutoff = 8.3
 
 m3electrons1 = 5
-m3fermiarea1 = m3electrons1/2*m3ibz.volume
-m3fermilevel1 = 0.5833432358255468
-m3bandenergy1 = 0.00701331787620594
+m3fermiarea1 = m3electrons1/2*m3bz.volume
+m3fermilevel1 = 0.5833432286151113
+m3bandenergy1 = 0.007013285102808784
 
 m3electrons2 = 7
-m3fermiarea2 = m3electrons2/2*m3ibz.volume
-m3fermilevel2 = 0.9911139157275141
-m3bandenergy2 = 1.4288927687637207
+m3fermiarea2 = m3electrons2/2*m3bz.volume
+m3fermilevel2 = 0.9911139068433917
+m3bandenergy2 = 1.4288927211671212
 
 m3electrons3 = 8
-m3fermiarea3 = m3electrons3/2*m3ibz.volume
-m3fermilevel3 = 1.1117072243047657
-m3bandenergy3 = 2.3720093195726544
+m3fermiarea3 = m3electrons3/2*m3bz.volume
+m3fermilevel3 = 1.1117072183198229
+m3bandenergy3 = 2.3720092740928416
 
 # Model 4 - rectangular symmetry
 convention = "ordinary"
@@ -523,19 +523,19 @@ m4rules = [1.0 => 0.39, 4.00 => -0.11, 5.00 => 0.11]
 m4cutoff = 10.2
 
 m4electrons1 = 6
-m4fermiarea1 = m4electrons1/2*m4ibz.volume
-m4fermilevel1 = 1.903425381487544
-m4bandenergy1 = 10.211315560646229
+m4fermiarea1 = m4electrons1/2*m4bz.volume
+m4fermilevel1 = 1.9034253814658975
+m4bandenergy1 = 10.211315560262788
 
 m4electrons2 = 7
-m4fermiarea2 = m4electrons2/2*m4ibz.volume
-m4fermilevel2 = 2.226648774191113
-m4bandenergy2 = 14.337107296326025
+m4fermiarea2 = m4electrons2/2*m4bz.volume
+m4fermilevel2 = 2.226648774176551
+m4bandenergy2 = 14.337107257752455
 
 m4electrons3 = 8
-m4fermiarea3 = m4electrons3/2*m4ibz.volume
-m4fermilevel3 = 2.551004740311015
-m4bandenergy3 = 19.110387472863806
+m4fermiarea3 = m4electrons3/2*m4bz.volume
+m4fermilevel3 = 2.5510047402843696
+m4bandenergy3 = 19.11038747240388
 
 # Model 5 - oblique symmetry
 convention = "ordinary"
@@ -548,19 +548,19 @@ m5rules = [1.0 => 0.42, 1.24 => 0.02, 1.44 => -0.18]
 m5cutoff = 11.0
 
 m5electrons1 = 5
-m5fermiarea1 = m5electrons1/2*m5ibz.volume
-m5fermilevel1 = 0.7916464458184772
-m5bandenergy1 = 0.9550054084089977
+m5fermiarea1 = m5electrons1/2*m5bz.volume
+m5fermilevel1 = 0.7916464458184026
+m5bandenergy1 = 0.9550054013607029
 
 m5electrons2 = 7
-m5fermiarea2 = m5electrons2/2*m5ibz.volume
-m5fermilevel2 = 1.1470443875522593
-m5bandenergy2 = 2.9176343264803615
+m5fermiarea2 = m5electrons2/2*m5bz.volume
+m5fermilevel2 = 1.1470443875512362
+m5bandenergy2 = 2.9176343162680505
 
 m5electrons3 = 9
-m5fermiarea3 = m5electrons3/2*m5ibz.volume
-m5fermilevel3 = 1.488381886133316
-m5bandenergy3 = 5.651792436020065
+m5fermiarea3 = m5electrons3/2*m5bz.volume
+m5fermilevel3 = 1.4883818861326563
+m5bandenergy3 = 5.65179242276863
 
 @doc """
     epm₋model2D(energy_conv,sheets,real_latvecs,recip_latvecs,bz,ibz,pointgroup,

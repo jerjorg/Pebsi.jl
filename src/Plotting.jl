@@ -46,7 +46,7 @@ function meshplot(meshpts::AbstractMatrix{<:Real},
         ϵ=0.1*max(meshpts...)
         plotrange=[[minimum(meshpts[:,i])-ϵ,
             maximum(meshpts[:,i])+ϵ] for i=1:3]
-        ax.auto_scale_xyz(plotrange[1],plotrange[2],plotrange[3])o
+        ax.auto_scale_xyz(plotrange[1],plotrange[2],plotrange[3])
 
     else
         raise(ArgumentError("The meshpoints must be in an arrray with 2 or 3
@@ -84,16 +84,16 @@ function contourplot(bezpts::AbstractMatrix{<:Real},
     simplex = bezpts[1:2,[1,3,6]]
     if ax == nothing; (fig,ax)=subplots() end
     if padded
-        N = [ndivs 0; 0 ndivs]
+        N = [ndiv 0; 0 ndiv]
         basis = [simplex[:,2] - simplex[:,1] simplex[:,3] - simplex[:,1]]
         grid_offset = [0.5,0.5]
         plotpts = 2 .* sample_unitcell(basis,N,grid_offset)
         plotpts = mapslices(x->x-basis*[1/2,1/2]+simplex[:,1],plotpts,dims=1)
         bplotpts = carttobary(plotpts,simplex)
         plotvals= eval_poly(bplotpts,coeffs,dim,deg)
-        X=reshape(plotpts[1,:],(ndivs,ndivs))
-        Y=reshape(plotpts[2,:],(ndivs,ndivs))
-        Z=reshape(plotvals,(ndivs,ndivs))
+        X=reshape(plotpts[1,:],(ndiv,ndiv))
+        Y=reshape(plotpts[2,:],(ndiv,ndiv))
+        Z=reshape(plotvals,(ndiv,ndiv))
 
         if filled 
             ax.contourf(X,Y,Z,[-1e10,0],colors=colors,alpha=alpha,
@@ -140,7 +140,7 @@ function contourplot(ebs::bandstructure, ax::Union{PyObject,Nothing}=nothing;
     ρ = ndiv/maximum(sizes)
     ndivs = round.(Int,ρ*sizes)
     
-    contour_colors = ["red","orange","blue"]
+    contour_colors = ["blue","red","blue"]
     fls = [ebs.fermilevel_interval[2],ebs.fermilevel,ebs.fermilevel_interval[1]]
 
     for (j,cfun) in enumerate([minimum,mean,maximum])
@@ -157,16 +157,19 @@ function contourplot(ebs::bandstructure, ax::Union{PyObject,Nothing}=nothing;
 
     # Plot the triangles.
     # Values for the color of the filling of triangles.
+    bandenergy_errors = abs.(ebs.bandenergy_errors)
+    bandenergy_errors = map(x->x < 1e-15 ? 1e-15 : x,bandenergy_errors)
+
     cm = plt.get_cmap("binary")
-    bmin = minimum(ebs.bandenergy_errors)
-    bmax = maximum(ebs.bandenergy_errors)
+    bmin = minimum(bandenergy_errors)
+    bmax = maximum(bandenergy_errors)
     vmin = 0
     vmax = 200
-    tcolors = round.(Int,map(x->(log(x)-log(bmin))/abs(log(bmax) - log(bmin))*vmax,ebs. bandenergy_errors))
+    tcolors = round.(Int,map(x->(log(x)-log(bmin))/abs(log(bmax) - log(bmin))*vmax,bandenergy_errors))
 
     ibz_volume = sum(sizes)
     err_cutoff = [simplex_size(s)/ibz_volume for s=tripts]*ebs.target_accuracy;
-    err_ratios = round.(Int,ebs.bandenergy_errors ./ err_cutoff)
+    err_ratios = round.(Int,bandenergy_errors ./ err_cutoff)
     @show minimum(err_ratios)
     # tcolors = map(x -> log(x)/log(vmax)*vmax, err_ratios)
 
