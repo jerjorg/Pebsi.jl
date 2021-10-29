@@ -6,6 +6,10 @@ using Base.Iterators: product
 using LinearAlgebra: dot,det,norm
 using Statistics: mean
 
+export bernstein_basis, getpoly_coeffs, eval_poly, getbez_pts₋wts, 
+    eval_bezcurve, conicsection, eval_1Dquad_basis, get_1Dquad_coeffs, 
+    evalpoly1D
+
 @doc """
     bernstein_basis(bpt,dim,deg)
 
@@ -331,5 +335,11 @@ function conicsection(coeffs::AbstractVector{<:Real};
         end
     end
 end
+
+eval_1Dquad_basis(t) = [(1 - t)^2, 2*(1 - t)*t, t^2]
+# basis_mat = inv(reduce(hcat,[eval_1Dquad_basis(t) for t=[0,1/2,1]])')
+basis_mat = [1 0 0; -0.5 2 -0.5; 0 0 1]
+get_1Dquad_coeffs(values) = basis_mat*values
+evalpoly1D(t,coeffs)=dot(coeffs,eval_1Dquad_basis(t))
 
 end # module

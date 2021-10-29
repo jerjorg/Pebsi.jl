@@ -1,5 +1,8 @@
 module RectangularMethod
 
+export sample_unitcell, rectangular_method, symreduce_grid, convert_mixedradix,
+    kpoint_index, calculate_orbits
+
 using SymmetryReduceBZ.Symmetry: mapto_unitcell, make_primitive,
     calc_spacegroup, mapto_bz
 using SymmetryReduceBZ.Lattices: get_recip_latvecs
@@ -103,7 +106,7 @@ function rectangular_method(epm::Union{epm₋model2D,epm₋model},
     N::Union{Integer,AbstractMatrix{<:Integer}},num_cores::Integer=1;
     partial::Bool=true,
     rtol::Real=sqrt(eps(float(maximum(epm.recip_latvecs)))), 
-    atol::Real=def_atol)::Tuple{Int64,Float64,Float64}
+    atol::Real=def_atol,func=nothing)::Tuple{Int64,Float64,Float64}
 
     grid_offset = sym_offset[epm.rlat_type]
     if typeof(N) <: Integer
@@ -122,15 +125,22 @@ function rectangular_method(epm::Union{epm₋model2D,epm₋model},
         epm.coordinates)
 
     if num_cores == 1
-        eigenvalues = eval_epm(unique_kpoints,epm,rtol=rtol,atol=atol)
+        if func === nothing
+            eigenvalues = eval_epm(unique_kpoints,epm,rtol=rtol,atol=atol)
+        else
+            eigenvalues = func(unique_kpoints)
+        end
     else
-        eigenvalues = reduce(hcat,pmap(x->eval_epm(x,epm,rtol=rtol,atol=atol,sheets=epm.sheets),
-            [unique_kpoints[:,i] for i=1:size(unique_kpoints,2)]))
+        if func === nothing
+            eigenvalues = reduce(hcat,pmap(x->eval_epm(x,epm,rtol=rtol,atol=atol,sheets=epm.sheets),
+                [unique_kpoints[:,i] for i=1:size(unique_kpoints,2)]))
+        else
+            eigenvalues = reduce(hcat,pmap(x->func(x),[unique_kpoints[:,i] for i=1:size(unique_kpoints,2)]))
+        end
     end
     
     num_unique = size(unique_kpoints,2)
     num_kpoints = sum(kpoint_weights)
-
     # pos = partially occupied state
     if partial
         (maxoccupied_state,pos) = divrem(epm.electrons*num_kpoints/2,1)
@@ -140,7 +150,7 @@ function rectangular_method(epm::Union{epm₋model2D,epm₋model},
     else
         maxoccupied_state = ceil(Int,round(epm.electrons*num_kpoints/2,sigdigits=12))
     end
-
+    
     rectangle_size = abs(det(epm.recip_latvecs))/num_kpoints
     eigenweights = zeros(epm.sheets,num_unique)
     for i=1:num_unique
@@ -155,6 +165,9 @@ function rectangular_method(epm::Union{epm₋model2D,epm₋model},
     eigenweights = eigenweights[order]
     
     totalstates = epm.sheets*num_kpoints
+    maxoccupied_state = Int(maxoccupied_state)
+    @show maxoccupied_state
+
     counter = maxoccupied_state
     index = 0
     for i=1:totalstates
@@ -164,10 +177,11 @@ function rectangular_method(epm::Union{epm₋model2D,epm₋model},
             break
         end
     end
+
     fermilevel = eigenvalues[index]
     bandenergy = rectangle_size*(dot(eigenweights[1:index],eigenvalues[1:index])
         + counter*eigenvalues[index])
-
+    
     if partial
         bandenergy -= pos*rectangle_size*eigenvalues[index]
     end

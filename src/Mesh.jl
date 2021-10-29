@@ -1,14 +1,17 @@
 module Mesh
 
-using ..Geometry: simplex_size, barytocart,lineseg₋pt_dist
+using ..Geometry: simplex_size, barytocart, lineseg₋pt_dist, ptface_mindist
 using ..Polynomials: sample_simplex
 using ..Defaults: def_atol, def_rtol, def_mesh_scale, def_max_neighbor_tol,
     def_neighbors_per_bin, def_num_neighbors
-using SymmetryReduceBZ.Utilities: unique_points
+using SymmetryReduceBZ.Utilities: unique_points, get_uniquefacets
 using PyCall: pyimport,PyObject
 using QHull: Chull
 using Statistics: mean
 using LinearAlgebra: norm
+
+export get_neighbors, choose_neighbors, ibz_init₋mesh, get_sym₋unique!,
+    notbox_simplices, get_cvpts, get_extmesh, trimesh
 
 @doc """
     get_neighbors(index,mesh,num₋neighbors=2)
@@ -44,16 +47,18 @@ get_neighbors(index,mesh)
 """
 function get_neighbors(index::Int,mesh::PyObject,
     num₋neighbors::Int=2)::AbstractVector{Int}
+    dim = size(mesh.points,2)
+    if dim == 2 ignore = collect(1:4) else ignore = collect(1:8) end
     indices,indptr = mesh.vertex_neighbor_vertices
     indices .+= 1
     indptr .+= 1
     neighborsᵢ = Vector{Int64}(indptr[indices[index]:indices[index+1]-1])
     # The mesh is enclosed in a box. Don't include neighbors that are the points
     # of the box.
-    neighborsᵢ = filter(x->!(x in [1,2,3,4,index]), unique(neighborsᵢ))
+    neighborsᵢ = filter(x->!(x in [ignore; index]), unique(neighborsᵢ))
     for _=2:num₋neighbors
          first₋neighborsᵢ = reduce(vcat,[indptr[indices[k]:indices[k+1]-1] for k=neighborsᵢ])
-         first₋neighborsᵢ = filter(x->!(x in [1,2,3,4,index]), unique(first₋neighborsᵢ))
+         first₋neighborsᵢ = filter(x->!(x in [ignore;index]), unique(first₋neighborsᵢ))
          neighborsᵢ = [neighborsᵢ;first₋neighborsᵢ]
     end
     
@@ -67,7 +72,7 @@ function choose_neighbors(simplex,neighborsᵢ,neighbors;num_neighbors=def_num_n
     order = sortperm(angles); neighbors = neighbors[:,order]; angles = angles[order]
     neighborsᵢ = neighborsᵢ[order]
     distances = [minimum([
-        lineseg₋pt_dist(simplex[:,[i,mod1(i+1,3)]],neighbors[:,j]) for i=1:3]) for j=1:size(neighbors,2)]
+        lineseg₋pt_dist(neighbors[:,j],simplex[:,[i,mod1(i+1,3)]]) for i=1:3]) for j=1:size(neighbors,2)]
     # dorder = sortperm(sortperm(distances))
     
     # Group neighboring points by angle ranges
@@ -89,7 +94,7 @@ function choose_neighbors(simplex,neighborsᵢ,neighbors;num_neighbors=def_num_n
     for p=1:nbins
         # Order the points in each bin by distance
         distances = [minimum([lineseg₋pt_dist(
-            simplex[:,[i,mod1(i+1,3)]],neighbors[:,j]) for i=1:3]) for j=angle_ran[p]]
+            neighbors[:,j],simplex[:,[i,mod1(i+1,3)]]) for i=1:3]) for j=angle_ran[p]]
         dorder = sortperm(distances)
         angle_ran[p] = neighborsᵢ[angle_ran[p][dorder]]
         # angle_ran[p] = neighborsᵢ[angle_ran[p][sortperm(dorder[angle_ran[p]])]]
@@ -199,12 +204,13 @@ function get_sym₋unique!(mesh::PyObject,pointgroup::Vector{Matrix{Float64}};
     rtol::Real=sqrt(eps(maximum(mesh.points))),atol::Real=def_atol)
 
     spatial = pyimport("scipy.spatial")
-
+    dim = size(pointgroup[1],1)
+    if dim == 2 nstart = 5 else nstart = 9 end
     # Calculate the unique points of the uniform IBZ mesh.
     n = size(mesh.points,1)
     sym₋unique = zeros(Int,n)
     move = []
-    for i=5:n
+    for i=nstart:n
         # If this point hasn't been added already, add it to the list of unique points.
         if sym₋unique[i] == 0
             sym₋unique[i] = i
@@ -239,8 +245,8 @@ function get_sym₋unique!(mesh::PyObject,pointgroup::Vector{Matrix{Float64}};
         sym₋unique = [zeros(Int,4); sym₋unique[setdiff(5:n,move)]; sym₋unique[move]]
         if move != []
             mesh = spatial.Delaunay([
-                mesh.points[1:4,:];
-                mesh.points[setdiff(5:n,move),:]; mesh.points[move,:]])
+                mesh.points[1:nstart-1,:];
+                mesh.points[setdiff(nstart:n,move),:]; mesh.points[move,:]])
         end
     end
     sym₋unique,mesh
@@ -288,11 +294,19 @@ notbox_simplices(mesh)
 """
 function notbox_simplices(mesh::PyObject)::Vector{Vector{Int}}
     simplicesᵢ = Vector{Any}(zeros(size(mesh.simplices,1)))
+
+    dim = size(mesh.points,2)
+    if dim == 2 jend = 4 else jend = 8 end
     n = 0
     for i=1:size(mesh.simplices,1)
-        if !any([j in (mesh.simplices[i,:] .+ 1) for j=1:4])
-            n += 1
-            simplicesᵢ[n] = mesh.simplices[i,:] .+ 1
+        # The first few indices are the the corners of a bounding box. Only keep
+        # the simplex if it doesn't contain one of these indices.
+        if !any([j in (mesh.simplices[i,:] .+ 1) for j=1:jend])
+            # Only keep the simplex if it has nonzero volume.
+            # if simplex_size(Matrix(mesh.points[mesh.simplices[i,:],:]')) != 0
+                n += 1
+                simplicesᵢ[n] = mesh.simplices[i,:] .+ 1
+            # end
         end
     end
     Vector{Vector{Int}}(simplicesᵢ[1:n])    
@@ -347,13 +361,20 @@ get_cvpts(mesh,m2ibz)
 ```
 """
 function get_cvpts(mesh::PyObject,ibz::Chull;atol::Real=def_atol)::AbstractVector{<:Int}
-    
-    ibz_linesegs = [Matrix(ibz.points[i,:]') for i=ibz.simplices]
+    dim = size(mesh.points,2)
+    if dim == 2
+        borders = [Matrix(ibz.points[i,:]') for i=ibz.simplices]
+        distfun = lineseg₋pt_dist
+    else
+        borders = [Matrix(ibz.points[f,:]') for f=get_uniquefacets(ibz)]
+        distfun = ptface_mindist
+    end
+
     cv_pointsᵢ = [0 for i=1:size(mesh.points,1)]
     n = 0
     for i=1:size(mesh.points,1)
-        if any([isapprox(lineseg₋pt_dist(line_seg,mesh.points[i,:]),0,atol=atol) 
-            for line_seg=ibz_linesegs])
+        if any([isapprox(distfun(mesh.points[i,:],border),0,atol=atol) 
+            for border=borders])
             n += 1
             cv_pointsᵢ[n] = i
         end
@@ -361,6 +382,21 @@ function get_cvpts(mesh::PyObject,ibz::Chull;atol::Real=def_atol)::AbstractVecto
 
     cv_pointsᵢ[1:n]
 end
+# function get_cvpts(mesh::PyObject,ibz::Chull;atol::Real=def_atol)::AbstractVector{<:Int}
+    
+#     ibz_linesegs = [Matrix(ibz.points[i,:]') for i=ibz.simplices]
+#     cv_pointsᵢ = [0 for i=1:size(mesh.points,1)]
+#     n = 0
+#     for i=1:size(mesh.points,1)
+#         if any([isapprox(lineseg₋pt_dist(mesh.points[i,:],line_seg),0,atol=atol) 
+#             for line_seg=ibz_linesegs])
+#             n += 1
+#             cv_pointsᵢ[n] = i
+#         end
+#     end
+
+#     cv_pointsᵢ[1:n]
+# end
 
 @doc """
     get_extmesh(ibz,mesh,pointgroup,recip_latvecs,near_neigh=1;rtol,atol)
@@ -408,40 +444,93 @@ PyObject (<scipy.spatial.qhull.Delaunay object at 0x1802f7820>, array([ 0,  0,  
 function get_extmesh(ibz::Chull,mesh::PyObject,pointgroup::Vector{Matrix{Float64}},
     recip_latvecs::AbstractMatrix{<:Real},near_neigh::Int=1;
     rtol::Real=sqrt(eps(maximum(abs.(mesh.points)))),atol::Real=def_atol)
-     
+    
+    dim = size(recip_latvecs,1)
     spatial = pyimport("scipy.spatial")
     sym₋unique,mesh = get_sym₋unique!(mesh,pointgroup)
     cv_pointsᵢ = get_cvpts(mesh,ibz)
-    neighborsᵢ = reduce(vcat,[get_neighbors(i,mesh,near_neigh) for i=cv_pointsᵢ]) |> unique
-    numpts = size(mesh.points,1)
+
     # Calculate the maximum distance between neighboring points
     bound_limit = def_max_neighbor_tol*maximum(
         reduce(vcat,[[norm(mesh.points[i,:] - mesh.points[j,:]) 
                     for j=get_neighbors(i,mesh,near_neigh)] for i=cv_pointsᵢ]))
-     
-    ibz_linesegs = [Matrix(ibz.points[i,:]') for i=ibz.simplices]
-    bztrans = [[[i,j] for i=-1:1,j=-1:1]...]
 
-    # Rotate the neighbors of the points on the boundary. Keep the points if they are within
-    # a distance of `bound_limit` of any of the interior boundaries.
-    neighbors = zeros(Float64,2,length(neighborsᵢ)*length(pointgroup)*length(bztrans))
-    sym₋unique = [sym₋unique; zeros(Int,size(neighbors,2))]
+    if dim == 2
+        borders = [Matrix(ibz.points[i,:]') for i=ibz.simplices]
+        distfun = lineseg₋pt_dist
+        bztrans = [[[i,j] for i=-1:1,j=-1:1]...]
+    else
+        borders = [Matrix(ibz.points[f,:]') for f=get_uniquefacets(ibz)]
+        distfun = ptface_mindist
+        bztrans = [[[i,j,k] for i=-1:1,j=-1:1,k=-1:1]...]
+    end; 
+
+    neighborsᵢ = reduce(vcat,[get_neighbors(i,mesh,near_neigh) for i=cv_pointsᵢ]) |> unique
+    neighbors = zeros(Float64,dim,length(neighborsᵢ)*length(pointgroup)*length(bztrans));
+    sym₋unique = [sym₋unique; zeros(Int,size(neighbors,2))];
+    numpts = size(mesh.points,1)    
     n = 0
     for i=neighborsᵢ,op=pointgroup,trans=bztrans
         pt = op*mesh.points[i,:] + recip_latvecs*trans
-        if any([lineseg₋pt_dist(line_seg,pt,false) < bound_limit for line_seg=ibz_linesegs]) &&
+        if any([distfun(pt,border) < bound_limit for border=borders]) &&
             !any(mapslices(x->isapprox(x,pt,atol=atol,rtol=rtol),[mesh.points' neighbors[:,1:n]],dims=1))
             n += 1
             neighbors[:,n] = pt
             sym₋unique[numpts + n] = sym₋unique[i]
         end
     end
+
     neighbors = neighbors[:,1:n]
     sym₋unique = sym₋unique[1:numpts + n]
     ext_mesh = spatial.Delaunay(unique_points([mesh.points; neighbors']',
-        rtol=rtol,atol=atol)')   
+        rtol=rtol,atol=atol)')
+    
     (mesh,ext_mesh,sym₋unique)
 end
+
+# function get_extmesh(ibz::Chull,mesh::PyObject,pointgroup::Vector{Matrix{Float64}},
+#     recip_latvecs::AbstractMatrix{<:Real},near_neigh::Int=1;
+#     rtol::Real=sqrt(eps(maximum(abs.(mesh.points)))),atol::Real=def_atol)
+
+#     dim = size(recip_latvecs,1)
+#     spatial = pyimport("scipy.spatial")
+#     sym₋unique,mesh = get_sym₋unique!(mesh,pointgroup)
+#     cv_pointsᵢ = get_cvpts(mesh,ibz)
+#     neighborsᵢ = reduce(vcat,[get_neighbors(i,mesh,near_neigh) for i=cv_pointsᵢ]) |> unique
+#     numpts = size(mesh.points,1)
+#     # Calculate the maximum distance between neighboring points
+#     bound_limit = def_max_neighbor_tol*maximum(
+#         reduce(vcat,[[norm(mesh.points[i,:] - mesh.points[j,:]) 
+#                     for j=get_neighbors(i,mesh,near_neigh)] for i=cv_pointsᵢ]))
+     
+#     ibz_linesegs = [Matrix(ibz.points[i,:]') for i=ibz.simplices]
+
+#     if dim == 2
+#         bztrans = [[[i,j] for i=-1:1,j=-1:1]...]
+#     else
+#         bztrans = [[[i,j,k] for i=-1:1,j=-1:1,k=-1:1]...]
+#     end
+
+#     # Rotate the neighbors of the points on the boundary. Keep the points if they are within
+#     # a distance of `bound_limit` of any of the interior boundaries.
+#     neighbors = zeros(Float64,dim,length(neighborsᵢ)*length(pointgroup)*length(bztrans))
+#     sym₋unique = [sym₋unique; zeros(Int,size(neighbors,2))]
+#     n = 0
+#     for i=neighborsᵢ,op=pointgroup,trans=bztrans
+#         pt = op*mesh.points[i,:] + recip_latvecs*trans
+#         if any([lineseg₋pt_dist(pt,line_seg,false) < bound_limit for line_seg=ibz_linesegs]) &&
+#             !any(mapslices(x->isapprox(x,pt,atol=atol,rtol=rtol),[mesh.points' neighbors[:,1:n]],dims=1))
+#             n += 1
+#             neighbors[:,n] = pt
+#             sym₋unique[numpts + n] = sym₋unique[i]
+#         end
+#     end
+#     neighbors = neighbors[:,1:n]
+#     sym₋unique = sym₋unique[1:numpts + n]
+#     ext_mesh = spatial.Delaunay(unique_points([mesh.points; neighbors']',
+#         rtol=rtol,atol=atol)')   
+#     (mesh,ext_mesh,sym₋unique)
+# end
 
 """
     trimesh(triangle,ndivs)

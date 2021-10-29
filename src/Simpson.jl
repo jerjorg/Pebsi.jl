@@ -1,202 +1,18 @@
 module Simpson
 
-using LinearAlgebra: dot,inv, norm
-using SymmetryReduceBZ.Utilities: remove_duplicates
+using LinearAlgebra: dot,inv,norm,cross
 using Statistics: mean
-using ..Geometry: barytocart, carttobary
-using ..Polynomials: eval_poly
+using ..Geometry: barytocart, carttobary, sample_simplex
+using ..Polynomials: eval_poly, getpoly_coeffs, eval_1Dquad_basis, 
+    get_1Dquad_coeffs, evalpoly1D
 using ..Defaults: def_atol,def_rtol
+using ..QuadraticIntegration: bezcurve_intersects, getdomain, quad_area₋volume
 
-eval_1Dquad_basis(t) = [(1 - t)^2, 2*(1 - t)*t, t^2]
-# basis_mat = inv(reduce(hcat,[eval_1Dquad_basis(t) for t=[0,1/2,1]])')
-basis_mat = [1 0 0; -0.5 2 -0.5; 0 0 1]
-get_1Dquad_coeffs(values) = basis_mat*values
-evalpoly1D(t,coeffs)=dot(coeffs,eval_1Dquad_basis(t))
+export bezcurve_intersects, getdomain, analytic_area1D, simpson, simpson2D, 
+    linept_dist, tetface_areas, simpson3D
 
 @doc """
-    bezcurve_intersects(bezcoeffs;rtol,atol)
-
-Determine where a quadratic curve is equal to zero.
-
-# Arguments
-- `bezcoeffs::AbstractVector{<:Real}`: the coefficients of the quadratic
-- `rtol::Real`: a relative tolerance for floating point comparisons.
-- `atol::Real`: an absolute tolerance for floating point comparisons.
-
-# Returns
-- `solutions::AbstractVector`: the locations between [0,1) where the quadratic
-    equals 0.
-
-# Examples
-```jldoctest
-using Pebsi.Simpson: bezcurve_intersects
-coeffs = [0,1,-1]
-bezcurve_intersects(coeffs)
-# output
-[2/3]
-```
-"""
-function bezcurve_intersects(bezcoeffs::AbstractVector{<:Real};
-    atol::Real=def_atol)::AbstractVector
-    a,b,c = bezcoeffs
-    
-    quadterm = a - 2*b + c
-    linterm = -2*a + 2*b
-    
-    # Quadratic curve with no intersections
-    if !isapprox(quadterm,0,atol=atol)
-        maxval = dot([a,b,c],eval_1Dquad_basis((a - b)/(a - 2*b + c)))
-        if !isapprox(maxval,0,atol=atol)
-            if (maxval > 0 && quadterm > 0) || (maxval < 0 && quadterm < 0)
-                return []
-            end
-        end
-    end
-    
-    # Constant curve with no intersections
-    if isapprox(quadterm,0,atol=atol) && isapprox(linterm,0,atol=atol)
-        return []
-    end
-    
-    #     # Case 1: [0,0,0]
-    #     if isapprox(a,0,atol=0) && isapprox(b,0,atol=0) && isapprox(c,0,atol=0)
-    #         return []
-    #     end
-    
-    # Case 5: [a,0,0]
-    if isapprox(b,0,atol=atol) && isapprox(c,0,atol=atol)
-        # Intersections at t = [1,1] are excluded.
-        return []
-    end
-    
-    # Case 3: [0,b,0]
-    if isapprox(a,0,atol=0) && isapprox(c,0,atol=0)
-        # intersections at t = (0,1). 
-        return [0]
-    end
-    
-    # Case 2: [0,0,c]
-    if isapprox(a,0,atol=0) && isapprox(b,0,atol=0)
-        # intersections at t = (0,0).
-        return []
-    end
-        
-    # Case 7: [a,b,0]
-    if isapprox(c,0,atol=atol)
-        if isapprox(a,2b,atol=atol)
-            # Solution at t = 1 excluded.
-            return []
-        else
-            solutions = [a/(a-2*b)]
-            solutions = filter(t -> (t > 0 || isapprox(t,0,atol=atol)) 
-                && (t < 1 && !isapprox(t,1,atol=atol)), solutions)
-            return solutions
-        end
-    end
-    
-    # Case 4: [0,b,c]
-    if isapprox(a,0,atol=0)
-        if isapprox(2*b,c,atol=atol)
-            return [0]
-        else
-            solutions = [0,2*b/(2*b-c)]
-            solutions = filter(t -> (t > 0 || isapprox(t,0,atol=atol)) 
-                && (t < 1 && !isapprox(t,1,atol=atol)), solutions)
-            return solutions
-        end
-    end
-    
-    # Case 6: [a,0,c]
-    if isapprox(b,0,atol=atol)
-        if (a < 0 && c < 0) || (a > 0 && c > 0)
-            return []
-        elseif isapprox(a+c,0,atol=atol)
-            solutions = [0.5]
-            return solutions
-        else
-            solutions = real.([(a - im*sqrt(complex(a))*sqrt(complex(c)))/(a + c), 
-                (a + im*sqrt(complex(a))*sqrt(complex(c)))/(a + c)])
-            solutions = filter(t -> (t > 0 || isapprox(t,0,atol=atol)) 
-                && (t < 1 && !isapprox(t,1,atol=atol)), solutions)
-            return sort(solutions)
-        end
-    end
-    
-    # Case 8
-    if isapprox(a - 2*b + c,0,atol=atol)
-        solutions = [a/(2*(a-b))]
-        solutions = filter(t -> (t > 0 || isapprox(t,0,atol=atol)) 
-            && (t < 1 && !isapprox(t,1,atol=atol)), solutions)
-        return solutions
-    elseif isapprox(b^2 - a*c,0,atol=atol)
-        solutions = []
-        return solutions
-    elseif !isapprox(b^2 - a*c,0,atol=atol) && b^2 - a*c < 0
-        return []
-    else 
-        solutions = [(a - b - sqrt(b^2 - a*c))/(a - 2*b + c), (a - b + sqrt(b^2 - a*c))/(a - 2*b + c)]
-        solutions = filter(t -> (t > 0 || isapprox(t,0,atol=atol)) 
-            && (t < 1 && !isapprox(t,1,atol=atol)), solutions)
-        return sort(solutions)
-    end
-    solutions
-    end
-
-
-@doc """
-    getdomain(bezcoeffs;atol)
-
-Calculate the interval(s) of a quadratic where it is less than 0 between (0,1).
-
-# Arguments
-- `bezcoeffs::AbstractVector{<:Real}`: the coefficients of the quadratic.
-- `atol::Real`: an absolute tolerance for floating point comparisons.
-
-# Returns
-- `reg::AbstractVector`: the region where the quadratic is less than 0.
-
-# Examples
-```jldoctest
-using Pebsi.Simpson: getdomain
-coeffs = [0,1,-1]
-getdomain(coeffs)
-# output
-[2/3,1]
-```
-"""
-function getdomain(bezcoeffs::AbstractVector{<:Real};
-    atol::Real=def_atol)::AbstractVector
-    vals = [evalpoly1D(t,bezcoeffs) for t=[0,1/2,1]]
-    if all(vals .< 0) && !any(isapprox.(vals,0,atol=atol))
-        return [0,1]
-    elseif all(vals .> 0) && !any(isapprox.(vals,0,atol=atol))
-        return []
-    end
-    intersects = bezcurve_intersects(bezcoeffs)
-    shaded = [[0,1]; intersects] |> remove_duplicates |> sort
-    
-    reg = []
-    for i = 1:length(shaded) - 1
-        test_pts = collect(range(shaded[i],shaded[i+1],step=(shaded[i+1]-shaded[i])/10))
-        test_vals = [evalpoly1D(t,bezcoeffs) for t=test_pts]
-        if all(x -> x < 0 || isapprox(x,0,atol=atol),test_vals)
-            reg = [reg; shaded[[i,i+1]]]
-        end
-    end
-    if reg != []
-        reg = reg |> remove_duplicates |> sort
-    end
-    
-    if length(reg) == 3
-        if isapprox(sum(diff(reg)),1,atol=atol)
-            reg = [0,1]
-        end
-    end
-    reg
-end
-
-@doc """
-    analytic_area(coeffs,limits)
+    analytic_area1D(coeffs,limits)
 
 Calculate the area of a quadratic where it is less than zero between (0,1).
 
@@ -210,15 +26,15 @@ Calculate the area of a quadratic where it is less than zero between (0,1).
 
 # Examples
 ```jldoctest
-using Pebsi.Simpson: analytic_area
+using Pebsi.Simpson: analytic_area1D
 coeffs = [0,1,-1]
 limits = [0,1]
-analytic_area(coeffs,limits)
+analytic_area1D(coeffs,limits)
 # output
 -0.1481481481481482
 ```
 """
-function analytic_area(coeffs::AbstractVector{<:Real},limits::AbstractVector)::Real
+function analytic_area1D(coeffs::AbstractVector{<:Real},limits::AbstractVector)::Real
     if length(limits) == 0
         area = 0
     elseif length(limits) == 2
@@ -309,7 +125,7 @@ function simpson2D(coeffs,triangle,n,q=0;values=false)::Real
             if domain == []
                 continue
             else
-                integral_vals[i] = analytic_area(bezcoeffs,domain)*norm(pts[:,1] - pts[:,end])
+                integral_vals[i] = analytic_area1D(bezcoeffs,domain)*norm(pts[:,1] - pts[:,end])
             end
         else
             error("Invalid value for `q`.")
@@ -345,6 +161,85 @@ pt = [0,2]
 function linept_dist(line,pt)::Real
     unit_vec = [0 -1; 1 0]*(line[:,2] - line[:,1])/norm(line[:,2] - line[:,1])
     abs(dot(unit_vec,pt-line[:,1]))
+end
+
+face_ind = [[1,2,3],[2,3,4],[3,4,1],[4,1,2]]
+corner_ind = [4,1,2,3]
+function tetface_areas(tet)
+    areas = zeros(4)
+    for (i,j)=enumerate(face_ind)
+        areas[i] = norm(cross(tet[:,j[2]] - tet[:,j[1]], tet[:,j[3]] - tet[:,j[1]]))/2
+    end
+    areas
+end
+
+@doc """
+    simpson3D(coeffs,tetrahedron,num_slices,quantity;values)
+
+Calculate the volume or hypervolume beneath a quadratic within a tetrahedron.
+
+# Arguments
+- `coeffs`: the coefficients of the quadratic polynomial over the tetrahedron.
+- `tetrahedron`: the Cartesian coordinates of the point at the corner of the 
+    tetrahedron.
+- `num_slices`: the number of slices of teterahedron parallel to one of the 
+    faces of the tetrahedron.
+- `quantity`: whether to calculate the "area" or "volume" of each slice.
+- `values`: if true, return the areas or volumes of each of the slices.
+
+# Returns
+- The areas or volumes of slices of the tetrahedron or the volume or hypervolume
+    of a polynomial within the tetrahedron.
+"""
+function simpson3D(coeffs,tetrahedron,num_slices,quantity;values=false)
+    dim = 3; deg = 2
+    # Area of faces
+    face_areas = tetface_areas(tetrahedron)
+    p = findmax(face_areas)[2]
+
+    if p == 1
+        order = [2,3,4,1]
+    elseif p == 2
+        order = [1,2,3,4]
+    elseif p == 3
+        order = [2,1,3,4]
+    else
+        order = [2,3,1,4]
+    end
+    
+    m = if iseven(num_slices) num_slices + 1 else num_slices end
+    dt = 1/(m-1)
+    it = range(0,1,step=dt)
+    integral_vals = zeros(length(it))
+    for (i,t) in enumerate(it)
+
+        bpts = [[t,(1-t),0,0][order],
+            [t,(1-t)/2,(1-t)/2,0][order],
+            [t,0,(1-t),0][order],
+            [t,(1-t)/2,0,(1-t)/2][order],
+            [t,0,(1-t)/2,(1-t)/2][order],
+            [t,0,0,1-t][order]]
+        bpts = reduce(hcat,bpts)
+        pts = barytocart(bpts,tetrahedron)
+        vals = eval_poly(bpts,coeffs,dim,deg)
+        bpts2D = sample_simplex(2,2)
+        coeffs2D = getpoly_coeffs(vals,bpts2D,2,2)
+        bezpts2D = [pts; coeffs2D']
+        integral_vals[i] = quad_area₋volume(bezpts2D,quantity)
+    end
+
+    if values
+        return integral_vals
+    end
+
+    # Calculate the shortest distance from the corner to the opposite face of the tetrahedron.
+    face = tetrahedron[:,face_ind[p]]
+    corner = tetrahedron[:,corner_ind[p]]
+    n = cross(face[:,2] - face[:,1],face[:,3]-face[:,1])
+    n = n ./ norm(n)
+    d = abs(dot(corner - face[:,1],n))
+
+    simpson(integral_vals,d)
 end
 
 end # module

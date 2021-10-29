@@ -1,7 +1,7 @@
 module Plotting
 
 using PyPlot: subplots, figure, PyObject, figaspect, plt, pyimport
-
+using Statistics: mean
 using QHull: chull
 
 using ..QuadraticIntegration: bandstructure
@@ -9,11 +9,13 @@ using ..EPMs: epm₋model2D, epm₋model
 using ..RectangularMethod: sample_unitcell
 using ..Polynomials: eval_poly, sample_simplex ,eval_bezcurve
 using ..Geometry: carttobary, barytocart, simplex_size
+using ..Mesh: notbox_simplices
 
 using SymmetryReduceBZ.Plotting: plot_2Dconvexhull
 using SymmetryReduceBZ.Utilities: sortpts2D
 
-using Statistics: mean
+export meshplot, contourplot, bezplot, bezcurve_plot, polygonplot, 
+    plot_bandstructure
 
 @doc """
     meshplot(meshpts,ax,color)
@@ -58,6 +60,21 @@ function meshplot(meshpts::AbstractMatrix{<:Real},
 end
 
 @doc """
+    meshplot(mesh::PyObject,ax,...)
+
+Plot the triangles in a triangular mesh.
+"""
+function meshplot(mesh::PyObject,ax=nothing;facecolor="None",
+    alpha=1,linewidth=0.5,edgecolor="black",zorder=0)    
+    simplicesᵢ = notbox_simplices(mesh)
+    simplices = [Array(mesh.points[s,:]') for s=simplicesᵢ]
+    fig,ax = subplots()
+    ax = polygonplot(simplices,ax; facecolor=facecolor,alpha=alpha,
+    linewidth=linewidth,edgecolor=edgecolor,zorder=zorder)
+    ax
+end
+
+@doc """
     contourplot(bezpts,ax;filled=false,padded=true)
 
 Plot the level curves of a polynomial surface.
@@ -76,7 +93,7 @@ Plot the level curves of a polynomial surface.
 function contourplot(bezpts::AbstractMatrix{<:Real},
     ax::Union{PyObject,Nothing}=nothing; filled::Bool=false,
     padded::Bool=true,ndiv::Integer=100,colors=["black","white"],
-    alpha::Real=0.5,curvewidths=1,zorder::Int=1)::PyObject
+    alpha::Real=0.5,linewidths=1,zorder::Int=1)::PyObject
     dim = 2
     deg = 2
     # Plot triangle
@@ -97,9 +114,9 @@ function contourplot(bezpts::AbstractMatrix{<:Real},
 
         if filled 
             ax.contourf(X,Y,Z,[-1e10,0],colors=colors,alpha=alpha,
-                linewidths=curvewidths,zorder=zorder)
+                linewidths=linewidths,zorder=zorder)
         else
-            ax.contour(X,Y,Z,[0],colors=colors[1],linewidths=curvewidths,
+            ax.contour(X,Y,Z,[0],colors=colors[1],linewidths=linewidths,
                 zorder=zorder)
         end
     else
@@ -108,10 +125,10 @@ function contourplot(bezpts::AbstractMatrix{<:Real},
         vals = eval_poly(bpts,coeffs,dim,deg)
         if filled
             ax.tricontourf(pts[1,:],pts[2,:],vals,[-1e19,0],colors=colors,
-                linewidths=curvewidths,alpha=alpha,zorder=zorder)
+                linewidths=linewidths,alpha=alpha,zorder=zorder)
         else
             ax.tricontour(pts[1,:],pts[2,:],vals,[0],[0],colors=colors[1],
-                linewidths=curvewidths,zorder=zorder)
+                linewidths=linewidths,zorder=zorder)
         end
     end
     ax
@@ -142,6 +159,7 @@ function contourplot(ebs::bandstructure, ax::Union{PyObject,Nothing}=nothing;
     
     contour_colors = ["blue","red","blue"]
     fls = [ebs.fermilevel_interval[2],ebs.fermilevel,ebs.fermilevel_interval[1]]
+    # fls = [ebs.fermilevel,ebs.fermilevel,ebs.fermilevel]
 
     for (j,cfun) in enumerate([minimum,mean,maximum])
         for i=indices
@@ -150,7 +168,7 @@ function contourplot(ebs::bandstructure, ax::Union{PyObject,Nothing}=nothing;
                 
         
             ax = contourplot(bezpts,ax,padded=false,ndiv=ndivs[i[1]],
-                alpha=alpha_curve,curvewidths=curvewidths,colors=[contour_colors[j]],
+                alpha=alpha_curve,linewidths=curvewidths,colors=[contour_colors[j]],
                 filled=filled,zorder=2)
         end
     end
@@ -194,7 +212,7 @@ end
 Plot a quadratic Bezier curve and its Bezier points (1D).
 """
 function bezplot(bezpts::AbstractMatrix{<:Real},
-        ax::Union{PyObject,Nothing}=nothing; zorder=zorder)
+        ax::Union{PyObject,Nothing}=nothing; zorder::Int=1)
     
     dim = 1
     deg = 2
@@ -267,7 +285,7 @@ Make a plot of a polygon.
 function polygonplot(pts::Matrix{<:Real},
     ax::Union{PyObject,Nothing}=nothing; sort=false, facecolor="None",
     alpha::Real=1.0, linewidth::Real=0.5, edgecolor="black",
-    zorder::Int=0)::PyObject
+    zorder::Int=0,label::String="_nolegend_")::PyObject
 
     if sort
         perm = sortpts2D(pts)
@@ -281,7 +299,7 @@ function polygonplot(pts::Matrix{<:Real},
     # ax.add_patch(plt.Polygon(Array(pts'),edgecolor=edgecolor,facecolor=facecolor,
     #     alpha=alpha,linewidth=linewidth))
     ax.fill(pts[1,:],pts[2,:],edgecolor=edgecolor,facecolor=facecolor,
-        alpha=alpha,linewidth=linewidth,zorder=zorder)
+        alpha=alpha,linewidth=linewidth,zorder=zorder,label=label)
     ax
 end
 

@@ -4,6 +4,9 @@ using ..Defaults: def_atol
 using LinearAlgebra: dot,cross,norm,det
 using Base.Iterators: product
 
+export order_vertices!, sample_simplex, barytocart, carttobary, simplex_size, 
+    insimplex, lineseg₋pt_dist, affine_trans, mapto_xyplane, ptface_mindist
+
 @doc """
     order_vertices(vertices)
 
@@ -82,7 +85,7 @@ barytocart(barypt,simplex)
 """
 function barytocart(barypt::AbstractVector{<:Real},
         simplex::AbstractMatrix{<:Real})::AbstractVector{<:Real}
-    [sum(reduce(hcat,[simplex[:,i]*barypt[i] for i=1:length(barypt)]),dims=2)...]
+    simplex*barypt
 end
 
 @doc """
@@ -215,7 +218,7 @@ lineseg₋pt_dist(lineseg,pt)
 0.5000000000000001
 ```
 """
-function lineseg₋pt_dist(line_seg::AbstractMatrix{<:Real},p3::AbstractVector{<:Real},
+function lineseg₋pt_dist(p3::AbstractVector{<:Real},line_seg::AbstractMatrix{<:Real},
     line::Bool=false;atol::Real=def_atol)::Real
     
     p1 = line_seg[:,1]; p2 = line_seg[:,2]
@@ -230,6 +233,103 @@ function lineseg₋pt_dist(line_seg::AbstractMatrix{<:Real},p3::AbstractVector{<
     else
         d = minimum([norm(p3 - p1),norm(p3 - p2)])
     end 
+end
+
+
+@doc """
+    ptface_mindist(pt,face)
+
+Calculate the minimum distance between a point and a finite plane.
+"""
+function ptface_mindist(pt,face)
+    # Use points that are not colinear to find a normal vector perpendicular to the face.
+    i = 3
+    v₁ = face[:,2] - face[:,1]
+    v₂ = face[:,i] - face[:,1]
+    while dot(v₁,v₂) == 0
+        i += 1
+        if i > size(face,2)
+            error("All points of the face are collinear.")
+        end
+        v₂ = face[:,i] - face[:,1]
+    end
+
+    n = cross(v₁,v₂)
+    n = n/norm(n)
+    minimum([[norm(pt - face[:,i]) for i=1:size(face,2)]; dot(pt - face[:,1],n)])
+end
+
+corner_indices = [1,3,6]
+
+@doc """
+    affine_trans(pts)
+
+Calculate the affine transformation that maps points to the xy-plane.
+
+# Arguments
+- `pts::AbstractMatrix{<:Real}`: Cartesian points as the columns of a matrix.
+    The points must all lie on a plane in 3D.
+
+# Returns
+- `M::AbstractMatrix{<:Real}`: the affine transformation matrix that operates
+    on points in homogeneous coordinates from the left.
+
+# Examples
+```jldoctest
+using SymmetryReduceBZ
+pts = [0.5 0.5 0.5; 0.5 -0.5 0.5; -0.5 0.5 0.5; -0.5 -0.5 0.5]'
+SymmetryReduceBZ.Utilities.affine_trans(pts)
+# output
+4×4 Matrix{Float64}:
+  0.0  -1.0   0.0  0.5
+ -1.0   0.0   0.0  0.5
+  0.0   0.0  -1.0  0.5
+  0.0   0.0   0.0  1.0
+```
+"""
+function affine_trans(pts::AbstractMatrix{<:Real})::AbstractMatrix{<:Real}
+    a,b,c = [pts[:,i] for i=corner_indices]
+
+    # Create a coordinate system with two vectors lying on the plane the points
+    # lie on.
+    u = b-a
+    v = c-a
+    u = u/norm(u)
+    v = v - dot(u,v)*u/dot(u,u)
+    v = v/norm(v)
+    w = cross(u,v)
+
+    # Augmented matrix of affine transform
+    inv(vcat(hcat([u v w],a),[0 0 0 1]))
+end
+
+@doc """
+    function mapto_xyplane(pts)
+
+Map Cartesian points embedded in 3D on a plane to the xy-plane embedded in 2D.
+
+# Arguments
+- `pts::AbstractMatrix{<:Real}`: Cartesian points embedded in 3D as columns of a
+    matrix.
+
+# Returns
+- `AbstractMatrix{<:Real}`: Cartesian points in 2D as columns of a matrix.
+
+# Examples
+```jldoctest
+using SymmetryReduceBZ
+pts = [0.5 -0.5 0.5; 0.5 -0.5 -0.5; 0.5 0.5 -0.5; 0.5 0.5 0.5]'
+SymmetryReduceBZ.Utilities.mapto_xyplane(pts)
+# output
+2×4 Matrix{Float64}:
+ 0.0  1.0  1.0  0.0
+ 0.0  0.0  1.0  1.0
+```
+"""
+function mapto_xyplane(pts::AbstractMatrix{<:Real})::AbstractMatrix{<:Real}
+
+    M = affine_trans(pts)
+    reduce(hcat,[(M*[pts[:,i]..., 1])[1:2] for i=1:size(pts,2)])
 end
 
 end # Geometry
