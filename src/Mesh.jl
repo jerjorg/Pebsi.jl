@@ -396,8 +396,8 @@ notbox_simplices(mesh)
 ```
 """
 function notbox_simplices(mesh::PyObject)::Vector{Vector{Int}}
-    simplicesᵢ = Vector{Any}(zeros(size(mesh.simplices,1)))
 
+    simplicesᵢ = Vector{Any}(zeros(size(mesh.simplices,1)))
     dim = size(mesh.points,2)
     if dim == 2 jend = 4 else jend = 8 end
     n = 0
@@ -406,10 +406,10 @@ function notbox_simplices(mesh::PyObject)::Vector{Vector{Int}}
         # the simplex if it doesn't contain one of these indices.
         if !any([j in (mesh.simplices[i,:] .+ 1) for j=1:jend])
             # Only keep the simplex if it has nonzero volume.
-            # if simplex_size(Matrix(mesh.points[mesh.simplices[i,:],:]')) != 0
+            if !isapprox(simplex_size(Matrix(mesh.points[mesh.simplices[i,:] .+ 1,:]')),0,atol=def_atol)
                 n += 1
                 simplicesᵢ[n] = mesh.simplices[i,:] .+ 1
-            # end
+            end
         end
     end
     Vector{Vector{Int}}(simplicesᵢ[1:n])    

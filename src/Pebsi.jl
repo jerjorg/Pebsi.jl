@@ -7,7 +7,6 @@ include("EPMs.jl")
 include("Mesh.jl")
 include("RectangularMethod.jl")
 include("QuadraticIntegration.jl")
-include("Simpson.jl")
 include("Plotting.jl")
 
 # Geometry
@@ -31,16 +30,14 @@ export get_neighbors, choose_neighbors, choose_neighbors3D, ibz_init₋mesh,
 export sample_unitcell, rectangular_method, symreduce_grid, convert_mixedradix,
     kpoint_index, calculate_orbits
 
-# Simpson
-export analytic_area1D, simpson, simpson2D, linept_dist, tetface_areas, simpson3D
-
 # QuadraticIntegration
 export bandstructure, init_bandstructure, quadval_vertex, corner_indices, 
     edge_indices, simplex_intersects, saddlepoint, split_bezsurf₁, 
     split_bezsurf, analytic_area, analytic_volume, sub₋coeffs,
     two₋intersects_area₋volume, quad_area₋volume, get_intercoeffs, calc_fl,
     calc_flbe!, refine_mesh!, get_tolerances, quadratic_method!, truebe,
-    bezcurve_intersects, getdomain
+    bezcurve_intersects, getdomain, analytic_area1D, simpson, simpson2D, 
+    linept_dist, tetface_areas, simpson3D
 
 # Plotting
 export meshplot, contourplot, bezplot, bezcurve_plot, polygonplot, 

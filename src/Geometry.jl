@@ -251,18 +251,20 @@ Calculate the minimum distance between a point and a finite plane.
 """
 function ptface_mindist(pt,face)
     # Use points that are not colinear to find a normal vector perpendicular to the face.
+
     i = 3
     v₁ = face[:,2] - face[:,1]
     v₂ = face[:,i] - face[:,1]
-    while dot(v₁,v₂) == 0
+    n = cross(v₁,v₂)
+    while all(isapprox.(n,0,atol=def_atol))
         i += 1
         if i > size(face,2)
             error("All points of the face are collinear.")
         end
         v₂ = face[:,i] - face[:,1]
+        n = cross(v₁,v₂)
     end
 
-    n = cross(v₁,v₂)
     n = n/norm(n)
     minimum([[norm(pt - face[:,i]) for i=1:size(face,2)]; abs(dot(pt - face[:,1],n))])
 end
