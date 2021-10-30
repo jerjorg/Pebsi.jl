@@ -7,7 +7,7 @@ using ..Polynomials: eval_poly,getpoly_coeffs,getbez_pts₋wts,eval_bezcurve,
     conicsection, eval_1Dquad_basis, evalpoly1D
 using ..EPMs: eval_epm, RytoeV, epm₋model, epm₋model2D
 using ..Mesh: get_neighbors,notbox_simplices,get_cvpts,ibz_init₋mesh, 
-    get_extmesh, choose_neighbors, trimesh
+    get_extmesh, choose_neighbors, choose_neighbors3D, trimesh
 using ..Geometry: order_vertices!,simplex_size,insimplex,barytocart,carttobary,
     sample_simplex,lineseg₋pt_dist, mapto_xyplane
 using ..Defaults
@@ -158,10 +158,10 @@ init_bandstructure(m11)
 ```
 """
 function init_bandstructure(
-    epm::Union{epm₋model,epm₋model2D};
+    epm::Union{epm₋model,epm₋model2D,epm₋model};
     init_msize::Int=def_init_msize,
     num_near_neigh::Int=def_num_near_neigh,
-    num_neighbors::Int=def_num_neighbors,
+    num_neighbors::Union{Nothing,Int}=nothing,
     fermiarea_eps::Real=def_fermiarea_eps,
     target_accuracy::Real=def_target_accuracy,
     fermilevel_method::Int=def_fermilevel_method,
@@ -172,6 +172,11 @@ function init_bandstructure(
     rtol::Real=def_rtol,
     atol::Real=def_atol)
 
+    dim = size(epm.recip_latvecs,1)
+    if num_neighbors == nothing
+        num_neighbors = if dim == 2 def_num_neighbors2D else def_num_neighbors3D end
+    end
+
     mesh = ibz_init₋mesh(epm.ibz,init_msize;rtol=rtol,atol=atol)
     mesh,ext_mesh,sym₋unique = get_extmesh(epm.ibz,mesh,epm.pointgroup,
         epm.recip_latvecs,num_near_neigh; rtol=rtol,atol=atol)
@@ -179,7 +184,8 @@ function init_bandstructure(
  
     uniqueᵢ = sort(unique(sym₋unique))[2:end]
     # eigenvals = zeros(Float64,epm.sheets,size(mesh.points,1))
-    eigenvals = zeros(Float64,epm.sheets,4+length(uniqueᵢ))
+    estart = if dim == 2 4 else 8 end
+    eigenvals = zeros(Float64,epm.sheets,estart+length(uniqueᵢ))
     for i=uniqueᵢ
         eigenvals[:,i] = eval_epm(mesh.points[i,:], epm, rtol=rtol, atol=atol)
     end
@@ -851,6 +857,7 @@ function quad_area₋volume(bezpts::AbstractMatrix{<:Real},
         b=split_bezsurf(bezpts,atol=atol)])    
 end
 
+face_ind = [[1,2,3],[2,3,4],[3,4,1],[4,1,2]]
 @doc """
     get_intercoeffs(index,mesh,ext_mesh,sym₋unique,eigenvals,simplicesᵢ,fatten)
 
@@ -912,28 +919,36 @@ function get_intercoeffs(index::Int,mesh::PyObject,ext_mesh::PyObject,
         sym₋unique::AbstractVector{<:Real},eigenvals::AbstractMatrix{<:Real},
         simplicesᵢ::Vector{Vector{Int64}},fatten::Real=def_fatten,
         num_near_neigh::Int=def_num_near_neigh; sigma::Real=0,
-        epm::Union{Nothing,epm₋model2D}=nothing,
+        epm::Union{Nothing,epm₋model2D,epm₋model}=nothing,
         neighbor_method::Int=def_neighbor_method,
-        num_neighbors::Int=def_num_neighbors)
+        num_neighbors::Union{Nothing,Int}=nothing)
      
     simplexᵢ = simplicesᵢ[index]
     # @show simplexᵢ
-    simplex = Matrix(mesh.points[simplexᵢ,:]') 
+    simplex = Matrix(mesh.points[simplexᵢ,:]')
+    dim = size(simplex,2)-1 
     neighborsᵢ = reduce(vcat,[get_neighbors(s,ext_mesh,num_near_neigh) for s=simplexᵢ]) |> unique
     neighborsᵢ = filter(x -> !(x in simplexᵢ),neighborsᵢ)
+    if num_neighbors == nothing
+        num_neighbors = if dim == 2 def_num_neighbors2D else def_num_neighbors3D end
+    end
 
     if length(neighborsᵢ) < num_neighbors num_neighbors = length(neighborsᵢ) end
 
     if neighbor_method == 1
         # Select neighbors that are closest to the triangle.
         neighbors = ext_mesh.points[neighborsᵢ,:]'
-        dist = [minimum([norm(ext_mesh.points[i,:] - simplex[:,j]) for j=1:3]) for i=neighborsᵢ]
+        dist = [minimum([norm(ext_mesh.points[i,:] - simplex[:,j]) for j=1:dim+1]) for i=neighborsᵢ]
         neighborsᵢ = neighborsᵢ[sortperm(dist)][1:num_neighbors]
 
     elseif neighbor_method == 2
         # Select neighbors that surround the triangle and are close to the triangle.
         neighbors = Matrix(ext_mesh.points[neighborsᵢ,:]')
-        neighborsᵢ = choose_neighbors(simplex,neighborsᵢ,neighbors; num_neighbors=num_neighbors)
+        if dim == 2
+            neighborsᵢ = choose_neighbors(simplex,neighborsᵢ,neighbors; num_neighbors=num_neighbors)
+        else
+            neighborsᵢ = choose_neighbors3D(simplex,neighborsᵢ,neighbors; num_neighbors=num_neighbors)
+        end
 
     # Neighbors are taken from a uniform grid within the triangle.
     elseif neighbor_method == 3
@@ -944,39 +959,56 @@ function get_intercoeffs(index::Int,mesh::PyObject,ext_mesh::PyObject,
     else
         error("Only 1, 2, and 3 are valid values of the flag for the method of selecting neighbors.")
     end
-    eigvals = zeros(size(eigenvals,2),15)
+    # eigvals = zeros(size(eigenvals,2),15)
     if neighbor_method == 3
         n = def_inside_neighbors_divs # Number of points for the uniform sampling of the triangle
-        b = sample_simplex(2,n)
+        b = sample_simplex(dim,n)
         b = b[:,setdiff(1:size(b,2),[1,n+1,size(b,2)])]
         eigvals = eval_epm(barytocart(b,simplex),epm)
     else
         b = carttobary(ext_mesh.points[neighborsᵢ,:]',simplex)
     end
+
     # Constrained least-squares
-    M = mapslices(x -> 2*[x[1]*x[2],x[1]*x[3],x[2]*x[3]],b,dims=1)'
+    if dim == 2
+        M = mapslices(x -> 2*[x[1]*x[2],x[1]*x[3],x[2]*x[3]],b,dims=1)'
+    else
+        M = mapslices(x -> 2*[x[1]*x[2],x[1]*x[3],x[2]*x[3],x[1]*x[4],x[2]*x[4],x[3]*x[4]],b,dims=1)'
+    end
 
     # Unconstrained least-squares
-    # b = [[1 0 0; 0 1 0; 0 0 1] b]
-    # M = mapslices(x->[x[1]^2,2*x[1]*x[2],x[2]^2,2*x[1]*x[3],2*x[2]*x[3],x[3]^2],b,dims=1)'
-        
+    # if dim == 2
+    #     b = [[1 0 0; 0 1 0; 0 0 1] b]
+    #     M = mapslices(x->[x[1]^2,2*x[1]*x[2],x[2]^2,2*x[1]*x[3],2*x[2]*x[3],x[3]^2],b,dims=1)'
+    # else
+    #     b = [[1 0 0 0; 0 1 0 0; 0 0 1 0; 0 0 0 1] b]
+    #     M = mapslices(x->[x[1]^2,2*x[1]*x[2],x[2]^2,2*x[1]*x[3],2*x[2]*x[3],x[3]^2,
+    #         2*x[1]*x[4],2*x[2]*x[4],2*x[3]*x[4],x[4]^2],b,dims=1)' 
+    # end
+
     # Minimum distance from the edges of the triangle.
-    # W = diagm([minimum([lineseg₋pt_dist(ext_mesh.points[i,:],simplex[:,s]) for s=[[1,2],[2,3],[3,1]]])
-    #     for i=neighborsᵢ])
+    # if dim == 2
+    #     W = diagm([minimum([lineseg₋pt_dist(ext_mesh.points[i,:],simplex[:,s]) for s=[[1,2],[2,3],[3,1]]])
+    #         for i=neighborsᵢ])
+    # else 
+    #     W = diagm([minimum([ptface_mindist(ext_mesh.points[i,:],simplex[:,s]) for s=face_ind])
+    #         for i=neighborsᵢ])
+    # end
  
     # Distance from the center of the triangle.
     # W = diagm([norm(ext_mesh.points[i,:] - mean(simplex,dims=2)) for i=neighborsᵢ])
     
     # Shortest distance from one of the corners of the triangle.
-    # W = diagm([1/minimum([norm(ext_mesh.points[i,:] - simplex[:,j]) for j=1:3])^2 for i=neighborsᵢ])
+    # W = diagm([1/minimum([norm(ext_mesh.points[i,:] - simplex[:,j]) for j=1:dim+1])^2 for i=neighborsᵢ])
     # W=I
 
+    nterms = sum([i for i=1:dim+1])
     if sigma == 0
-        bezcoeffs = [zeros(6) for i=1:size(eigenvals,1)]
-        inter_bezcoeffs = [zeros(2,6) for i=1:size(eigenvals,1)]
+        bezcoeffs = [zeros(nterms) for i=1:size(eigenvals,1)]
+        inter_bezcoeffs = [zeros(dim,6) for i=1:size(eigenvals,1)]
     else
-        bezcoeffs = [zeros(6) for i=1:1]
-        inter_bezcoeffs = [zeros(2,6) for i=1:1]
+        bezcoeffs = [zeros(nterms) for i=1:1]
+        inter_bezcoeffs = [zeros(dim,6) for i=1:1]
     end
 
     for sheet = 1:size(eigenvals,1)
@@ -1006,24 +1038,38 @@ function get_intercoeffs(index::Int,mesh::PyObject,ext_mesh::PyObject,
         # Weighted least squares
         # c = pinv(M)*Z        
         # c = inv(M'*W*M)*M'*W*Z
-        c1,c2,c3 = c
-        q1,q2,q3 = q
+        if dim == 2
+            c1,c2,c3 = c
+            q1,q2,q3 = q
+        else
+            c1,c2,c3,c4,c5,c6 = c
+            q1,q2,q3,q4 = q
+        end
+
+        if dim == 2        
+            scoeffs = [q1,c1,q2,c2,c3,q3]
+        else
+            scoeffs = [q1,c1,q2,c2,c3,q3,c4,c5,c6,q4]
+        end
 
         if sigma == 0
             # Constrained least-squares
-            bezcoeffs[sheet] = [q1,c1,q2,c2,c3,q3]
+            bezcoeffs[sheet] = scoeffs
+
             # Unconstrained least-squares
             # bezcoeffs[sheet] = c
         else
             # Constrained least-squares
-            bezcoeffs[1] = [q1,c1,q2,c2,c3,q3]
+            bezcoeffs[1] = scoeffs
+
             # Unconstrained least-squares
             # bezcoeffs[1] = c
         end
-        # Constrained least-squares
-        qᵢ = [eval_poly(b[:,i],[q1,c1,q2,c2,c3,q3],2,2) for i=1:size(b,2)]
+        # Constrained least-squares        
+        qᵢ = [eval_poly(b[:,i],scoeffs,dim,2) for i=1:size(b,2)]
+
         # Unconstrained least-squares
-        # qᵢ = [eval_poly(b[:,i],c,2,2) for i=1:size(b,2)]
+        # qᵢ = [eval_poly(b[:,i],c,dim,2) for i=1:size(b,2)]
 
         δᵢ = fᵢ - qᵢ; 
         ϵ = Matrix(reduce(hcat,[(1/dot(M[i,:],M[i,:])*δᵢ[i])*M[i,:] for i=1:length(δᵢ)])')
@@ -1032,8 +1078,13 @@ function get_intercoeffs(index::Int,mesh::PyObject,ext_mesh::PyObject,
         intercoeffs = [c';c'] .+ ϵ
     
         # Constrained least-squares
-        c1,c2,c3 = [intercoeffs[:,i] for i=1:3]
-        intercoeffs = reduce(hcat,[[q1,q1],c1,[q2,q2],c2,c3,[q3,q3]])
+        if dim == 2
+            c1,c2,c3 = [intercoeffs[:,i] for i=1:3]
+            intercoeffs = reduce(hcat,[[q1,q1],c1,[q2,q2],c2,c3,[q3,q3]])
+        else
+            c1,c2,c3,c4,c5,c6 = [intercoeffs[:,i] for i=1:6]
+            intercoeffs = reduce(hcat,[[q1,q1],c1,[q2,q2],c2,c3,[q3,q3],c4,c5,c6,[q4,q4]])
+        end
         if sigma == 0
             inter_bezcoeffs[sheet] = intercoeffs
         else
@@ -1604,7 +1655,7 @@ Calculate the band energy using uniform or adaptive quadratic integation.
 """
 function quadratic_method!(epm::Union{epm₋model2D,epm₋model};
     init_msize::Int=def_init_msize, num_near_neigh::Int=def_num_near_neigh,
-    num_neighbors::Int=def_num_neighbors,
+    num_neighbors::Union{Nothing,Int}=nothing,
     fermiarea_eps::Real=def_fermiarea_eps,
     target_accuracy::Real=def_target_accuracy,
     fermilevel_method::Int=def_fermilevel_method, 
@@ -1615,6 +1666,11 @@ function quadratic_method!(epm::Union{epm₋model2D,epm₋model};
     rtol::Real=def_rtol,
     atol::Real=def_atol,
     uniform::Bool=def_uniform)
+
+    dim = size(epm.recip_latvecs,1)
+    if num_neighbors == nothing
+        num_neighbors = if dim == 2 def_num_neighbors2D else def_num_neighbors3D end
+    end
     
     ebs = init_bandstructure(epm,init_msize=init_msize, num_near_neigh=num_near_neigh,
         num_neighbors=num_neighbors,fermiarea_eps=fermiarea_eps, 

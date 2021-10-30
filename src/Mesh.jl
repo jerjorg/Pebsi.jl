@@ -3,15 +3,16 @@ module Mesh
 using ..Geometry: simplex_size, barytocart, lineseg₋pt_dist, ptface_mindist
 using ..Polynomials: sample_simplex
 using ..Defaults: def_atol, def_rtol, def_mesh_scale, def_max_neighbor_tol,
-    def_neighbors_per_bin, def_num_neighbors
+    def_neighbors_per_bin2D, def_neighbors_per_bin3D, def_num_neighbors2D, 
+    def_num_neighbors3D
 using SymmetryReduceBZ.Utilities: unique_points, get_uniquefacets
 using PyCall: pyimport,PyObject
 using QHull: Chull
 using Statistics: mean
-using LinearAlgebra: norm
+using LinearAlgebra: norm, dot
 
-export get_neighbors, choose_neighbors, ibz_init₋mesh, get_sym₋unique!,
-    notbox_simplices, get_cvpts, get_extmesh, trimesh
+export get_neighbors, choose_neighbors, choose_neighbors3D, ibz_init₋mesh, 
+    get_sym₋unique!, notbox_simplices, get_cvpts, get_extmesh, trimesh
 
 @doc """
     get_neighbors(index,mesh,num₋neighbors=2)
@@ -65,7 +66,13 @@ function get_neighbors(index::Int,mesh::PyObject,
     unique(neighborsᵢ)
 end
 
-function choose_neighbors(simplex,neighborsᵢ,neighbors;num_neighbors=def_num_neighbors)
+function choose_neighbors(simplex,neighborsᵢ,neighbors;num_neighbors=nothing)
+
+    dim = size(simplex,1)
+    if num_neighbors == nothing
+        num_neighbors = if dim == 2 def_num_neighbors2D else def_num_neighbors3D end
+    end 
+    neighbors_per_bin = if dim == 2 def_neighbors_per_bin2D else def_neighbors_per_bin3D end
 
     center = vec(mean(simplex,dims=2)) # Measure angles from the center of the triangle
     angles = [atan(neighbors[2,i]-center[2],neighbors[1,i]-center[1]) for i=1:size(neighbors,2)]
@@ -76,10 +83,9 @@ function choose_neighbors(simplex,neighborsᵢ,neighbors;num_neighbors=def_num_n
     # dorder = sortperm(sortperm(distances))
     
     # Group neighboring points by angle ranges
-    nbins = round(Int,num_neighbors/def_neighbors_per_bin)
+    nbins = round(Int,num_neighbors/neighbors_per_bin)
     angle_segs = -π:2π/nbins:π;
     angle_ran = [[] for _=1:nbins] # angle ranges
-
 
     p = 1
     for (i,θ) in enumerate(angles)
@@ -97,7 +103,6 @@ function choose_neighbors(simplex,neighborsᵢ,neighbors;num_neighbors=def_num_n
             neighbors[:,j],simplex[:,[i,mod1(i+1,3)]]) for i=1:3]) for j=angle_ran[p]]
         dorder = sortperm(distances)
         angle_ran[p] = neighborsᵢ[angle_ran[p][dorder]]
-        # angle_ran[p] = neighborsᵢ[angle_ran[p][sortperm(dorder[angle_ran[p]])]]
     end
     # angle_ran[p] = angle_ran[p][sortperm(dorder[angle_ran[p]])]
     # Select the points within the angle ranges that are closest to the sample points of the triangle.
@@ -115,6 +120,104 @@ function choose_neighbors(simplex,neighborsᵢ,neighbors;num_neighbors=def_num_n
         end    
     end
     neighᵢ
+end
+
+face_ind = [[1,2,3],[2,3,4],[3,4,1],[4,1,2]]
+@doc """
+    choose_neighbors3D(simplex,neighborsᵢ,neighbors,num_neighbors)
+
+Select neighboring points that are close and uniformly surround the tetrahedron.
+
+# Arguments
+- `simplex`: the corners of the tetrahedron as columns of a matrix in Cartesian
+    coordinates.
+- `neighborsᵢ`: the indices of all neighboring points
+- `neighbors`: the Cartesian coordinates of neighboring points as columns of a
+    matrix
+- `num_neighbors`: the number of neighbors to keep
+
+# Returnts
+- `neighᵢ`: the indices of neighboring points kept
+"""
+function choose_neighbors3D(simplex,neighborsᵢ,neighbors;num_neighbors=nothing)
+
+    dim = size(simplex,2)-1
+    if num_neighbors == nothing
+        num_neighbors = if dim == 2 def_num_neighbors2D else def_num_neighbors3D end
+    end
+
+    if length(neighborsᵢ) < num_neighbors 
+        return neighborsᵢ
+    end
+
+    center = vec(mean(simplex,dims=2)) # Measure angles from the center of the triangle
+    ϕs = [acos(dot(neighbors[:,i] - center,[0,0,1] - center)/(norm(neighbors[:,i] - center)*norm([0,0,1] - 
+                    center))) for i=1:size(neighbors,2)]
+    θs = [atan(neighbors[2,i]-center[2],neighbors[1,i]-center[1]) for i=1:size(neighbors,2)]
+
+    orderϕ = sortperm(ϕs)
+    orderθ = sortperm(θs)
+    neighbors_per_bin = if dim == 2 def_neighbors_per_bin2D else def_neighbors_per_bin3D end
+
+    nbinsθ = round(Int,√(2*num_neighbors/neighbors_per_bin))
+    nbinsϕ = ceil(Int,nbinsθ/2)
+    segsθ = -π:2π/nbinsθ:π
+    segsϕ = 0:π/nbinsϕ:π
+
+    binsθ = [[] for _=1:nbinsθ]
+    n = 1
+    for i in orderθ
+        if θs[i] > segsθ[n+1] && !isapprox(θs[i],segsθ[n+1])
+            n += 1
+        end
+        push!(binsθ[n], i)
+    end
+
+    binsϕ = [[] for _=1:nbinsϕ]
+    n = 1
+    for i in orderϕ
+        if ϕs[i] > segsϕ[n+1] && !isapprox(ϕs[i],segsϕ[n+1])
+            n += 1
+        end
+        push!(binsϕ[n], i)
+    end
+
+    # Place angles in the proper bin.
+    angle_ran = [[[] for i=1:nbinsϕ] for j=1:nbinsθ]
+    for i = 1:nbinsθ
+        for θᵢ in binsθ[i]
+            for j = 1:nbinsϕ
+                if θᵢ in binsϕ[j]
+                    push!(angle_ran[i][j],θᵢ)
+                end
+            end
+        end
+    end
+
+    faces = [simplex[:,i] for i=face_ind]
+    # Sort points in each bin by distance from the tetrahedron
+    for i = 1:nbinsθ
+        for j = 1:nbinsϕ
+            ptsᵢ = angle_ran[i][j]
+            pts = neighbors[:,ptsᵢ]
+            order = sortperm([minimum([ptface_mindist(pts[:,i],face) for face = faces]) for i=1:size(pts,2)])
+            angle_ran[i][j] = angle_ran[i][j][order]
+        end
+    end
+
+    c = 0
+    neighᵢ = []
+    while length(neighᵢ) < num_neighbors
+        c += 1
+        for i=1:nbinsθ
+            for j=1:nbinsϕ
+                if !(length(angle_ran[i][j]) < c)
+                    push!(neighᵢ,neighborsᵢ[angle_ran[i][j][c]])
+                end
+            end
+        end
+    end
+    neighᵢ             
 end
 
 @doc """

@@ -240,6 +240,14 @@ end
     ptface_mindist(pt,face)
 
 Calculate the minimum distance between a point and a finite plane.
+
+# Arguments
+- `pt`: the 3D Cartesian coordinates of a point embedded in 3D.
+- `face`: the 3D Cartesian coordinates of the corners of a face that lie on the
+    same plane as columns of a matrix.
+
+# Returns
+- The minimum distance from the point to the plane.
 """
 function ptface_mindist(pt,face)
     # Use points that are not colinear to find a normal vector perpendicular to the face.
@@ -256,7 +264,7 @@ function ptface_mindist(pt,face)
 
     n = cross(v₁,v₂)
     n = n/norm(n)
-    minimum([[norm(pt - face[:,i]) for i=1:size(face,2)]; dot(pt - face[:,1],n)])
+    minimum([[norm(pt - face[:,i]) for i=1:size(face,2)]; abs(dot(pt - face[:,1],n))])
 end
 
 corner_indices = [1,3,6]

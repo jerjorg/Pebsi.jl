@@ -194,19 +194,19 @@ Rb_electrons = 1
 Sn_electrons = 4
 Zn_electrons = 2
 
-Ag_sheets = 1
-Al_sheets = 4
-Au_sheets = 1
-Cs_sheets = 2
-Cu_sheets = 1
-In_sheets = 4 
-K_sheets = 2
-Li_sheets = 1
-Na_sheets = 2
-Pb_sheets = 4
-Rb_sheets = 2 
-Sn_sheets = 5 
-Zn_sheets = 3 
+Ag_sheets = 1 + 2
+Al_sheets = 4 + 2
+Au_sheets = 1 + 2
+Cs_sheets = 2 + 2
+Cu_sheets = 1 + 2
+In_sheets = 4 + 2
+K_sheets = 2 + 2
+Li_sheets = 1 + 2
+Na_sheets = 2 + 2
+Pb_sheets = 4 + 2
+Rb_sheets = 2 + 2
+Sn_sheets = 5 + 2 
+Zn_sheets = 3 + 2
 
 # Cutoffs are chosen so that there are at least 1000 terms in the expansion at
 # the origin.

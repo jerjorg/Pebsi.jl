@@ -9,7 +9,7 @@ using ..Defaults: def_atol,def_rtol
 using ..QuadraticIntegration: bezcurve_intersects, getdomain, quad_area₋volume
 
 export bezcurve_intersects, getdomain, analytic_area1D, simpson, simpson2D, 
-    linept_dist, tetface_areas, simpson3D
+    linept_dist, tetface_areas, simpson3D, face_ind
 
 @doc """
     analytic_area1D(coeffs,limits)

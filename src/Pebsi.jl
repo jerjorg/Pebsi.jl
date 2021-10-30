@@ -24,8 +24,8 @@ export epm_names, epm_names2D, eval_epm, epm₋model2D, epm₋model, free, free_
     free_be, epms, epms2D
 
 # Mesh
-export get_neighbors, choose_neighbors, ibz_init₋mesh, get_sym₋unique!,
-    notbox_simplices, get_cvpts, get_extmesh, trimesh
+export get_neighbors, choose_neighbors, choose_neighbors3D, ibz_init₋mesh,
+    get_sym₋unique!, notbox_simplices, get_cvpts, get_extmesh, trimesh
 
 # RectangularMethod
 export sample_unitcell, rectangular_method, symreduce_grid, convert_mixedradix,
