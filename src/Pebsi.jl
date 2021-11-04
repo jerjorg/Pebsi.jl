@@ -11,7 +11,8 @@ include("Plotting.jl")
 
 # Geometry
 export order_vertices!, sample_simplex, barytocart, carttobary, simplex_size, 
-    insimplex, lineseg₋pt_dist, ptface_mindist, affine_trans, mapto_xyplane
+    insimplex, lineseg₋pt_dist, ptface_mindist, affine_trans, mapto_xyplane,
+    point_in_polygon
     
 # Polynomials
 export bernstein_basis, getpoly_coeffs, eval_poly, getbez_pts₋wts, 

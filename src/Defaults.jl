@@ -29,6 +29,7 @@ def_max_neighbor_tol = 1.01 # Tolerance for selecting neighbors near the triangl
 def_inside_neighbors_divs = 5 # The number of points for uniform grid over triangle for inside neighbors
 def_bez_weight_tol = 1e-12 # Smaller tolerance for classifying conic sections
 def_min_simplex_size = 1e-12 # The smallest triangle that can be split
+def_rational_bezpt_dist = 1e6
 
 # Export all
 for n in names(@__MODULE__; all=true)

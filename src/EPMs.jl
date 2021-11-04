@@ -210,19 +210,19 @@ Zn_sheets = 3 + 2
 
 # Cutoffs are chosen so that there are at least 1000 terms in the expansion at
 # the origin.
-# Ag_cutoff = 8.1
-# Al_cutoff = 8.2
-# Au_cutoff = 8.2
-# Cs_cutoff = 4.3
-# Cu_cutoff = 9.2
-# In_cutoff = 7.1
-# K_cutoff = 5.0
-# Li_cutoff = 7.5
-# Na_cutoff = 6.2
-# Pb_cutoff = 6.7
-# Rb_cutoff = 4.7
-# Sn_cutoff = 5.5
-# Zn_cutoff = 6.6
+Ag_cutoff = 8.1
+Al_cutoff = 8.2
+Au_cutoff = 8.2
+Cs_cutoff = 4.3
+Cu_cutoff = 9.2
+In_cutoff = 7.1
+K_cutoff = 5.0
+Li_cutoff = 7.5
+Na_cutoff = 6.2
+Pb_cutoff = 6.7
+Rb_cutoff = 4.7
+Sn_cutoff = 5.5
+Zn_cutoff = 6.6
 
 #=
 Cutoffs are chosen such that the mean deviation in all eigenvalues is less
@@ -251,33 +251,33 @@ than 1e-12 for all points of a sparse mesh over the IBZ for all eigenvalues
 beneath the Fermi level. The mean deviation is for 5 different consecutive
 expansions where the number of terms in the expansions for all k-points changed.
 =#
-Ag_cutoff = 9.04 
-Al_cutoff = 10.56 
-Au_cutoff = 11.76 
-Cs_cutoff = 6.4 
-Cu_cutoff = 12.92  
-In_cutoff = 4.26 
-K_cutoff = 3.14 
-Li_cutoff = 4.74 
-Na_cutoff = 3.88 
-Pb_cutoff = 3.98 
-Rb_cutoff = 2.98 
-Sn_cutoff = 3.84 
-Zn_cutoff = 3.7 
+# Ag_cutoff = 9.04 
+# Al_cutoff = 10.56 
+# Au_cutoff = 11.76 
+# Cs_cutoff = 6.4 
+# Cu_cutoff = 12.92  
+# In_cutoff = 4.26 
+# K_cutoff = 3.14 
+# Li_cutoff = 4.74 
+# Na_cutoff = 3.88 
+# Pb_cutoff = 3.98 
+# Rb_cutoff = 2.98 
+# Sn_cutoff = 3.84 
+# Zn_cutoff = 3.7 
 
-Ag_terms = 1459
-Al_terms = 2229
-Au_terms = 3143
-Cs_terms = 3456
-Cu_terms = 2910
-In_terms = 231
-K_terms = 249
-Li_terms = 249
-Na_terms = 249
-Pb_terms = 229
-Rb_terms = 249
-Sn_terms = 343
-Zn_terms = 173
+# Ag_terms = 1459
+# Al_terms = 2229
+# Au_terms = 3143
+# Cs_terms = 3456
+# Cu_terms = 2910
+# In_terms = 231
+# K_terms = 249
+# Li_terms = 249
+# Na_terms = 249
+# Pb_terms = 229
+# Rb_terms = 249
+# Sn_terms = 343
+# Zn_terms = 173
 
 eVtoRy = 0.07349864435130871395
 RytoeV = 13.6056931229942343775

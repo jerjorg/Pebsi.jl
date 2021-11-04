@@ -5,7 +5,8 @@ using LinearAlgebra: dot,cross,norm,det
 using Base.Iterators: product
 
 export order_vertices!, sample_simplex, barytocart, carttobary, simplex_size, 
-    insimplex, lineseg₋pt_dist, affine_trans, mapto_xyplane, ptface_mindist
+    insimplex, lineseg₋pt_dist, affine_trans, mapto_xyplane, ptface_mindist,
+    point_in_polygon
 
 @doc """
     order_vertices(vertices)
@@ -193,14 +194,14 @@ function insimplex(bpts::AbstractMatrix{<:Real},atol::Real=def_atol)
 end
 
 @doc """
-    lineseg₋pt_dist(line_seg,pt)
+    lineseg₋pt_dist(pt,line_seg)
 
 Calculate the shortest distance from a point to a line segment.
 
 # Arguments
+- `p3::AbstractVector{<:Real}`: a point in Cartesian coordinates.
 - `line_seg::AbstractMatrix{<:Real}`: a line segment given by two points. The points
     are the columns of the matrix.
-- `p3::AbstractVector{<:Real}`: a point in Cartesian coordinates.
 - `line::Bool=false`: if true, calculate the distance from a line instead of a 
     line segment.
 - `atol::Real=1e-9`: an absolute tolerance for floating point comparisons.
@@ -235,6 +236,38 @@ function lineseg₋pt_dist(p3::AbstractVector{<:Real},line_seg::AbstractMatrix{<
     end 
 end
 
+@doc """
+    point_in_polygon(pt,polygon)
+
+Determine if a point lies within a polygon where both are embedded in 3D.
+
+# Arguments
+- `pt`: the Cartesial coordinates of a point that lies on the same plane as
+    the polygon.
+- `polygon`: the Cartesian coordinates of the corners of a polygon as columns of
+    a matrix.
+"""
+function point_in_polygon(pt,polygon; atol=def_atol)
+    x,y,z=pt
+    npts = size(polygon,2)
+    s1 = zeros(npts); s2 = zeros(npts); s3 = zeros(npts)
+    for i=1:npts
+        x1,y1,z1 = polygon[:,i]
+        x2,y2,z2 = polygon[:,mod1(i+1,npts)]
+        s1[i] = (y - y1)*(x2 - x1) - (x - x1)*(y2-y1)
+        s2[i] = (z - z1)*(x2 - x1) - (x - x1)*(z2-z1)
+        s3[i] = (y - y1)*(z2 - z1) - (z - z1)*(y2-y1)
+    end
+    ((all((s1 .>= 0) .| isapprox.(s1,0,atol=atol)) | 
+     all((s1 .<= 0) .| isapprox.(s1,0,atol=atol))) 
+     &
+    (all((s2 .>= 0) .| isapprox.(s2,0,atol=atol)) |
+     all((s2 .<= 0) .| isapprox.(s2,0,atol=atol)))
+     & 
+    (all((s3 .>= 0) .| isapprox.(s3,0,atol=atol)) |
+     all((s3 .<= 0) .| isapprox.(s3,0,atol=atol)))
+     )
+end 
 
 @doc """
     ptface_mindist(pt,face)
@@ -251,7 +284,6 @@ Calculate the minimum distance between a point and a finite plane.
 """
 function ptface_mindist(pt,face)
     # Use points that are not colinear to find a normal vector perpendicular to the face.
-
     i = 3
     v₁ = face[:,2] - face[:,1]
     v₂ = face[:,i] - face[:,1]
@@ -264,9 +296,15 @@ function ptface_mindist(pt,face)
         v₂ = face[:,i] - face[:,1]
         n = cross(v₁,v₂)
     end
-
     n = n/norm(n)
-    minimum([[norm(pt - face[:,i]) for i=1:size(face,2)]; abs(dot(pt - face[:,1],n))])
+    d = dot(pt - face[:,1],n)
+    ppt = pt - d*n
+    npts = size(face,2)
+    if point_in_polygon(ppt,face)
+        abs(d)
+    else
+        minimum([lineseg₋pt_dist(pt,face[:,[i,mod1(i+1,npts)]]) for i=1:npts])
+    end
 end
 
 corner_indices = [1,3,6]

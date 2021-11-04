@@ -1,6 +1,6 @@
 module QuadraticIntegration
 
-using SymmetryReduceBZ.Utilities: unique_points, shoelace, remove_duplicates
+using SymmetryReduceBZ.Utilities: unique_points, shoelace, remove_duplicates, get_uniquefacets
 using SymmetryReduceBZ.Symmetry: calc_spacegroup
 
 using ..Polynomials: eval_poly,getpoly_coeffs,getbez_pts₋wts,eval_bezcurve,
@@ -9,7 +9,7 @@ using ..EPMs: eval_epm, RytoeV, epm₋model, epm₋model2D
 using ..Mesh: get_neighbors,notbox_simplices,get_cvpts,ibz_init₋mesh, 
     get_extmesh, choose_neighbors, choose_neighbors3D, trimesh
 using ..Geometry: order_vertices!,simplex_size,insimplex,barytocart,carttobary,
-    sample_simplex,lineseg₋pt_dist, mapto_xyplane
+    sample_simplex,lineseg₋pt_dist, mapto_xyplane, ptface_mindist
 using ..Defaults
 
 using QHull: chull,Chull
@@ -19,6 +19,7 @@ using Base.Iterators: flatten
 using SparseArrays: findnz
 using PyCall: PyObject, pyimport
 using Distributed: pmap
+using FastGaussQuadrature: gausslegendre
 
 export bandstructure, init_bandstructure, quadval_vertex, corner_indices, 
     edge_indices, simplex_intersects, saddlepoint, split_bezsurf₁, 
@@ -669,7 +670,7 @@ function two₋intersects_area₋volume(bezpts::AbstractMatrix{<:Real},
     # No intersections
     if intersects == [[],[],[]]
         # Case where the sheet is completely above or below 0.    
-        if all(bezpts[end,:] .< 0) && !all(isapprox.(bezpts[end,:],0))
+        if all(bezpts[end,:] .< 0) && !all(isapprox.(bezpts[end,:],0,atol=atol))
             if quantity == "area"
                 areaₒᵣvolume = simplex_size(triangle)
             elseif quantity == "volume"
@@ -679,7 +680,7 @@ function two₋intersects_area₋volume(bezpts::AbstractMatrix{<:Real},
             end
             return areaₒᵣvolume
         end
-        if all(bezpts[end,:] .> 0) && !all(isapprox.(bezpts[end,:],0))
+        if all(bezpts[end,:] .> 0) && !all(isapprox.(bezpts[end,:],0,atol=atol))
             areaₒᵣvolume = 0
             return areaₒᵣvolume
         end
@@ -716,7 +717,7 @@ function two₋intersects_area₋volume(bezpts::AbstractMatrix{<:Real},
 
     split = false
     if bezptsᵣ != []
-        if maximum(abs.(bezptsᵣ)) > 1e6 
+        if maximum(abs.(bezptsᵣ)) > def_rational_bezpt_dist 
             split = true
         end
     elseif (insimplex(saddlepoint(bezpts[end,:],atol=atol)) && !linear)
@@ -1488,16 +1489,16 @@ end
 @doc """
     refine_mesh!(epm,ebs)
 
-Perform one iteration of adaptive refinement. See the composite type 
+Perform one iteration of adaptive refinement. See the composite type
 `bandstructure` for refinement options. 
 """
 function refine_mesh!(epm::Union{epm₋model2D,epm₋model},ebs::bandstructure)
-       
+     
     spatial = pyimport("scipy.spatial")
     simplices = [Matrix(ebs.mesh.points[s,:]') for s=ebs.simplicesᵢ]
     err_cutoff = [simplex_size(s)/epm.ibz.volume for s=simplices]*ebs.target_accuracy
     faerr_cutoff = [simplex_size(s)/epm.ibz.volume for s=simplices]*ebs.fermiarea_eps
-
+     
     n = def_min_split_triangles
     # Refine the tile with the most error
     if ebs.refine_method == 1
@@ -1529,8 +1530,8 @@ function refine_mesh!(epm::Union{epm₋model2D,epm₋model},ebs::bandstructure)
             order = sortperm(ebs.fermiarea_errors[splitpos],rev=true)
             splitpos = splitpos[order[1:round(Int,length(order)*def_frac_refined)]]
         end
-    # Refine any triangles with large Fermi area errors. No comparison against
-    # an allowed error is performed. 
+    # Refine any triangles with large Fermi area errors. There is no comparison 
+    # against an allowed error. 
     elseif ebs.refine_method == 5
         if sum(ebs.fermiarea_errors) < ebs.fermiarea_eps
             println("Switching to band energy refinement.")
@@ -1567,25 +1568,34 @@ function refine_mesh!(epm::Union{epm₋model2D,epm₋model},ebs::bandstructure)
         ArgumentError("The refinement method has to be and integer equal to 1,..., 6.")
     end
     frac_split = length(splitpos)/length(ebs.bandenergy_errors)
+
     println("Number of split triangles: ", length(splitpos))
     if splitpos == []
         return ebs
     end
 
+    dim = size(epm.recip_latvecs,1)
+    centerpt = [1. / (dim+1) for i=1:dim+1]
+    if dim == 2
+        edgepts = [0 1/2 1/2; 1/2 0 1/2; 1/2 1/2 0]
+    else
+        edgepts = [1/2 1/2 1/2 0 0 0; 1/2 0 0 1/2 1/2 0; 0 1/2 0 1/2 0 1/2; 0 0 1/2 0 1/2 1/2]
+    end
+    
     # A single point at the center of the triangle
     if ebs.sample_method == 1
-        new_meshpts = reduce(hcat,[barytocart([1/3,1/3,1/3],s) for s=simplices[splitpos]])
+        new_meshpts = reduce(hcat,[barytocart(centerpt,s) for s=simplices[splitpos]])
     # Point at the midpoints of all edges of the triangle
     elseif ebs.sample_method == 2
-        new_meshpts = reduce(hcat,[barytocart([0 1/2 1/2; 1/2 0 1/2; 1/2 1/2 0],s) for s=simplices[splitpos]])
+        new_meshpts = reduce(hcat,[barytocart(edgepts,s) for s=simplices[splitpos]])
     # If the error is 2x greater than the tolerance, split edges. Otherwise,
     # sample at the center of the triangle.
     elseif ebs.sample_method == 3
         sample_type = [
             abs(ebs.bandenergy_errors[i]) > def_allowed_err_ratio*err_cutoff[i] ? 2 : 1 for i=splitpos]
         new_meshpts = reduce(hcat,[sample_type[i] == 1 ? 
-        barytocart([1/3,1/3,1/3],simplices[splitpos[i]]) :
-        barytocart([0 1/2 1/2; 1/2 0 1/2; 1/2 1/2 0],simplices[splitpos[i]])
+        barytocart(centerpt,simplices[splitpos[i]]) :
+        barytocart(edgepts,simplices[splitpos[i]])
         for i=1:length(splitpos)])
     else
         ArgumentError("The sample method for refinement has to be an integer with a value of 1 or 2.")
@@ -1595,6 +1605,8 @@ function refine_mesh!(epm::Union{epm₋model2D,epm₋model},ebs::bandstructure)
     new_meshpts = unique_points(new_meshpts,rtol=ebs.rtol,atol=ebs.atol)
     new_eigvals = eval_epm(new_meshpts,epm,rtol=ebs.rtol,atol=ebs.atol)
     ebs.eigenvals = [ebs.eigenvals new_eigvals]
+
+    @show size(new_meshpts,2)
 
     # There should technically be an additional step at this point where
     # symmetrically equivalent points are removed from `new_meshpts` (points
@@ -1609,13 +1621,19 @@ function refine_mesh!(epm::Union{epm₋model2D,epm₋model},ebs::bandstructure)
         reduce(vcat,[[norm(ebs.mesh.points[i,:] - ebs.mesh.points[j,:]) 
                     for j=get_neighbors(i,ebs.mesh,ebs.num_near_neigh)] for i=cv_pointsᵢ]))
 
-    # The Line segments that bound the IBZ.
-    ibz_linesegs = [Matrix(epm.ibz.points[i,:]') for i=epm.ibz.simplices]
-
-    # Translations that need to be considered when calculating points outside the IBZ.
-    # Assumes the reciprocal latice vectors are Minkowski reduced.
-    bztrans = [[[i,j] for i=-1:1,j=-1:1]...]
-    
+    if dim == 2
+        # The Line segments that bound the IBZ.
+        borders = [Matrix(epm.ibz.points[i,:]') for i=epm.ibz.simplices]
+        distfun = lineseg₋pt_dist
+        # Translations that need to be considered when calculating points outside the IBZ.
+        # Assumes the reciprocal latice vectors are Minkowski reduced.
+        bztrans = [[[i,j] for i=-1:1,j=-1:1]...]
+    else
+        borders = [Matrix(epm.ibz.points[f,:]') for f=get_uniquefacets(epm.ibz)]
+        distfun = ptface_mindist
+        bztrans = [[[i,j,k] for i=-1:1,j=-1:1,k=-1:1]...]
+    end
+     
     # The number of points in the mesh before adding new points.
     s = size(ebs.mesh.points,1)
     m = maximum(ebs.sym₋unique)
@@ -1623,18 +1641,17 @@ function refine_mesh!(epm::Union{epm₋model2D,epm₋model},ebs::bandstructure)
     # Indices of the new mesh points.
     new_ind = (m+1):(m+size(new_meshpts,2))
 
-    # Indices of sym. equiv. points on and nearby the boundary of the IBZ. Pointer to the symmetrically unique point.
+    # Indices of sym. equiv. points on and nearby the boundary of the IBZ. Pointer to the symmetrically unique points.
     sym_ind = zeros(Int,size(new_meshpts,2)*length(epm.pointgroup)*length(bztrans))
-  
+     
     # Keep track of points on the IBZ boundaries.
     nₘ = 0
     # Add points to the mesh on the boundary of the IBZ.
-    neighbors = zeros(Float64,2,size(new_meshpts,2)*length(epm.pointgroup)*length(bztrans))
+    neighbors = zeros(Float64,dim,size(new_meshpts,2)*length(epm.pointgroup)*length(bztrans))
 
     for i=1:length(new_ind),op=epm.pointgroup,trans=bztrans
         pt = op*new_meshpts[:,i] + epm.recip_latvecs*trans
-      
-        if (any([isapprox(lineseg₋pt_dist(pt,line_seg,false),0,atol=ebs.atol) for line_seg=ibz_linesegs]) &&
+        if (any([isapprox(distfun(pt,border),0,atol=ebs.atol) for border=borders]) && 
             !any(mapslices(x->isapprox(x,pt,atol=ebs.atol,rtol=ebs.rtol),
                         [ebs.mesh.points' new_meshpts neighbors[:,1:nₘ]],dims=1)))
             nₘ += 1
@@ -1642,7 +1659,7 @@ function refine_mesh!(epm::Union{epm₋model2D,epm₋model},ebs::bandstructure)
             neighbors[:,nₘ] = pt
         end
     end
-
+    @show nₘ
     if m == s
         ebs.mesh = spatial.Delaunay([ebs.mesh.points; new_meshpts'; neighbors[:,1:nₘ]'])
     else
@@ -1654,15 +1671,16 @@ function refine_mesh!(epm::Union{epm₋model2D,epm₋model},ebs::bandstructure)
     nₑ = nₘ
     for i=1:length(new_ind),op=epm.pointgroup,trans=bztrans
         pt = op*new_meshpts[:,i] + epm.recip_latvecs*trans
-
-        if any([lineseg₋pt_dist(pt,line_seg,false) < bound_limit for line_seg=ibz_linesegs]) &&
+        if (any([distfun(pt,border) < bound_limit for border=borders]) &&
             !any(mapslices(x->isapprox(x,pt,atol=ebs.atol,rtol=ebs.rtol),
-                    [ebs.ext_mesh.points' new_meshpts neighbors[:,1:nₑ]],dims=1))
+                    [ebs.ext_mesh.points' new_meshpts neighbors[:,1:nₑ]],dims=1)))
             nₑ += 1
             sym_ind[nₑ] = new_ind[i]
             neighbors[:,nₑ] = pt
         end
     end
+
+    @show nₑ
 
     if m == s
         ebs.sym₋unique = [ebs.sym₋unique[1:m]; new_ind; sym_ind[1:nₑ]] 
@@ -2241,12 +2259,27 @@ Calculate the volume or hypervolume beneath a quadratic within a tetrahedron.
 - The areas or volumes of slices of the tetrahedron or the volume or hypervolume
     of a polynomial within the tetrahedron.
 """
-function simpson3D(coeffs,tetrahedron,num_slices,quantity;values=false)
+function simpson3D(coeffs,tetrahedron,num_slices,quantity;values=false,gauss=true,
+    atol=def_atol)
     dim = 3; deg = 2
+
+    # All the coefficients are well below zero.
+    if all((coeffs .< 0) .& isapprox.(coeffs,0,atol=atol))
+        if quantity == "area"
+            return simplex_size(tetrahedron)
+        elseif quantity == "volume"
+            return mean(coeffs)*simplex_size(tetrahedron)
+        end
+    # All the coefficients are well above zero.
+    elseif all((coeffs .> 0) .& isapprox.(coeffs,0,atol=atol))
+       return 0.0 
+    end
+     
     # Area of faces
     face_areas = tetface_areas(tetrahedron)
     p = findmax(face_areas)[2]
-
+    p = 4
+     
     if p == 1
         order = [2,3,4,1]
     elseif p == 2
@@ -2256,13 +2289,20 @@ function simpson3D(coeffs,tetrahedron,num_slices,quantity;values=false)
     else
         order = [2,3,1,4]
     end
-    
-    m = if iseven(num_slices) num_slices + 1 else num_slices end
-    dt = 1/(m-1)
-    it = 0:dt:1
+
+    m = if iseven(num_slices) num_slices + 1 else num_slices end     
+    if gauss
+        x,w = gausslegendre(m)
+        w = w./2
+        it = (x ./ 2) .+ 1/2
+    else
+        dt = 1/(m-1)
+        it = collect(0:dt:1)[2:end-1]
+    end
+
     integral_vals = zeros(length(it))
     # No need to consider the end points; they are always zero
-    for (i,t) in enumerate(it[2:end-1]) 
+    for (i,t) in enumerate(it) 
         bpts = [[t,(1-t),0,0][order],
             [t,(1-t)/2,(1-t)/2,0][order],
             [t,0,(1-t),0][order],
@@ -2275,7 +2315,7 @@ function simpson3D(coeffs,tetrahedron,num_slices,quantity;values=false)
         bpts2D = sample_simplex(2,2)
         coeffs2D = getpoly_coeffs(vals,bpts2D,2,2)
         bezpts2D = [pts; coeffs2D']
-        integral_vals[i+1] = quad_area₋volume(bezpts2D,quantity)
+        integral_vals[i] = quad_area₋volume(bezpts2D,quantity)
     end
 
     if values
@@ -2289,7 +2329,234 @@ function simpson3D(coeffs,tetrahedron,num_slices,quantity;values=false)
     n = n ./ norm(n)
     d = abs(dot(corner - face[:,1],n))
 
-    simpson(integral_vals,d)
+    if gauss
+        d*dot(w,integral_vals)
+    else
+        simpson(integral_vals,d)
+    end
+end
+
+function simpson_limits(coeffs; atol=def_atol,rtol=def_rtol)
+    
+    # s^2, 2 s t, t^2, 2 s u, 2 t u, u^2, 2 s v, 2 t v, 2 u v, v^2
+    (c2000,c1100,c0200,c1010,c0110,c0020,c1001,c0101,c0011,c0002) = coeffs
+    
+    sβ = 2*(c0002*c0110^2 + c0101*c0110*c1001 - c0110^2*c1001 - c0101^2*c1010 - 
+        c0002*c0110*c1010 + c0101*c0110*c1010 + c0002*c0200*c1010 + 
+        c0011^2*(c0200 - c1100) - c0002*c0110*c1100 + 
+        c0020*(c0101^2 + c0200*c1001 + c0002*( - c0200 + c1100) - 
+        c0101*(c1001 + c1100)) + 
+        c0011*( - c0200*(c1001 + c1010) + c0110*(c1001 + c1100) + 
+        c0101*( - 2*c0110 + c1010 + c1100)))*( - c0110^2 - (c1010 - 
+         c1100)^2 + 2*c0110*(c1010 + c1100 - c2000) + 
+        c0200*( - 2*c1010 + c2000) + c0020*(c0200 - 2*c1100 + c2000))
+
+    sr = 4*(c0110^2 + 2*c0110*c1001 - c0200*c1001 - c0110*c1010 + c0200*c1010 - 
+        c0101*(c0110 + c1010 - c1100)  + 
+        c0011*( - c0110 + c0200 + c1010 - c1100) - c0110*c1100 + 
+        c0020*(c0101 - c0200 - c1001 + c1100))^2*( - c0110^2 - (c1010 - 
+        c1100)^2 + 2*c0110*(c1010 + c1100 - c2000) + 
+        c0200*( - 2*c1010 + c2000) + 
+        c0020*(c0200 - 2*c1100 + c2000))*( - 2*c0011*c0200*c1001*c1010 - 
+        c0101^2*c1010^2 + c0002*c0200*c1010^2 + 2*c0011*c0101*c1010*c1100 - 
+        c0011^2*c1100^2 + c0011^2*c0200*c2000 + 
+        c0110^2*( - c1001^2 + c0002*c2000) + 
+        2*c0110*(c0101*c1001*c1010 + c0011*c1001*c1100 - 
+        c0002*c1010*c1100 - c0011*c0101*c2000) + 
+        c0020*(c0200*c1001^2 - 2*c0101*c1001*c1100 + c0002*c1100^2 + 
+        c0101^2*c2000 - c0002*c0200*c2000))
+
+    sγ = - (c0110^2 + (c1010 - c1100)^2 + c0200*(2*c1010 - c2000) - 
+        2*c0110*(c1010 + c1100 - c2000) - 
+        c0020*(c0200 - 2*c1100 + c2000))*(c0002*c0110^2 + 
+        2*c0101*c0110*c1001 - 2*c0110^2*c1001 - 2*c0110*c1001^2 + 
+        c0200*c1001^2 - 2*c0101^2*c1010 - 2*c0002*c0110*c1010 + 
+        2*c0101*c0110*c1010 + 2*c0002*c0200*c1010 + 2*c0101*c1001*c1010 + 
+        2*c0110*c1001*c1010 - 2*c0200*c1001*c1010 + c0002*c1010^2 - 
+        2*c0101*c1010^2 + c0200*c1010^2 - 2*c0002*c0110*c1100 - 
+        2*c0101*c1001*c1100 + 2*c0110*c1001*c1100 - 2*c0002*c1010*c1100 + 
+        2*c0101*c1010*c1100 - 2*c0110*c1010*c1100 + 
+        c0002*c1100^2 + ((c0101 - c0110)^2 + 
+        c0002*(2*c0110 - c0200))*c2000 + 
+        c0011^2*(c0200 - 2*c1100 + c2000) + 
+        c0020*(c0101^2 + (c1001 - c1100)^2 + c0200*(2*c1001 - c2000) - 
+        2*c0101*(c1001 + c1100 - c2000) - 
+        c0002*(c0200 - 2*c1100 + c2000)) - 
+        2*c0011*(c0200*c1001 + c0200*c1010 + c1001*c1010 - c1001*c1100 - 
+        c1010*c1100 + c1100^2 - c0110*(c1001 + c1100 - c2000) - 
+        c0200*c2000 + c0101*(c0110 - c1010 - c1100 + c2000)))
+
+    if isapprox(sr,0,atol=def_atol)
+        s = [sβ/(2*sγ)]
+    elseif sr < 0
+        s = []
+    else
+        s = [sβ - √sr,sβ + √sr]/(2*sγ)
+    end
+    s = filter(x->!isapprox(x,0,atol=def_atol)&&!isapprox(x,1,atol=def_atol,rtol=def_rtol),s)
+
+    vβ = -((2*(-c0011*c0200*c1010-c0200*c1001*c1010-c0101*c1010^2+
+        c0200*c1010^2+c0011*c1010*c1100+c0101*c1010*c1100-
+        c0011*c1100^2+c0011*c0200*c2000+c0110^2*(-c1001+c2000)+
+        c0020*(-(c0101+c1001-c1100)*c1100+c0200*(c1001-c2000)+
+        c0101*c2000)+c0110*(c0101*c1010+c1001*c1010+c0011*c1100+c1001*c1100-
+        2*c1010*c1100-(c0011+c0101)*c2000)))/(c0110^2+(c1010-c1100)^2+c0200*(2*c1010-c2000)-
+        2*c0110*(c1010+c1100-c2000)-c0020*(c0200-2*c1100+c2000)))
+    
+    vr = -((4*(-2*c0011*c0200*c1001*c1010-c0101^2*c1010^2+
+        c0002*c0200*c1010^2+2*c0011*c0101*c1010*c1100-
+        c0011^2*c1100^2+c0011^2*c0200*c2000+c0110^2*(-c1001^2+c0002*c2000)+
+        2*c0110*(c0101*c1001*c1010+c0011*c1001*c1100-
+        c0002*c1010*c1100-c0011*c0101*c2000)+
+        c0020*(c0200*c1001^2-2*c0101*c1001*c1100+c0002*c1100^2+
+        c0101^2*c2000-c0002*c0200*c2000)))/(c0110^2+(c1010-
+        c1100)^2+c0200*(2*c1010-c2000)-
+        2*c0110*(c1010+c1100-c2000)-c0020*(c0200-2*c1100+c2000)))
+    
+    vγ = (c0002*c0110^2+2*c0101*c0110*c1001-2*c0110^2*c1001-
+        2*c0110*c1001^2+c0200*c1001^2-2*c0101^2*c1010-
+        2*c0002*c0110*c1010+2*c0101*c0110*c1010+2*c0002*c0200*c1010+
+        2*c0101*c1001*c1010+2*c0110*c1001*c1010-2*c0200*c1001*c1010+
+        c0002*c1010^2-2*c0101*c1010^2+c0200*c1010^2-
+        2*c0002*c0110*c1100-2*c0101*c1001*c1100+2*c0110*c1001*c1100-
+        2*c0002*c1010*c1100+2*c0101*c1010*c1100-2*c0110*c1010*c1100+
+        c0002*c1100^2+((c0101-c0110)^2+c0002*(2*c0110-c0200))*c2000+
+        c0011^2*(c0200-2*c1100+c2000)+c0020*(c0101^2+(c1001-c1100)^2+c0200*(2*c1001-c2000)-
+        2*c0101*(c1001+c1100-c2000)-c0002*(c0200-2*c1100+c2000))-
+        2*c0011*(c0200*c1001+c0200*c1010+c1001*c1010-c1001*c1100-
+        c1010*c1100+c1100^2-c0110*(c1001+c1100-c2000)-
+        c0200*c2000+c0101*(c0110-c1010-c1100+c2000)))/(c0110^2+(c1010-
+        c1100)^2+c0200*(2*c1010-c2000)-2*c0110*(c1010+c1100-c2000)-c0020*(c0200-2*c1100+c2000))    
+
+    if isapprox(vr,0,atol=def_atol)
+        v = [-vβ/(2*vγ)]
+    elseif vr < 0
+        v = []
+    else
+        v = [-vβ - √vr,-vβ + √vr]/(2*vγ)
+    end
+    v = filter(x->!isapprox(x,0,atol=def_atol)&&!isapprox(x,1,atol=atol,rtol=rtol),v)
+
+    tr = -4*(c0101-c1001-c1100+c2000)^2*(c0110^2+(c1010-c1100)^2+
+        c0200*(2*c1010-c2000)-2*c0110*(c1010+c1100-c2000)-
+        c0020*(c0200-2*c1100+c2000))*(-2*c0011*c0200*c1001*c1010-
+        c0101^2*c1010^2+c0002*c0200*c1010^2+2*c0011*c0101*c1010*c1100-
+        c0011^2*c1100^2+c0011^2*c0200*c2000+
+        c0110^2*(-c1001^2+c0002*c2000)+
+        2*c0110*(c0101*c1001*c1010+c0011*c1001*c1100-
+        c0002*c1010*c1100-c0011*c0101*c2000)+
+        c0020*(c0200*c1001^2-2*c0101*c1001*c1100+c0002*c1100^2+
+        c0101^2*c2000-c0002*c0200*c2000))
+    
+    tβ=-((2*(c0101-c1001-c1100+c2000)*(c0110^2+(c1010-c1100)^2+
+        c0200*(2*c1010-c2000)-2*c0110*(c1010+c1100-c2000)-
+        c0020*(c0200-2*c1100+c2000))*(-c0110*c1001^2-
+        c0002*c0110*c1010+c0101*c1001*c1010+c0110*c1001*c1010+
+        c0002*c1010^2-c0101*c1010^2-c0002*c1010*c1100+
+        c0002*c0110*c2000+c0011^2*(-c1100+c2000)+
+        c0020*(-c1001*(c0101-c1001+c1100)+c0002*(c1100-c2000)+
+        c0101*c2000)+c0011*(c0110*c1001+c0101*c1010-2*c1001*c1010+
+        c1001*c1100+c1010*c1100-(c0101+c0110)*c2000)))/((c1001-
+        c1010)*(c1010-c1100)+c0110*(c1001+c1010-c2000)+
+        c0011*(-c0110+c1010+c1100-c2000)+
+        c0101*(-2*c1010+c2000)+
+        c0020*(c0101-c1001-c1100+c2000)))
+    
+    tγ = ((c0101-c1001-c1100+c2000)*(c0110^2+(c1010-c1100)^2+
+        c0200*(2*c1010-c2000)-2*c0110*(c1010+c1100-c2000)-
+        c0020*(c0200-2*c1100+c2000))*(c0002*c0110^2+
+        2*c0101*c0110*c1001-2*c0110^2*c1001-2*c0110*c1001^2+
+        c0200*c1001^2-2*c0101^2*c1010-2*c0002*c0110*c1010+
+        2*c0101*c0110*c1010+2*c0002*c0200*c1010+
+        2*c0101*c1001*c1010+2*c0110*c1001*c1010-2*c0200*c1001*c1010+
+        c0002*c1010^2-2*c0101*c1010^2+c0200*c1010^2-
+        2*c0002*c0110*c1100-2*c0101*c1001*c1100+
+        2*c0110*c1001*c1100-2*c0002*c1010*c1100+
+        2*c0101*c1010*c1100-2*c0110*c1010*c1100+
+        c0002*c1100^2+((c0101-c0110)^2+
+        c0002*(2*c0110-c0200))*c2000+
+        c0011^2*(c0200-2*c1100+c2000)+
+        c0020*(c0101^2+(c1001-c1100)^2+c0200*(2*c1001-c2000)-
+        2*c0101*(c1001+c1100-c2000)-
+        c0002*(c0200-2*c1100+c2000))-
+        2*c0011*(c0200*c1001+c0200*c1010+c1001*c1010-c1001*c1100-
+        c1010*c1100+c1100^2-c0110*(c1001+c1100-c2000)-
+        c0200*c2000+c0101*(c0110-c1010-c1100+c2000))))/((c1001-
+        c1010)*(c1010-c1100)+c0110*(c1001+c1010-c2000)+
+        c0011*(-c0110+c1010+c1100-c2000)+c0101*(-2*c1010+c2000)+
+        c0020*(c0101-c1001-c1100+c2000))
+
+    if isapprox(tr,0,atol=def_atol)
+        t = [-tβ/(2*tγ)]
+    elseif tr < 0
+        t = []
+    else
+        t = [-tβ - √tr,-tβ + √tr]/(2*tγ)
+    end
+    t = filter(x->!isapprox(x,0,atol=def_atol)&&!isapprox(x,1,atol=atol,rtol=rtol),t)
+    
+    uβ = -((2*(c0110^2+(c1010-c1100)^2+c0200*(2*c1010-c2000)-
+        2*c0110*(c1010+c1100-c2000)-
+        c0020*(c0200-2*c1100+c2000))*(-c0110*c1001^2+
+        c0200*c1001^2+c0002*c0200*c1010-c0200*c1001*c1010-
+        c0002*c0110*c1100+c0110*c1001*c1100-c0002*c1010*c1100+
+        c0011*(c1001-c1100)*c1100+c0002*c1100^2+
+        c0002*(c0110-c0200)*c2000+c0011*c0200*(-c1001+c2000)+
+        c0101^2*(-c1010+c2000)+c0101*(c0110*c1001+c1001*c1010+c0011*c1100-
+        2*c1001*c1100+c1010*c1100-(c0011+c0110)*c2000)))/(c0200*c1001+
+        c0200*c1010+c1001*c1010-c1001*c1100-c1010*c1100+c1100^2-
+        c0110*(c1001+c1100-c2000)-c0200*c2000-
+        c0011*(c0200-2*c1100+c2000)+c0101*(c0110-c1010-c1100+c2000))^2)
+
+    uγ = ((c0110^2+(c1010-c1100)^2+c0200*(2*c1010-c2000)-
+        2*c0110*(c1010+c1100-c2000)-
+        c0020*(c0200-2*c1100+c2000))*(c0002*c0110^2+
+        2*c0101*c0110*c1001-2*c0110^2*c1001-2*c0110*c1001^2+
+        c0200*c1001^2-2*c0101^2*c1010-2*c0002*c0110*c1010+
+        2*c0101*c0110*c1010+2*c0002*c0200*c1010+
+        2*c0101*c1001*c1010+2*c0110*c1001*c1010-2*c0200*c1001*c1010+
+        c0002*c1010^2-2*c0101*c1010^2+c0200*c1010^2-
+        2*c0002*c0110*c1100-2*c0101*c1001*c1100+
+        2*c0110*c1001*c1100-2*c0002*c1010*c1100+
+        2*c0101*c1010*c1100-2*c0110*c1010*c1100+
+        c0002*c1100^2+((c0101-c0110)^2+
+        c0002*(2*c0110-c0200))*c2000+
+        c0011^2*(c0200-2*c1100+c2000)+
+        c0020*(c0101^2+(c1001-c1100)^2+c0200*(2*c1001-c2000)-
+        2*c0101*(c1001+c1100-c2000)-
+        c0002*(c0200-2*c1100+c2000))-2*c0011*(c0200*c1001+c0200*c1010+c1001*c1010-c1001*c1100-
+        c1010*c1100+c1100^2-c0110*(c1001+c1100-c2000)-
+        c0200*c2000+c0101*(c0110-c1010-c1100+c2000))))/(c0200*c1001+
+        c0200*c1010+c1001*c1010-c1001*c1100-c1010*c1100+c1100^2-
+        c0110*(c1001+c1100-c2000)-c0200*c2000-
+        c0011*(c0200-2*c1100+c2000)+
+        c0101*(c0110-c1010-c1100+c2000))^2
+        
+    ur = -((4*(c0110^2+(c1010-c1100)^2+c0200*(2*c1010-c2000)-
+        2*c0110*(c1010+c1100-c2000)-
+        c0020*(c0200-2*c1100+c2000))*(-2*c0011*c0200*c1001*c1010-
+        c0101^2*c1010^2+c0002*c0200*c1010^2+
+        2*c0011*c0101*c1010*c1100-c0011^2*c1100^2+
+        c0011^2*c0200*c2000+c0110^2*(-c1001^2+c0002*c2000)+
+        2*c0110*(c0101*c1001*c1010+c0011*c1001*c1100-
+        c0002*c1010*c1100-c0011*c0101*c2000)+
+        c0020*(c0200*c1001^2-2*c0101*c1001*c1100+c0002*c1100^2+
+        c0101^2*c2000-c0002*c0200*c2000)))/(c0200*c1001+
+        c0200*c1010+c1001*c1010-c1001*c1100-c1010*c1100+c1100^2-
+        c0110*(c1001+c1100-c2000)-c0200*c2000-
+        c0011*(c0200-2*c1100+c2000)+
+        c0101*(c0110-c1010-c1100+c2000))^2)
+
+    if isapprox(ur,0,atol=def_atol)
+        u = [-uβ/(2*uγ)]
+    elseif ur < 0
+        u = []
+    else
+        u = [-uβ - √ur,-uβ + √ur]/(2*uγ)
+    end
+    u = filter(x->!isapprox(x,0,atol=def_atol)&&!isapprox(x,1,atol=atol,rtol=rtol),u)
+
+    [s,t,u,v]
 end
 
 end # module

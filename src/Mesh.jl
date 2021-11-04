@@ -566,7 +566,7 @@ function get_extmesh(ibz::Chull,mesh::PyObject,pointgroup::Vector{Matrix{Float64
         borders = [Matrix(ibz.points[f,:]') for f=get_uniquefacets(ibz)]
         distfun = ptface_mindist
         bztrans = [[[i,j,k] for i=-1:1,j=-1:1,k=-1:1]...]
-    end; 
+    end 
 
     neighborsᵢ = reduce(vcat,[get_neighbors(i,mesh,near_neigh) for i=cv_pointsᵢ]) |> unique
     neighbors = zeros(Float64,dim,length(neighborsᵢ)*length(pointgroup)*length(bztrans));

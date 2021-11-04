@@ -46,8 +46,8 @@ function meshplot(meshpts::AbstractMatrix{<:Real},
         ax.scatter3D(xs,ys,zs,color=color,alpha=alpha,zorder=zorder)
 
         ϵ=0.1*max(meshpts...)
-        plotrange=[[minimum(meshpts[:,i])-ϵ,
-            maximum(meshpts[:,i])+ϵ] for i=1:3]
+        plotrange=[[minimum(meshpts[i,:])-ϵ,
+            maximum(meshpts[i,:])+ϵ] for i=1:3]
         ax.auto_scale_xyz(plotrange[1],plotrange[2],plotrange[3])
 
     else
