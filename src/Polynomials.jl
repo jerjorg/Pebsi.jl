@@ -1,6 +1,6 @@
 module Polynomials
 
-using ..Defaults: def_bez_weight_tol
+using ..Defaults: def_bez_weight_tol, def_atol
 using ..Geometry: sample_simplex,barytocart,carttobary
 using Base.Iterators: product
 using LinearAlgebra: dot,det,norm
@@ -8,7 +8,7 @@ using Statistics: mean
 
 export bernstein_basis, getpoly_coeffs, eval_poly, getbez_pts₋wts, 
     eval_bezcurve, conicsection, eval_1Dquad_basis, get_1Dquad_coeffs, 
-    evalpoly1D
+    evalpoly1D, solve_quadratic
 
 @doc """
     bernstein_basis(bpt,dim,deg)
@@ -329,7 +329,7 @@ function conicsection(coeffs::AbstractVector{<:Real};
         if isapprox(d,0,atol=atol)
             "parabola"
         elseif d < 0
-            "elipse"
+            "ellipse"
         else # d > 0
             "hyperbola"
         end
@@ -341,5 +341,81 @@ eval_1Dquad_basis(t) = [(1 - t)^2, 2*(1 - t)*t, t^2]
 basis_mat = [1 0 0; -0.5 2 -0.5; 0 0 1]
 get_1Dquad_coeffs(values) = basis_mat*values
 evalpoly1D(t,coeffs)=dot(coeffs,eval_1Dquad_basis(t))
+
+@doc """
+    solve_quadratic(a,b,c;atol)
+
+Find the solutions to a quadratic equation.
+
+# Arguments
+
+# Returns
+
+# Examples
+```jldoctest
+
+
+```
+"""
+function solve_quadratic(a,b,c;atol=def_atol)
+    # Preliminary check for no intersections.
+    # @show a,b,c
+    if !isapprox(a,0,atol=atol)
+        maxval = -(b^2/(4*a)) + c
+        if !isapprox(maxval,0,atol=atol)
+            if (maxval > 0 && a > 0) || (maxval < 0 && a < 0)
+                return []
+            end
+        end
+    end
+
+    sols = []
+    if isapprox(a,0,atol=atol)
+        if isapprox(b,0,atol=atol)
+            if isapprox(c,0,atol=atol)
+                # Case 1: (0,0,0) (infinite solutions in reality)
+                sols = []
+            else
+                # Case 2: (0,0,c)
+                sols = []
+            end
+        elseif isapprox(c,0,atol=atol)
+            # Case 3: (0,b,0)
+            sols = [0]
+        else
+            # Case 4: (0,b,c)
+            sols = [-c/b]
+        end
+    elseif isapprox(b,0,atol=atol)
+        if isapprox(c,0,atol=atol)
+            # Case 5: (a,0,0)
+            sols = [0]
+        else
+            # Case 6: (a,0,c) (ignore complex solutions)
+            if sign(a*c) == 1
+                sols = []
+            else
+                sols = [-√(-c/a),√(-c/a)]
+            end
+        end
+    else
+        if isapprox(c,0,atol=atol)
+            # Case 7: (a,b,0)
+            sols = [0,-b/a]
+        else
+            # Case 8: (a,b,c)
+            r = b^2-4*a*c
+            if isapprox(r,0,atol=atol)
+                # Tangent point
+                sols = [-b/(2*a)]
+            elseif r < 0
+                sols = []
+            else
+                sols = [-b - √r, -b + √r]/(2*a)
+            end
+        end
+    end
+    sols
+end
 
 end # module

@@ -5,27 +5,27 @@ using Pebsi.Polynomials: sample_simplex,barytocart,getpoly_coeffs
 using Pebsi.QuadraticIntegration
 
 function contains_intersect(intersects,int1)
-contained = false
-if int1 == []
-    contained = true
-else
-    for int2 = intersects
-        if int2 == []
-            continue
-        end
-        if size(int2,2) == size(int1,2)
-            if int1 ≈ int2
-                contained = true
+    contained = false
+    if int1 == []
+        contained = true
+    else
+        for int2 = intersects
+            if int2 == []
+                continue
+            end
+            if size(int2,2) == size(int1,2)
+                if int1 ≈ int2
+                    contained = true
+                end
             end
         end
     end
-end
-contained
+    contained
 end
 
 function containsall(intersects1,intersects2)
-all([contains_intersect(intersects1,i) for i=intersects2]) & 
-    all([contains_intersect(intersects2,i) for i=intersects1])
+    all([contains_intersect(intersects1,i) for i=intersects2]) & 
+        all([contains_intersect(intersects2,i) for i=intersects1])
 end
 
 @testset "QuadraticIntegration" begin
@@ -206,7 +206,7 @@ end
         coeffs = getpoly_coeffs(vals,simplex_bpts,dim,deg)
         bezpts = [simplex_pts;coeffs']
         intersects = simplex_intersects(bezpts)
-        @test containsall(intersects,[[-1.0000000000000002; 0.0], [1.0; 0.0], []])
+        @test containsall(intersects,[[-1.0; 0.0], [1.0; 0.0], []])
 
         x₀=0.5 #
         y₀=-1
@@ -776,5 +776,56 @@ end
         coeffs = getpoly_coeffs(vals,simplex_bpts,dim,deg)
         bezpts = [simplex_pts;coeffs']
         @test isapprox(quad_area₋volume(bezpts,"area"),1/3)
+    end
+
+    @testset "quadslice_tanpt" begin
+        coeffs1 = [-1/10, -1/10, 9/10, -1/10, -1/10, 9/10, -1/10, -1/10, -1/10, 9/10]
+        coeffs2 = [-1.7, 1.5, 3.1, -5.5, 2.2, 5.1, 2.7, 3.3, -2.8, -1.6]
+        coeffs3 = [3.3, 0.2, -0.1, -1.2, 0.9, -5.9, -3.3, -2.8, -0.5, -2.1]
+        coeffs4 = [-2.8, -5.5, -2.1, -0.6, -0.3, -0.4, 3.1, 0.8, 0.4, 0.2]
+        coeffs5 = [-8.5, 9.1, 0.2, -1.1, -4.4, 0.0, 2.9, 3.8, 10.4, -3.6]
+        allcoeffs = [coeffs1, coeffs2, coeffs3, coeffs4, coeffs5];
+        tanpts = [quadslice_tanpt(c) for c=allcoeffs];
+        answers = 
+        [[[1.316227766016838, 0., 0., -0.316227766016838], 
+         [0.683772233983162, 0., 0., 0.3162277660168381]],
+        [[-0.8084695494747378, 0.8820090301270619, 0.08732560542355741, 0.8391349139241191],
+         [0.11312873763105125,1.8653332770067699, -0.3886574640630287, -0.5898045505747926]],
+        [[0.5361657815127215, -1.3364201312940243, 0.22566294275661122, 1.574591407024692],
+         [0.004065401040220495, 0.8624733213423368, 0.12788381301166446, 0.005577464605778385]], 
+        [[-0.15576097441441844, 0.6272013826335201, -0.5143662579910893, 1.0429258497719878],
+         [-0.014028620477238784, 0.135909681953521, 0.5845012941053981, 0.29361764441831967]],
+        [[0.13984834110082184, 0.4212822998383755, -0.21264267667437103, 0.6515120357351727],
+         [0.19586924482990495, 0.18537009535915194, 0.5605689176523143, 0.05819174215862836]]];
+        answers = map(x->reduce(hcat,x),answers)        
+            
+        for i=1:length(answers)
+            @test (answers[i][:,1] ≈ tanpts[i][:,1]) || (answers[i][:,1] ≈ tanpts[i][:,2])
+            @test (answers[i][:,2] ≈ tanpts[i][:,1]) || (answers[i][:,2] ≈ tanpts[i][:,2])
+        end
+    end
+
+    @testset "simpson3D" begin
+        answers = [[0.016557647109660602, -0.0006623058843864066],
+            [0.052787355609319415, -0.035171236804781694], 
+            [0.1472825340495098, -0.2040822999010772],
+            [0.12564018775172114, -0.1330916637183115],
+            [0.03924641746264576, -0.048706217271428785]]
+         
+        tet = [0 1 0 0; 0 0 1 0; 0 0 0 1]
+        coeffs1 = [-1/10, -1/10, 9/10, -1/10, -1/10, 9/10, -1/10, -1/10, -1/10, 9/10]
+        coeffs2 = [-1.7, 1.5, 3.1, -5.5, 2.2, 5.1, 2.7, 3.3, -2.8, -1.6]
+        coeffs3 = [3.3, 0.2, -0.1, -1.2, 0.9, -5.9, -3.3, -2.8, -0.5, -2.1]
+        coeffs4 = [-2.8, -5.5, -2.1, -0.6, -0.3, -0.4, 3.1, 0.8, 0.4, 0.2]
+        coeffs5 = [-8.5, 9.1, 0.2, -1.1, -4.4, 0.0, 2.9, 3.8, 10.4, -3.6]
+        allcoeffs = [coeffs1, coeffs2, coeffs3, coeffs4, coeffs5]
+         
+        vals = [[simpson3D(coeffs,tet,100,q,split=false,corner=4) for q=["area","volume"]] for coeffs=allcoeffs]
+        test = [abs.(vals[i] .- answers[i]) for i=1:length(vals)]
+        @test maximum(maximum(test)) < 5e-6
+         
+        vals = [[simpson3D(coeffs,tet,100,q,split=true,corner=3) for q=["area","volume"]] for coeffs=allcoeffs]
+        test = [abs.(vals[i] .- answers[i]) for i=1:length(vals)]
+        @test maximum(maximum(test)) < 5e-6
     end
 end

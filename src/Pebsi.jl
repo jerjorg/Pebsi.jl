@@ -17,7 +17,7 @@ export order_vertices!, sample_simplex, barytocart, carttobary, simplex_size,
 # Polynomials
 export bernstein_basis, getpoly_coeffs, eval_poly, getbez_pts₋wts, 
     eval_bezcurve, conicsection, eval_1Dquad_basis, get_1Dquad_coeffs,
-    evalpoly1D
+    evalpoly1D, solve_quadratic
 
 # EPMs
 export epm_names, epm_names2D, eval_epm, epm₋model2D, epm₋model, free, free_fl,
@@ -38,7 +38,7 @@ export bandstructure, init_bandstructure, quadval_vertex, corner_indices,
     two₋intersects_area₋volume, quad_area₋volume, get_intercoeffs, calc_fl,
     calc_flbe!, refine_mesh!, get_tolerances, quadratic_method!, truebe,
     bezcurve_intersects, getdomain, analytic_area1D, simpson, simpson2D, 
-    linept_dist, tetface_areas, simpson3D
+    linept_dist, tetface_areas, simpson3D, quadslicev, quadslice_tanpt
 
 # Plotting
 export meshplot, contourplot, bezplot, bezcurve_plot, polygonplot, 

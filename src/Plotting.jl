@@ -213,13 +213,12 @@ Plot a quadratic Bezier curve and its Bezier points (1D).
 """
 function bezplot(bezpts::AbstractMatrix{<:Real},
         ax::Union{PyObject,Nothing}=nothing; zorder::Int=1)
-    
-    dim = 1
-    deg = 2
+    dim = 1; deg = 2
     simplex = [bezpts[1,1] bezpts[1,end]]
-    s = 0.1*abs(simplex[2]-simplex[1])
+    l = abs(simplex[2]-simplex[1]); s = l/10.
     sgn = sign(simplex[2]-simplex[1])
-    pts = Array(collect(simplex[1]-s:sgn*0.01:simplex[2]+s)')
+    pts = Array(collect(simplex[1]-s*sgn:sgn*l/100:simplex[2]+s*sgn)')
+    @show pts
     bpts = carttobary(pts,simplex)
     vals = eval_poly(bpts,bezpts[end,:],dim,deg)
     fvals = zeros(length(pts))
@@ -227,7 +226,8 @@ function bezplot(bezpts::AbstractMatrix{<:Real},
         (fig,ax)=subplots()
     end
     ax.plot(pts[:],vals,pts[:],fvals)
-    ax.plot(bezpts[1,:],bezpts[2,:],"bo")
+
+    ax.plot(bezpts[1,:],bezpts[end,:],"bo")
     ax
 end
 

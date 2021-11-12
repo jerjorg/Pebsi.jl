@@ -4,7 +4,8 @@ using SymmetryReduceBZ.Utilities: unique_points, shoelace, remove_duplicates, ge
 using SymmetryReduceBZ.Symmetry: calc_spacegroup
 
 using ..Polynomials: eval_poly,getpoly_coeffs,getbez_pts₋wts,eval_bezcurve,
-    conicsection, eval_1Dquad_basis, evalpoly1D, get_1Dquad_coeffs
+    conicsection, eval_1Dquad_basis, evalpoly1D, get_1Dquad_coeffs,
+    solve_quadratic
 using ..EPMs: eval_epm, RytoeV, epm₋model, epm₋model2D
 using ..Mesh: get_neighbors,notbox_simplices,get_cvpts,ibz_init₋mesh, 
     get_extmesh, choose_neighbors, choose_neighbors3D, trimesh
@@ -27,7 +28,7 @@ export bandstructure, init_bandstructure, quadval_vertex, corner_indices,
     two₋intersects_area₋volume, quad_area₋volume, get_intercoeffs, calc_fl,
     calc_flbe!, refine_mesh!, get_tolerances, quadratic_method!, truebe, 
     bezcurve_intersects, getdomain, analytic_area1D, simpson, simpson2D, 
-    linept_dist, tetface_areas, simpson3D
+    linept_dist, tetface_areas, simpson3D, quadslicev, quadslice_tanpt
 
 @doc """
     bandstructure
@@ -338,6 +339,7 @@ function simplex_intersects(bezpts::AbstractMatrix{<:Real};
     intersects = Array{Array,1}([[],[],[]])
     for i=1:3
         edge_bezpts = bezpts[:,edge_indices[i]]
+        # @show edge_bezpts
         edge_ints = bezcurve_intersects(edge_bezpts[end,:];atol=atol)
         if edge_ints != []
             intersects[i] = reduce(hcat,[edge_bezpts[1:end-1,1] .+ 
@@ -714,18 +716,15 @@ function two₋intersects_area₋volume(bezpts::AbstractMatrix{<:Real},
     # is within the triangle.
     cstype = conicsection(bezpts[end,:]) # using the default tolerance of 1e-12
     linear = any(cstype .== ["line","rectangular hyperbola","parallel lines"])
-
     split = false
     if bezptsᵣ != []
         if maximum(abs.(bezptsᵣ)) > def_rational_bezpt_dist 
             split = true
         end
-    elseif (insimplex(saddlepoint(bezpts[end,:],atol=atol)) && !linear)
-        split = true
-    else
-        nothing
     end
-
+    if (insimplex(saddlepoint(bezpts[end,:],atol=atol)) && !linear)
+        split = true
+    end
     if split
         bezptsᵤ = [split_bezsurf(b,atol=atol) for b=split_bezsurf₁(bezpts)] |> flatten |> collect
         return sum([two₋intersects_area₋volume(b,quantity,atol=atol) for b=bezptsᵤ])
@@ -849,17 +848,12 @@ function quad_area₋volume(bezpts::AbstractMatrix{<:Real},
     if size(bezpts,1) == 4
         bezpts = [mapto_xyplane(bezpts[1:3,:]); bezpts[end,:]']
         triangle = bezpts[1:end-1,corner_indices]
-        # triangle = mapto_xyplane(triangle)
-        # t,u,v = [triangle[:,i] for i=1:3]
-        # tarea = norm(cross(u - t, v - u))/2
-        # triangle = [0 1 0; 0 0 1].*2*tarea # Make a 2D triangle with the same area
-        # bezpts = [barytocart(sample_simplex(2,2),triangle); bezpts[end,:]']
     end
     sum([two₋intersects_area₋volume(b,quantity,atol=atol) for 
         b=split_bezsurf(bezpts,atol=atol)])    
 end
 
-face_ind = [[1,2,3],[2,3,4],[3,4,1],[4,1,2]]
+face_ind = [[1,2,3],[3,4,1],[4,1,2],[2,3,4]]
 @doc """
     get_intercoeffs(index,mesh,ext_mesh,sym₋unique,eigenvals,simplicesᵢ,fatten)
 
@@ -926,7 +920,6 @@ function get_intercoeffs(index::Int,mesh::PyObject,ext_mesh::PyObject,
         num_neighbors::Union{Nothing,Int}=nothing)
      
     simplexᵢ = simplicesᵢ[index]
-    # @show simplexᵢ
     simplex = Matrix(mesh.points[simplexᵢ,:]')
     dim = size(simplex,2)-1 
     neighborsᵢ = reduce(vcat,[get_neighbors(s,ext_mesh,num_near_neigh) for s=simplexᵢ]) |> unique
@@ -1923,109 +1916,11 @@ bezcurve_intersects(coeffs)
 function bezcurve_intersects(bezcoeffs::AbstractVector{<:Real};
     atol::Real=def_atol)::AbstractVector
     a,b,c = bezcoeffs
-    
-    quadterm = a - 2*b + c
-    linterm = -2*a + 2*b
-    
-    # Quadratic curve with no intersections
-    if !isapprox(quadterm,0,atol=atol)
-        maxval = dot([a,b,c],eval_1Dquad_basis((a - b)/(a - 2*b + c)))
-        if !isapprox(maxval,0,atol=atol)
-            if (maxval > 0 && quadterm > 0) || (maxval < 0 && quadterm < 0)
-                return []
-            end
-        end
-    end
-    
-    # Constant curve with no intersections
-    if isapprox(quadterm,0,atol=atol) && isapprox(linterm,0,atol=atol)
-        return []
-    end
-    
-    #     # Case 1: [0,0,0]
-    #     if isapprox(a,0,atol=0) && isapprox(b,0,atol=0) && isapprox(c,0,atol=0)
-    #         return []
-    #     end
-    
-    # Case 5: [a,0,0]
-    if isapprox(b,0,atol=atol) && isapprox(c,0,atol=atol)
-        # Intersections at t = [1,1] are excluded.
-        return []
-    end
-    
-    # Case 3: [0,b,0]
-    if isapprox(a,0,atol=0) && isapprox(c,0,atol=0)
-        # intersections at t = (0,1). 
-        return [0]
-    end
-    
-    # Case 2: [0,0,c]
-    if isapprox(a,0,atol=0) && isapprox(b,0,atol=0)
-        # intersections at t = (0,0).
-        return []
-    end
-        
-    # Case 7: [a,b,0]
-    if isapprox(c,0,atol=atol)
-        if isapprox(a,2b,atol=atol)
-            # Solution at t = 1 excluded.
-            return []
-        else
-            solutions = [a/(a-2*b)]
-            solutions = filter(t -> (t > 0 || isapprox(t,0,atol=atol)) 
-                && (t < 1 && !isapprox(t,1,atol=atol)), solutions)
-            return solutions
-        end
-    end
-    
-    # Case 4: [0,b,c]
-    if isapprox(a,0,atol=0)
-        if isapprox(2*b,c,atol=atol)
-            return [0]
-        else
-            solutions = [0,2*b/(2*b-c)]
-            solutions = filter(t -> (t > 0 || isapprox(t,0,atol=atol)) 
-                && (t < 1 && !isapprox(t,1,atol=atol)), solutions)
-            return solutions
-        end
-    end
-    
-    # Case 6: [a,0,c]
-    if isapprox(b,0,atol=atol)
-        if (a < 0 && c < 0) || (a > 0 && c > 0)
-            return []
-        elseif isapprox(a+c,0,atol=atol)
-            solutions = [0.5]
-            return solutions
-        else
-            solutions = real.([(a - im*sqrt(complex(a))*sqrt(complex(c)))/(a + c), 
-                (a + im*sqrt(complex(a))*sqrt(complex(c)))/(a + c)])
-            solutions = filter(t -> (t > 0 || isapprox(t,0,atol=atol)) 
-                && (t < 1 && !isapprox(t,1,atol=atol)), solutions)
-            return sort(solutions)
-        end
-    end
-    
-    # Case 8
-    if isapprox(a - 2*b + c,0,atol=atol)
-        solutions = [a/(2*(a-b))]
-        solutions = filter(t -> (t > 0 || isapprox(t,0,atol=atol)) 
-            && (t < 1 && !isapprox(t,1,atol=atol)), solutions)
-        return solutions
-    elseif isapprox(b^2 - a*c,0,atol=atol)
-        solutions = []
-        return solutions
-    elseif !isapprox(b^2 - a*c,0,atol=atol) && b^2 - a*c < 0
-        return []
-    else 
-        solutions = [(a - b - sqrt(b^2 - a*c))/(a - 2*b + c), (a - b + sqrt(b^2 - a*c))/(a - 2*b + c)]
-        solutions = filter(t -> (t > 0 || isapprox(t,0,atol=atol)) 
-            && (t < 1 && !isapprox(t,1,atol=atol)), solutions)
-        return sort(solutions)
-    end
-    solutions
-    end
-
+    solutions = solve_quadratic(a - 2*b + c, 2*(b-a), a)
+    solutions = filter(t -> (t > 0 || isapprox(t,0,atol=atol)) 
+        && (t < 1 && !isapprox(t,1,atol=atol)), solutions)
+    return solutions
+end
 
 @doc """
     getdomain(bezcoeffs;atol)
@@ -2231,8 +2126,25 @@ function linept_dist(line,pt)::Real
     abs(dot(unit_vec,pt-line[:,1]))
 end
 
-face_ind = [[1,2,3],[2,3,4],[3,4,1],[4,1,2]]
-corner_ind = [4,1,2,3]
+face_ind = [[2,3,4],[1,3,4],[1,4,2],[1,2,3]]
+corner_ind = [1,2,3,4]
+
+# Labeled by corner opposite the face
+vert_order1 = [4,2,3,1]
+vert_order2 = [1,4,2,3]
+vert_order3 = [1,3,4,2]
+vert_order4 = [1,2,3,4]
+
+coeff_order1 = [3, 8, 10, 5, 9, 6, 2, 7, 4, 1]
+coeff_order2 = [1, 4, 6, 7, 9, 10, 2, 5, 8, 3]
+coeff_order3 = [1, 7, 10, 2, 8, 3, 4, 9, 5, 6]
+coeff_order4 = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+
+vert_map1 = [4,1,3,2]
+vert_map2 = [1,4,2,3]
+vert_map3 = [1,3,4,2]
+vert_map4 = [1,2,3,4]
+
 function tetface_areas(tet)
     areas = zeros(4)
     for (i,j)=enumerate(face_ind)
@@ -2242,7 +2154,7 @@ function tetface_areas(tet)
 end
 
 @doc """
-    simpson3D(coeffs,tetrahedron,num_slices,quantity;values)
+    simpson3D(coeffs,tetrahedron,num_slices,quantity;values,split,atol,rtol)
 
 Calculate the volume or hypervolume beneath a quadratic within a tetrahedron.
 
@@ -2260,7 +2172,7 @@ Calculate the volume or hypervolume beneath a quadratic within a tetrahedron.
     of a polynomial within the tetrahedron.
 """
 function simpson3D(coeffs,tetrahedron,num_slices,quantity;values=false,gauss=true,
-    atol=def_atol)
+    atol=def_atol,split=true,corner=nothing)
     dim = 3; deg = 2
 
     # All the coefficients are well below zero.
@@ -2274,181 +2186,169 @@ function simpson3D(coeffs,tetrahedron,num_slices,quantity;values=false,gauss=tru
     elseif all((coeffs .> 0) .& isapprox.(coeffs,0,atol=atol))
        return 0.0 
     end
-     
-    # Area of faces
-    face_areas = tetface_areas(tetrahedron)
-    p = findmax(face_areas)[2]
-    p = 4
-     
-    if p == 1
-        order = [2,3,4,1]
-    elseif p == 2
-        order = [1,2,3,4]
-    elseif p == 3
-        order = [2,1,3,4]
+
+     # Area of faces
+    if corner == nothing
+        face_areas = tetface_areas(tetrahedron)
+        p = findmax(face_areas)[2]
     else
-        order = [2,3,1,4]
+        p = corner
     end
 
-    m = if iseven(num_slices) num_slices + 1 else num_slices end     
-    if gauss
-        x,w = gausslegendre(m)
-        w = w./2
-        it = (x ./ 2) .+ 1/2
-    else
-        dt = 1/(m-1)
-        it = collect(0:dt:1)[2:end-1]
-    end
-
-    integral_vals = zeros(length(it))
-    # No need to consider the end points; they are always zero
-    for (i,t) in enumerate(it) 
-        bpts = [[t,(1-t),0,0][order],
-            [t,(1-t)/2,(1-t)/2,0][order],
-            [t,0,(1-t),0][order],
-            [t,(1-t)/2,0,(1-t)/2][order],
-            [t,0,(1-t)/2,(1-t)/2][order],
-            [t,0,0,1-t][order]]
-        bpts = reduce(hcat,bpts)
-        pts = barytocart(bpts,tetrahedron)
-        vals = eval_poly(bpts,coeffs,dim,deg)
-        bpts2D = sample_simplex(2,2)
-        coeffs2D = getpoly_coeffs(vals,bpts2D,2,2)
-        bezpts2D = [pts; coeffs2D']
-        integral_vals[i] = quad_area₋volume(bezpts2D,quantity)
-    end
-
-    if values
-        return integral_vals
-    end
-
-    # Calculate the shortest distance from the corner to the opposite face of the tetrahedron.
+    # Calculate the shortest distance from a plane at the opposite face to the
+    # opposite corner
     face = tetrahedron[:,face_ind[p]]
     corner = tetrahedron[:,corner_ind[p]]
     n = cross(face[:,2] - face[:,1],face[:,3]-face[:,1])
     n = n ./ norm(n)
     d = abs(dot(corner - face[:,1],n))
+ 
+    # Reorder coefficients and vertices
+    coeff_order = @eval $(Symbol("coeff_order"*string(p)))
+    vert_order = @eval $(Symbol("vert_order"*string(p)))
+    vert_map = @eval $(Symbol("vert_map"*string(p)))
 
-    if gauss
-        d*dot(w,integral_vals)
+    if !split
+        intervals = [0,1]
     else
-        simpson(integral_vals,d)
+        tpts = quadslice_tanpt(coeffs[coeff_order])[vert_map,:]
+        if insimplex(tpts[:,1],atol=atol)
+            if insimplex(tpts[:,2],atol=atol)
+                intervals = [0; tpts[p,:]; 1]
+            else
+                intervals = [0,tpts[p,1],1]
+            end
+        elseif insimplex(tpts[:,2],atol=atol) 
+            intervals = [0,tpts[p,2],1]
+        else
+            intervals = [0,1]
+        end
+    end
+
+    interval_lengths = d*diff(intervals)
+    interval_divs = [x < 3 ? 3 : mod(x,2) == 0 ? x+1 : x for x=round.(Int,num_slices*interval_lengths)]
+    integral = 0; integral_vals = []; its = []
+    bpts2D = sample_simplex(2,2)
+    for j = 1:length(interval_divs)
+        if gauss
+            x,w = gausslegendre(interval_divs[j])
+            w = w ./ 2
+            it = (intervals[j+1] - intervals[j])*(x ./ 2) .+ (intervals[j] + intervals[j+1])/2
+        else
+            it = range(intervals[j],stop=intervals[j+1],length=interval_divs[j])
+        end
+        intvals = zeros(length(it))
+        # No need to consider the end points; they are always zero
+        for (i,t) in enumerate(it)
+            bpts = reduce(hcat,[[(1-t),0,0,t],
+            [(1-t)/2,(1-t)/2,0,t],
+            [0,(1-t),0,t],
+            [(1-t)/2,0,(1-t)/2,t],
+            [0,(1-t)/2,(1-t)/2,t],
+            [0,0,1-t,t]])
+            bpts = bpts[vert_order,:]
+            pts = barytocart(bpts,tetrahedron)
+            vals = eval_poly(bpts,coeffs,dim,deg)
+            coeffs2D = getpoly_coeffs(vals,bpts2D,2,2)
+            intvals[i] = quad_area₋volume([pts; coeffs2D'],quantity)
+        end
+        if intvals[end] === NaN
+            intvals[end] = 0
+        end
+
+        if values
+            integral_vals = [integral_vals; intvals]
+            its = [its; it]
+            continue
+        end
+
+        if gauss
+            integral += interval_lengths[j]*dot(w,intvals)
+        else
+            integral += simpson(intvals,interval_lengths[j])
+        end
+    end
+
+    if values
+        its,integral_vals
+    else
+        integral
     end
 end
 
-function simpson_limits(coeffs; atol=def_atol,rtol=def_rtol)
-    
+function quadslice_tanpt(coeffs; atol=def_atol,rtol=def_rtol)
+     
     # s^2, 2 s t, t^2, 2 s u, 2 t u, u^2, 2 s v, 2 t v, 2 u v, v^2
     (c2000,c1100,c0200,c1010,c0110,c0020,c1001,c0101,c0011,c0002) = coeffs
-    
-    sβ = 2*(c0002*c0110^2 + c0101*c0110*c1001 - c0110^2*c1001 - c0101^2*c1010 - 
-        c0002*c0110*c1010 + c0101*c0110*c1010 + c0002*c0200*c1010 + 
-        c0011^2*(c0200 - c1100) - c0002*c0110*c1100 + 
-        c0020*(c0101^2 + c0200*c1001 + c0002*( - c0200 + c1100) - 
-        c0101*(c1001 + c1100)) + 
-        c0011*( - c0200*(c1001 + c1010) + c0110*(c1001 + c1100) + 
-        c0101*( - 2*c0110 + c1010 + c1100)))*( - c0110^2 - (c1010 - 
-         c1100)^2 + 2*c0110*(c1010 + c1100 - c2000) + 
-        c0200*( - 2*c1010 + c2000) + c0020*(c0200 - 2*c1100 + c2000))
 
-    sr = 4*(c0110^2 + 2*c0110*c1001 - c0200*c1001 - c0110*c1010 + c0200*c1010 - 
-        c0101*(c0110 + c1010 - c1100)  + 
-        c0011*( - c0110 + c0200 + c1010 - c1100) - c0110*c1100 + 
-        c0020*(c0101 - c0200 - c1001 + c1100))^2*( - c0110^2 - (c1010 - 
-        c1100)^2 + 2*c0110*(c1010 + c1100 - c2000) + 
-        c0200*( - 2*c1010 + c2000) + 
-        c0020*(c0200 - 2*c1100 + c2000))*( - 2*c0011*c0200*c1001*c1010 - 
-        c0101^2*c1010^2 + c0002*c0200*c1010^2 + 2*c0011*c0101*c1010*c1100 - 
-        c0011^2*c1100^2 + c0011^2*c0200*c2000 + 
-        c0110^2*( - c1001^2 + c0002*c2000) + 
-        2*c0110*(c0101*c1001*c1010 + c0011*c1001*c1100 - 
-        c0002*c1010*c1100 - c0011*c0101*c2000) + 
-        c0020*(c0200*c1001^2 - 2*c0101*c1001*c1100 + c0002*c1100^2 + 
-        c0101^2*c2000 - c0002*c0200*c2000))
-
-    sγ = - (c0110^2 + (c1010 - c1100)^2 + c0200*(2*c1010 - c2000) - 
-        2*c0110*(c1010 + c1100 - c2000) - 
-        c0020*(c0200 - 2*c1100 + c2000))*(c0002*c0110^2 + 
-        2*c0101*c0110*c1001 - 2*c0110^2*c1001 - 2*c0110*c1001^2 + 
-        c0200*c1001^2 - 2*c0101^2*c1010 - 2*c0002*c0110*c1010 + 
-        2*c0101*c0110*c1010 + 2*c0002*c0200*c1010 + 2*c0101*c1001*c1010 + 
-        2*c0110*c1001*c1010 - 2*c0200*c1001*c1010 + c0002*c1010^2 - 
-        2*c0101*c1010^2 + c0200*c1010^2 - 2*c0002*c0110*c1100 - 
-        2*c0101*c1001*c1100 + 2*c0110*c1001*c1100 - 2*c0002*c1010*c1100 + 
-        2*c0101*c1010*c1100 - 2*c0110*c1010*c1100 + 
-        c0002*c1100^2 + ((c0101 - c0110)^2 + 
-        c0002*(2*c0110 - c0200))*c2000 + 
-        c0011^2*(c0200 - 2*c1100 + c2000) + 
-        c0020*(c0101^2 + (c1001 - c1100)^2 + c0200*(2*c1001 - c2000) - 
-        2*c0101*(c1001 + c1100 - c2000) - 
-        c0002*(c0200 - 2*c1100 + c2000)) - 
-        2*c0011*(c0200*c1001 + c0200*c1010 + c1001*c1010 - c1001*c1100 - 
-        c1010*c1100 + c1100^2 - c0110*(c1001 + c1100 - c2000) - 
-        c0200*c2000 + c0101*(c0110 - c1010 - c1100 + c2000)))
-
-    if isapprox(sr,0,atol=def_atol)
-        s = [sβ/(2*sγ)]
-    elseif sr < 0
-        s = []
-    else
-        s = [sβ - √sr,sβ + √sr]/(2*sγ)
-    end
-    s = filter(x->!isapprox(x,0,atol=def_atol)&&!isapprox(x,1,atol=def_atol,rtol=def_rtol),s)
-
-    vβ = -((2*(-c0011*c0200*c1010-c0200*c1001*c1010-c0101*c1010^2+
-        c0200*c1010^2+c0011*c1010*c1100+c0101*c1010*c1100-
-        c0011*c1100^2+c0011*c0200*c2000+c0110^2*(-c1001+c2000)+
-        c0020*(-(c0101+c1001-c1100)*c1100+c0200*(c1001-c2000)+
-        c0101*c2000)+c0110*(c0101*c1010+c1001*c1010+c0011*c1100+c1001*c1100-
-        2*c1010*c1100-(c0011+c0101)*c2000)))/(c0110^2+(c1010-c1100)^2+c0200*(2*c1010-c2000)-
-        2*c0110*(c1010+c1100-c2000)-c0020*(c0200-2*c1100+c2000)))
-    
-    vr = -((4*(-2*c0011*c0200*c1001*c1010-c0101^2*c1010^2+
-        c0002*c0200*c1010^2+2*c0011*c0101*c1010*c1100-
-        c0011^2*c1100^2+c0011^2*c0200*c2000+c0110^2*(-c1001^2+c0002*c2000)+
-        2*c0110*(c0101*c1001*c1010+c0011*c1001*c1100-
-        c0002*c1010*c1100-c0011*c0101*c2000)+
-        c0020*(c0200*c1001^2-2*c0101*c1001*c1100+c0002*c1100^2+
-        c0101^2*c2000-c0002*c0200*c2000)))/(c0110^2+(c1010-
-        c1100)^2+c0200*(2*c1010-c2000)-
-        2*c0110*(c1010+c1100-c2000)-c0020*(c0200-2*c1100+c2000)))
-    
-    vγ = (c0002*c0110^2+2*c0101*c0110*c1001-2*c0110^2*c1001-
-        2*c0110*c1001^2+c0200*c1001^2-2*c0101^2*c1010-
-        2*c0002*c0110*c1010+2*c0101*c0110*c1010+2*c0002*c0200*c1010+
+    sa = ((c0110-c0200-c1010+c1100)*(c0110^2+(c1010-c1100)^2+
+        c0200*(2*c1010-c2000)-2*c0110*(c1010+c1100-c2000)-
+        c0020*(c0200-2*c1100+c2000))*(c0002*c0110^2+
+        2*c0101*c0110*c1001-2*c0110^2*c1001-2*c0110*c1001^2+
+        c0200*c1001^2-2*c0101^2*c1010-2*c0002*c0110*c1010+
+        2*c0101*c0110*c1010+2*c0002*c0200*c1010+
         2*c0101*c1001*c1010+2*c0110*c1001*c1010-2*c0200*c1001*c1010+
         c0002*c1010^2-2*c0101*c1010^2+c0200*c1010^2-
-        2*c0002*c0110*c1100-2*c0101*c1001*c1100+2*c0110*c1001*c1100-
-        2*c0002*c1010*c1100+2*c0101*c1010*c1100-2*c0110*c1010*c1100+
+        2*c0002*c0110*c1100-2*c0101*c1001*c1100+2*c0110*c1001*c1100-2*c0002*c1010*c1100+
+        2*c0101*c1010*c1100-2*c0110*c1010*c1100+
+        c0002*c1100^2+((c0101-c0110)^2+c0002*(2*c0110-c0200))*c2000+
+        c0011^2*(c0200-2*c1100+c2000)+
+        c0020*(c0101^2+(c1001-c1100)^2+c0200*(2*c1001-c2000)-
+        2*c0101*(c1001+c1100-c2000)-c0002*(c0200-2*c1100+c2000))-
+        2*c0011*(c0200*c1001+c0200*c1010+c1001*c1010-c1001*c1100-
+        c1010*c1100+c1100^2-c0110*(c1001+c1100-c2000)-
+        c0200*c2000+c0101*(c0110-c1010-c1100+c2000))))
+
+    sb = -((2*(c0110-c0200-c1010+c1100)*(c0002*c0110^2+
+        c0101*c0110*c1001-c0110^2*c1001-c0101^2*c1010-
+        c0002*c0110*c1010+c0101*c0110*c1010+c0002*c0200*c1010+
+        c0011^2*(c0200-c1100)-c0002*c0110*c1100+
+        c0020*(c0101^2+c0200*c1001+c0002*(-c0200+c1100)-
+        c0101*(c1001+c1100))+c0011*(-c0200*(c1001+c1010)+c0110*(c1001+c1100)+
+        c0101*(-2*c0110+c1010+c1100)))*(c0110^2+(c1010-
+        c1100)^2+c0200*(2*c1010-c2000)-2*c0110*(c1010+c1100-c2000)-
+        c0020*(c0200-2*c1100+c2000))))
+
+    sc = (c0110-c0200-c1010+c1100)*(c0002*c0110^4+2*c0110^3*c1001^2-
+        c0110^2*c0200*c1001^2-2*c0002*c0110^3*c1010+
+        2*c0002*c0110^2*c0200*c1010-4*c0101*c0110^2*c1001*c1010+
+        2*c0101*c0110*c0200*c1001*c1010+2*c0101^2*c0110*c1010^2+
+        c0002*c0110^2*c1010^2-c0101^2*c0200*c1010^2-
+        2*c0002*c0110*c0200*c1010^2+c0002*c0200^2*c1010^2-
+        2*c0002*c0110*(c0110^2-c0110*c1010+c0200*c1010)*c1100+
+        c0002*c0110^2*c1100^2+c0020^2*(c0200*c1001^2-c0101^2*(c0200-2*c1100)+
+        c0002*(c0200-c1100)^2-2*c0101*c1001*c1100)+
+        c0011^2*(c0110^2*c0200+c0200*c1010*(2*c0200+c1010-2*c1100)+
+        2*c0110*(c1100^2-c0200*(c1010+c1100)))+
+        c0020*(-c0110^2*c1001^2-c0200*(c0011^2*c0200+(2*c0110-c0200)*c1001^2+
+        2*c0011*c1001*c1010)+2*c0011*(c0011*c0200+c0110*c1001)*c1100-c0011^2*c1100^2+
+        c0101^2*(c0110^2+2*c0200*c1010+c1100*(-2*c1010+c1100)-
+        2*c0110*(c1010+c1100))-2*c0002*(c0200-c1100)*(c0110^2+c0200*c1010-
+        c0110*(c1010+c1100))+2*c0101*(c0011*c0110*(c0200-2*c1100)-c0200*c1001*c1100+
+        c0011*c1010*c1100+c0110*c1001*(c1010+2*c1100)))-
+        2*c0011*((2*c0110-c0200)*c1001*(-c0200*c1010+c0110*c1100)+
+        c0101*(c0110^3-c0200*c1010*c1100-2*c0110^2*(c1010+c1100)+
+        c0110*(2*c0200*c1010+c1010^2+c1100^2))))
+
+    ta = ((c0110-c1010-c1100+c2000)*(c0110^2+(c1010-c1100)^2+
+        c0200*(2*c1010-c2000)-2*c0110*(c1010+c1100-c2000)-
+        c0020*(c0200-2*c1100+c2000))*(c0002*c0110^2+
+        2*c0101*c0110*c1001-2*c0110^2*c1001-2*c0110*c1001^2+
+        c0200*c1001^2-2*c0101^2*c1010-2*c0002*c0110*c1010+
+        2*c0101*c0110*c1010+2*c0002*c0200*c1010+
+        2*c0101*c1001*c1010+2*c0110*c1001*c1010-2*c0200*c1001*c1010+
+        c0002*c1010^2-2*c0101*c1010^2+c0200*c1010^2-
+        2*c0002*c0110*c1100-2*c0101*c1001*c1100+
+        2*c0110*c1001*c1100-2*c0002*c1010*c1100+
+        2*c0101*c1010*c1100-2*c0110*c1010*c1100+
         c0002*c1100^2+((c0101-c0110)^2+c0002*(2*c0110-c0200))*c2000+
         c0011^2*(c0200-2*c1100+c2000)+c0020*(c0101^2+(c1001-c1100)^2+c0200*(2*c1001-c2000)-
         2*c0101*(c1001+c1100-c2000)-c0002*(c0200-2*c1100+c2000))-
         2*c0011*(c0200*c1001+c0200*c1010+c1001*c1010-c1001*c1100-
         c1010*c1100+c1100^2-c0110*(c1001+c1100-c2000)-
-        c0200*c2000+c0101*(c0110-c1010-c1100+c2000)))/(c0110^2+(c1010-
-        c1100)^2+c0200*(2*c1010-c2000)-2*c0110*(c1010+c1100-c2000)-c0020*(c0200-2*c1100+c2000))    
+        c0200*c2000+c0101*(c0110-c1010-c1100+c2000))))
 
-    if isapprox(vr,0,atol=def_atol)
-        v = [-vβ/(2*vγ)]
-    elseif vr < 0
-        v = []
-    else
-        v = [-vβ - √vr,-vβ + √vr]/(2*vγ)
-    end
-    v = filter(x->!isapprox(x,0,atol=def_atol)&&!isapprox(x,1,atol=atol,rtol=rtol),v)
-
-    tr = -4*(c0101-c1001-c1100+c2000)^2*(c0110^2+(c1010-c1100)^2+
-        c0200*(2*c1010-c2000)-2*c0110*(c1010+c1100-c2000)-
-        c0020*(c0200-2*c1100+c2000))*(-2*c0011*c0200*c1001*c1010-
-        c0101^2*c1010^2+c0002*c0200*c1010^2+2*c0011*c0101*c1010*c1100-
-        c0011^2*c1100^2+c0011^2*c0200*c2000+
-        c0110^2*(-c1001^2+c0002*c2000)+
-        2*c0110*(c0101*c1001*c1010+c0011*c1001*c1100-
-        c0002*c1010*c1100-c0011*c0101*c2000)+
-        c0020*(c0200*c1001^2-2*c0101*c1001*c1100+c0002*c1100^2+
-        c0101^2*c2000-c0002*c0200*c2000))
-    
-    tβ=-((2*(c0101-c1001-c1100+c2000)*(c0110^2+(c1010-c1100)^2+
+    tb = -((2*(c0110-c1010-c1100+c2000)*(c0110^2+(c1010-c1100)^2+
         c0200*(2*c1010-c2000)-2*c0110*(c1010+c1100-c2000)-
         c0020*(c0200-2*c1100+c2000))*(-c0110*c1001^2-
         c0002*c0110*c1010+c0101*c1001*c1010+c0110*c1001*c1010+
@@ -2456,14 +2356,37 @@ function simpson_limits(coeffs; atol=def_atol,rtol=def_rtol)
         c0002*c0110*c2000+c0011^2*(-c1100+c2000)+
         c0020*(-c1001*(c0101-c1001+c1100)+c0002*(c1100-c2000)+
         c0101*c2000)+c0011*(c0110*c1001+c0101*c1010-2*c1001*c1010+
-        c1001*c1100+c1010*c1100-(c0101+c0110)*c2000)))/((c1001-
-        c1010)*(c1010-c1100)+c0110*(c1001+c1010-c2000)+
-        c0011*(-c0110+c1010+c1100-c2000)+
-        c0101*(-2*c1010+c2000)+
-        c0020*(c0101-c1001-c1100+c2000)))
-    
-    tγ = ((c0101-c1001-c1100+c2000)*(c0110^2+(c1010-c1100)^2+
-        c0200*(2*c1010-c2000)-2*c0110*(c1010+c1100-c2000)-
+        c1001*c1100+c1010*c1100-(c0101+c0110)*c2000))))
+
+    tc = ((c0110-c1010-c1100+
+        c2000)*(c1010*(-2*c0011*c1001*(c0110-c1010)^2+
+        c0110^2*(2*c1001^2+c0002*c1010)-
+        2*c0110*c1010*(2*c0101*c1001+c0002*(c1010-c1100))+
+        c1010*(2*c0101^2*c1010+c0002*(c1010-c1100)^2)+
+        4*c0011*(-c0101+c1001)*c1010*c1100+2*c0011^2*c1100^2-
+        2*c0011*c1001*c1100^2)+(-c0101^2*c1010^2-
+        c0110^2*(c1001^2+2*c0002*c1010)+
+        2*c0110*c1010*(c0101*c1001+c0002*c1010-c0002*c1100)+
+        c0011^2*((c0110-c1010)^2-2*(c0110+c1010)*c1100)+
+        2*c0011*(c0101*c1010*(2*c0110+c1100)+
+        c0110*c1001*(-2*c1010+c1100)))*c2000+
+        c0110*(2*c0011*(c0011-c0101)+c0002*c0110)*c2000^2+
+        c0020^2*(-2*c0101*c1001*c1100+c0002*(c1100-c2000)^2+
+        c1001^2*(2*c1100-c2000)+c0101^2*c2000)+
+        c0020*(-2*c0110*c1001^2*c1010+c1001^2*c1010^2+
+        2*c0011*c0110*c1001*c1100-2*c0110*c1001^2*c1100-
+        2*c0002*c0110*c1010*c1100-4*c0011*c1001*c1010*c1100-
+        2*c1001^2*c1010*c1100+2*c0002*c1010^2*c1100-
+        c0011^2*c1100^2+c1001^2*c1100^2-2*c0002*c1010*c1100^2+
+        2*c0101*c1010*(c0110*c1001+(c0011+2*c1001)*c1100)-
+        2*c0101*(c0011*c0110+c1001*c1100)*c2000+
+        2*(c0011*c1001*c1010+c0011^2*c1100+
+        c0002*c1010*(-c1010+c1100)+c0110*(c1001^2+
+        c0002*(c1010+c1100)))*c2000-(c0011^2+2*c0002*c0110)*c2000^2+
+        c0101^2*(-c1010^2-2*c1010*c2000+c2000^2))))
+
+    ua = ((c0110^2+(c1010-c1100)^2+c0200*(2*c1010-c2000)-
+        2*c0110*(c1010+c1100-c2000)-
         c0020*(c0200-2*c1100+c2000))*(c0002*c0110^2+
         2*c0101*c0110*c1001-2*c0110^2*c1001-2*c0110*c1001^2+
         c0200*c1001^2-2*c0101^2*c1010-2*c0002*c0110*c1010+
@@ -2481,21 +2404,9 @@ function simpson_limits(coeffs; atol=def_atol,rtol=def_rtol)
         c0002*(c0200-2*c1100+c2000))-
         2*c0011*(c0200*c1001+c0200*c1010+c1001*c1010-c1001*c1100-
         c1010*c1100+c1100^2-c0110*(c1001+c1100-c2000)-
-        c0200*c2000+c0101*(c0110-c1010-c1100+c2000))))/((c1001-
-        c1010)*(c1010-c1100)+c0110*(c1001+c1010-c2000)+
-        c0011*(-c0110+c1010+c1100-c2000)+c0101*(-2*c1010+c2000)+
-        c0020*(c0101-c1001-c1100+c2000))
+        c0200*c2000+c0101*(c0110-c1010-c1100+c2000))))
 
-    if isapprox(tr,0,atol=def_atol)
-        t = [-tβ/(2*tγ)]
-    elseif tr < 0
-        t = []
-    else
-        t = [-tβ - √tr,-tβ + √tr]/(2*tγ)
-    end
-    t = filter(x->!isapprox(x,0,atol=def_atol)&&!isapprox(x,1,atol=atol,rtol=rtol),t)
-    
-    uβ = -((2*(c0110^2+(c1010-c1100)^2+c0200*(2*c1010-c2000)-
+    ub = -((2*(c0110^2+(c1010-c1100)^2+c0200*(2*c1010-c2000)-
         2*c0110*(c1010+c1100-c2000)-
         c0020*(c0200-2*c1100+c2000))*(-c0110*c1001^2+
         c0200*c1001^2+c0002*c0200*c1010-c0200*c1001*c1010-
@@ -2503,60 +2414,84 @@ function simpson_limits(coeffs; atol=def_atol,rtol=def_rtol)
         c0011*(c1001-c1100)*c1100+c0002*c1100^2+
         c0002*(c0110-c0200)*c2000+c0011*c0200*(-c1001+c2000)+
         c0101^2*(-c1010+c2000)+c0101*(c0110*c1001+c1001*c1010+c0011*c1100-
-        2*c1001*c1100+c1010*c1100-(c0011+c0110)*c2000)))/(c0200*c1001+
-        c0200*c1010+c1001*c1010-c1001*c1100-c1010*c1100+c1100^2-
-        c0110*(c1001+c1100-c2000)-c0200*c2000-
-        c0011*(c0200-2*c1100+c2000)+c0101*(c0110-c1010-c1100+c2000))^2)
+        2*c1001*c1100+c1010*c1100-(c0011+c0110)*c2000))))
 
-    uγ = ((c0110^2+(c1010-c1100)^2+c0200*(2*c1010-c2000)-
-        2*c0110*(c1010+c1100-c2000)-
-        c0020*(c0200-2*c1100+c2000))*(c0002*c0110^2+
-        2*c0101*c0110*c1001-2*c0110^2*c1001-2*c0110*c1001^2+
-        c0200*c1001^2-2*c0101^2*c1010-2*c0002*c0110*c1010+
-        2*c0101*c0110*c1010+2*c0002*c0200*c1010+
+    uc = (-2*c0110*c0200*c1001^2*c1010+2*c0200^2*c1001^2*c1010+
+        c0002*c0200^2*c1010^2+c0200*c1001^2*c1010^2+
+        2*c0110^2*c1001^2*c1100-2*c0110*c0200*c1001^2*c1100-
+        2*c0002*c0110*c0200*c1010*c1100-2*c0200*c1001^2*c1010*c1100-
+        2*c0002*c0200*c1010^2*c1100+c0002*c0110^2*c1100^2+
+        c0200*c1001^2*c1100^2+2*c0002*c0110*c1010*c1100^2+
+        2*c0002*c0200*c1010*c1100^2+c0002*c1010^2*c1100^2-
+        2*c0002*c0110*c1100^3-2*c0002*c1010*c1100^3+
+        c0002*c1100^4-(c0110-c0200)*(-c0200*(c1001^2+2*c0002*c1010)+
+        2*c0002*(c1010-c1100)*c1100+
+        c0110*(c1001^2+2*c0002*c1100))*c2000+
+        c0002*(c0110-c0200)^2*c2000^2-
+        2*c0011*c1001*(c0200*c1010-c0110*c1100)*(c0200-2*c1100+
+        c2000)+c0011^2*(c0200-2*c1100+c2000)*(-c1100^2+c0200*c2000)+
+        c0101^2*(2*c1010^2*c1100-c0200*(c1010-c2000)^2-
+        2*c1010*(c0110+c1100)*c2000+
+        c2000*((c0110-c1100)^2+2*c0110*c2000))+
+        2*c0101*(-c0110^2*c1001*c1100-
+        c1001*c1100*((c1010-c1100)^2+c0200*(2*c1010-c2000))+
+        c0011*c1010*c1100*(c0200-2*c1100+c2000)+
+        c0110*(2*c1001*c1100*(c1100-c2000)+c1001*c1010*c2000+
+        c0011*(2*c1100-c2000)*c2000+c0200*(c1001*c1010-c0011*c2000))))
+
+    va = (c0002*c0110^2+2*c0101*c0110*c1001-2*c0110^2*c1001-
+        2*c0110*c1001^2+c0200*c1001^2-2*c0101^2*c1010-
+        2*c0002*c0110*c1010+2*c0101*c0110*c1010+2*c0002*c0200*c1010+
         2*c0101*c1001*c1010+2*c0110*c1001*c1010-2*c0200*c1001*c1010+
         c0002*c1010^2-2*c0101*c1010^2+c0200*c1010^2-
-        2*c0002*c0110*c1100-2*c0101*c1001*c1100+
-        2*c0110*c1001*c1100-2*c0002*c1010*c1100+
-        2*c0101*c1010*c1100-2*c0110*c1010*c1100+
+        2*c0002*c0110*c1100-2*c0101*c1001*c1100+2*c0110*c1001*c1100-
+        2*c0002*c1010*c1100+2*c0101*c1010*c1100-2*c0110*c1010*c1100+
         c0002*c1100^2+((c0101-c0110)^2+
         c0002*(2*c0110-c0200))*c2000+
         c0011^2*(c0200-2*c1100+c2000)+
         c0020*(c0101^2+(c1001-c1100)^2+c0200*(2*c1001-c2000)-
         2*c0101*(c1001+c1100-c2000)-
-        c0002*(c0200-2*c1100+c2000))-2*c0011*(c0200*c1001+c0200*c1010+c1001*c1010-c1001*c1100-
+        c0002*(c0200-2*c1100+c2000))-
+        2*c0011*(c0200*c1001+c0200*c1010+c1001*c1010-c1001*c1100-
         c1010*c1100+c1100^2-c0110*(c1001+c1100-c2000)-
-        c0200*c2000+c0101*(c0110-c1010-c1100+c2000))))/(c0200*c1001+
-        c0200*c1010+c1001*c1010-c1001*c1100-c1010*c1100+c1100^2-
-        c0110*(c1001+c1100-c2000)-c0200*c2000-
-        c0011*(c0200-2*c1100+c2000)+
-        c0101*(c0110-c1010-c1100+c2000))^2
-        
-    ur = -((4*(c0110^2+(c1010-c1100)^2+c0200*(2*c1010-c2000)-
-        2*c0110*(c1010+c1100-c2000)-
-        c0020*(c0200-2*c1100+c2000))*(-2*c0011*c0200*c1001*c1010-
-        c0101^2*c1010^2+c0002*c0200*c1010^2+
-        2*c0011*c0101*c1010*c1100-c0011^2*c1100^2+
-        c0011^2*c0200*c2000+c0110^2*(-c1001^2+c0002*c2000)+
-        2*c0110*(c0101*c1001*c1010+c0011*c1001*c1100-
-        c0002*c1010*c1100-c0011*c0101*c2000)+
-        c0020*(c0200*c1001^2-2*c0101*c1001*c1100+c0002*c1100^2+
-        c0101^2*c2000-c0002*c0200*c2000)))/(c0200*c1001+
-        c0200*c1010+c1001*c1010-c1001*c1100-c1010*c1100+c1100^2-
-        c0110*(c1001+c1100-c2000)-c0200*c2000-
-        c0011*(c0200-2*c1100+c2000)+
-        c0101*(c0110-c1010-c1100+c2000))^2)
+        c0200*c2000+c0101*(c0110-c1010-c1100+c2000)))
 
-    if isapprox(ur,0,atol=def_atol)
-        u = [-uβ/(2*uγ)]
-    elseif ur < 0
-        u = []
-    else
-        u = [-uβ - √ur,-uβ + √ur]/(2*uγ)
+    vb = -((2*(-c0011*c0200*c1010-c0200*c1001*c1010-c0101*c1010^2+
+        c0200*c1010^2+c0011*c1010*c1100+c0101*c1010*c1100-
+        c0011*c1100^2+c0011*c0200*c2000+c0110^2*(-c1001+c2000)+
+        c0020*(-(c0101+c1001-c1100)*c1100+c0200*(c1001-c2000)+
+        c0101*c2000)+c0110*(c0101*c1010+c1001*c1010+c0011*c1100+c1001*c1100-
+        2*c1010*c1100-(c0011+c0101)*c2000))))
+
+    vc = (-2*c0110*c1010*c1100+c0020*c1100^2+c0110^2*c2000+
+        c0200*(c1010^2-c0020*c2000))
+
+    abcs = [[sa,sb,sc],[ta,tb,tc],[ua,ub,uc],[va,vb,vc]]
+    stuv = [[0.,0.],[0.,0.],[0.,0.],[0.,0.]]
+    for (i,abc) in enumerate(abcs)
+        a,b,c=abc
+        sol = solve_quadratic(abc[1],abc[2],abc[3],atol=atol)
+        if length(sol) == 0
+            sol = [Inf,Inf]
+        elseif length(sol) == 1
+            sol = [Inf,sol[1]]
+        end
+        stuv[i] = sol
     end
-    u = filter(x->!isapprox(x,0,atol=def_atol)&&!isapprox(x,1,atol=atol,rtol=rtol),u)
-
-    [s,t,u,v]
+     
+    s,t,u,v = stuv
+    bpts = zeros(4,2); b1 = zeros(4); b2 = zeros(4)
+    for i=1:2, j=1:2, k=1:2, l=1:2
+        b1 = [s[l],t[k],u[j],v[i]]
+        if isapprox(sum(b1),1, atol=atol,rtol=rtol)
+            b2 = [s[mod1(l+1,2)],t[mod1(k+1,2)],u[mod1(j+1,2)],v[mod1(i+1,2)]]
+            if isapprox(sum(b2),1,atol=atol,rtol=rtol)
+                bpts = [b1 b2]
+                break
+            end
+        end
+    end
+    bpts
 end
 
 end # module
