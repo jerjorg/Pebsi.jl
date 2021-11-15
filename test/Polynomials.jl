@@ -1,54 +1,12 @@
 using Test
 
-import Pebsi.Polynomials: sample_simplex, bernstein_basis, barytocart, 
-    getpoly_coeffs, eval_poly, shadow_size, simplex_size, bezsimplex_size,
-    carttobary, carttobary1D
-
-import PyCall: pyimport
+using Pebsi.Polynomials: sample_simplex, bernstein_basis, getpoly_coeffs, eval_poly
+using Pebsi.Geometry: barytocart
+using PyCall: pyimport
 sympy=pyimport("sympy")
-import SymPy: symbols, Sym
-
-import QHull: chull
+using SymPy: symbols, Sym
 
 @testset "Polynomials" begin
-    @testset "sample_simplex" begin
-        deg = 1
-        dim = 1
-        @test sample_simplex(dim,deg) ≈ [1.0 0.0; 0.0 1.0]
-
-        deg = 2
-        dim = 1
-        @test sample_simplex(dim,deg) ≈ [1.0 0.5 0.0; 0.0 0.5 1.0]
-
-        deg = 3
-        dim = 1
-        @test sample_simplex(dim,deg) ≈ [1.0 0.6666666666666666 0.3333333333333333 0.0; 0.0 0.3333333333333333 0.6666666666666666 1.0]
-
-        deg = 1
-        dim = 2
-        @test sample_simplex(dim,deg) ≈ [1.0 0.0 0.0; 0.0 1.0 0.0; 0.0 0.0 1.0]
-
-        deg = 2
-        dim = 2
-        @test sample_simplex(dim,deg) ≈ [1.0 0.5 0.0 0.5 0.0 0.0; 0.0 0.5 1.0 0.0 0.5 0.0; 0.0 0.0 0.0 0.5 0.5 1.0]
-
-        deg = 3
-        dim = 2
-        @test sample_simplex(dim,deg) ≈ [1.0 0.6666666666666666 0.3333333333333333 0.0 0.6666666666666666 0.3333333333333333 0.0 0.3333333333333333 0.0 0.0; 0.0 0.3333333333333333 0.6666666666666666 1.0 0.0 0.3333333333333333 0.6666666666666666 0.0 0.3333333333333333 0.0; 0.0 0.0 0.0 0.0 0.3333333333333333 0.3333333333333333 0.3333333333333333 0.6666666666666666 0.6666666666666666 1.0]
-
-        deg = 1
-        dim = 3
-        @test sample_simplex(dim,deg) ≈ [1.0 0.0 0.0 0.0; 0.0 1.0 0.0 0.0; 0.0 0.0 1.0 0.0; 0.0 0.0 0.0 1.0]
-
-        deg = 2
-        dim = 3
-        @test sample_simplex(dim,deg) ≈ [1.0 0.5 0.0 0.5 0.0 0.0 0.5 0.0 0.0 0.0; 0.0 0.5 1.0 0.0 0.5 0.0 0.0 0.5 0.0 0.0; 0.0 0.0 0.0 0.5 0.5 1.0 0.0 0.0 0.5 0.0; 0.0 0.0 0.0 0.0 0.0 0.0 0.5 0.5 0.5 1.0]
-        
-        deg = 3
-        dim = 3
-        @test sample_simplex(dim,deg) ≈ [1.0 0.6666666666666666 0.3333333333333333 0.0 0.6666666666666666 0.3333333333333333 0.0 0.3333333333333333 0.0 0.0 0.6666666666666666 0.3333333333333333 0.0 0.3333333333333333 0.0 0.0 0.3333333333333333 0.0 0.0 0.0; 0.0 0.3333333333333333 0.6666666666666666 1.0 0.0 0.3333333333333333 0.6666666666666666 0.0 0.3333333333333333 0.0 0.0 0.3333333333333333 0.6666666666666666 0.0 0.3333333333333333 0.0 0.0 0.3333333333333333 0.0 0.0; 0.0 0.0 0.0 0.0 0.3333333333333333 0.3333333333333333 0.3333333333333333 0.6666666666666666 0.6666666666666666 1.0 0.0 0.0 0.0 0.3333333333333333 0.3333333333333333 0.6666666666666666 0.0 0.0 0.3333333333333333 0.0; 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.3333333333333333 0.3333333333333333 0.3333333333333333 0.3333333333333333 0.3333333333333333 0.3333333333333333 0.6666666666666666 0.6666666666666666 0.6666666666666666 1.0]
-    end
-
     @testset "bernstein_basis" begin
         (s,t,u,v)=symbols("s,t,u,v")
         dim = 1
@@ -110,76 +68,5 @@ import QHull: chull
         coeffs = getpoly_coeffs(values,simplex_bpts,dim,deg)
 
         @test [mapslices(x->eval_poly(x,coeffs,dim,deg),simplex_bpts,dims=1)...] ≈ values
-    end
-
-    @testset "simplex_size" begin
-        simplex = [0 0 1; 0 1 0]
-        @test simplex_size(simplex) ≈ chull(Array(simplex')).volume
-
-        simplex = [0.0 0.5 0.0; 1.0 0.0 0.0]
-        @test simplex_size(simplex) ≈ chull(Array(simplex')).volume
-    end
-
-    @testset "shadow_size" begin
-        coeffs = [0.4, 0.5, 0.3, -0.2, -0.1, -0.3]
-        simplex = [0.0 0.5 0.5; 1.0 1.0 0.0]
-        val = -0.3
-        @test shadow_size(coeffs,simplex,val) == 0
-
-        val = 0.5
-        @test shadow_size(coeffs,simplex,val) ≈ chull(Array(simplex')).volume
-
-        coeffs = [0.4, 0.5, 0.3, -0.2, -0.1, -0.3, 0.7, -0.6, 0.9, -0.7]
-        simplex = [0.0 0.5 0.5 0.0; 1.0 1.0 0.0 0.0; 0.0 0.0 0.0 1.0]
-        val = -0.7
-        @test shadow_size(coeffs,simplex,val) == 0
-
-        val = 0.9
-        @test shadow_size(coeffs,simplex,val) ≈ chull(Array(simplex')).volume
-    end
-
-    @testset "bezsimplex_size" begin
-        
-        coeffs = [0.45695660389445203, 0.46891799288429503, 0.4825655582645329, -0.21218601852805546, -0.18566890981787773, -0.28153999982153577]
-        simplex = [0.0 0.5 0.5; 1.0 1.0 0.0]
-        @test bezsimplex_size(coeffs,simplex,100) ≈ 0.030376884453158788
-
-        coeffs = [0.45695660389445203, -0.28153999982153577, -0.319970723890622]
-        simplex = [0.0 0.5 0.0; 1.0 0.0 0.0]
-        @test bezsimplex_size(coeffs,simplex,100) ≈ -0.012046176651475476
-
-        coeffs = [0.4, 0.5, 0.3, -0.2, -0.1, -0.3]
-        simplex = [0.0 0.5 0.5; 1.0 1.0 0.0]
-        val = -0.3
-        @test bezsimplex_size(coeffs,simplex,val) == 0
-    
-        val = 0.5
-        @test bezsimplex_size(coeffs,simplex,val) ≈ 0.025
-    
-        coeffs = [0.4, 0.5, 0.3, -0.2, -0.1, -0.3, 0.7, -0.6, 0.9, -0.7]
-        simplex = [0.0 0.5 0.5 0.0; 1.0 1.0 0.0 0.0; 0.0 0.0 0.0 1.0]
-        val = -0.7
-        @test bezsimplex_size(coeffs,simplex,val) == 0
-    
-        val = 0.9
-        bezsimplex_size(coeffs,simplex,val)
-    
-    end
-
-    @testset "carttobary" begin
-        simplex = [0 0 1; 0 1 1]
-        pt = [0,1]
-        carttobary(pt,simplex) ≈ [0,1,0]
-        carttobary(simplex,simplex) ≈ [1.0 0.0 0.0; 0.0 1.0 0.0; 0.0 0.0 1.0]
-    end
-
-    @testset "carttobary1D" begin
-        interval = [0,1]
-        x = 0.3
-        carttobary1D(x,interval) ≈ [0.3,0.7]
-        
-        interval = [0 0; 1 2]
-        x = [0,1.3]
-        carttobary1D(x,interval) ≈ [0.3,0.7]
     end
 end
