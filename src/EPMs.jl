@@ -85,7 +85,7 @@ or resulted from tests for the given models since the reciprocal lattice of a
 body-centered tetragonal lattice may be different lattice types depending on the
 lattice parameters (I think). 
 =#
-sym_offset = Dict("BCC" => [0,0,0],"FCC" => [0.5,0.5,0.5],
+sym_offset = Dict("SC" => [0.5,0.5,0.5],"BCC" => [0,0,0],"FCC" => [0.5,0.5,0.5],
     "HEX" => [0,0,0.5], "BCT₁" => [0.5,0.5,0.5], "BCT₂" => [0.5,0.5,0.5],
     "square" => [0.5,0.5], "hexagonal" => [0.0,0.0], "centered rectangular" => 
     [0.0,0.0], "rectangular" => [0.0, 0.0], "oblique" => [0.0,0.0])
@@ -604,7 +604,7 @@ m5name1 = "m51"; m5name2 = "m52"; m5name3 = "m53"
 energy_conv = 1
 sheets = 10
 atom_types = [0]
-atom_pos = Array([0 0 0;]')
+atom_pos = Array([0 0;]')
 coordinates = "Cartesian" 
 convention = "ordinary"
 vars₀ = ["energy_conv","sheets","atom_types","atom_pos","coordinates",
@@ -624,6 +624,59 @@ for i=1:5
         push!(epms2D, @eval $(Symbol(name)))
     end
 end
+
+# Free electron model in 2D
+"""
+    free2D(x,y,s)
+
+The free electron model in 2D for a square lattice.
+"""
+free2D(x::Real,y::Real,s::Integer)::AbstractVector{<:Real} = 
+    sort([(x-1)^2 + y^2,
+            x^2 + (y-1)^2,
+            (x-1)^2 + (y-1)^2,
+            x^2 + y^2,
+            (x+1)^2 + (y+1)^2,
+            x^2 + (y+1)^2,
+            (x+1)^2 + y^2])[1:s]
+
+"""
+    free_fl2D(m)
+The exact Fermi level for a 2D free electron model with `m` electrons.
+"""
+free_fl2D(m::Integer)::Real = m/(2π)
+
+"""
+    free_be2D(m)
+The exact band energy for a 2D free electron model with `m` electrons.
+"""
+free_be2D(m::Integer)::Real = m^2/(4π)
+
+sheets = 7
+free2Dreal_latvecs = [1.0 0.0; 0.0 1.0]
+(free2Dfrac_trans,free2Dpointgroup) = calc_spacegroup(free2Dreal_latvecs,atom_types,
+    atom_pos,coordinates)
+free2Drecip_latvecs = get_recip_latvecs(free2Dreal_latvecs,convention)
+free2Ddist_ff = [[1.00],[0.0]]
+free2Drules = [1.0 => 0.0]
+free2Dbz = chull([0.5 0.5; 0.5 -0.5; -0.5 -0.5; -0.5 0.5])
+free2Dibz = chull([0.0 0.0; 0.5 0.0; 0.5 0.5])
+
+# Cutoffs chosen so the mean deviation of the eigenvalues of 5 consecutive 
+# expansions was around 1e-12 for a sparse mesh over the IBZ (about 30-40 
+# points in the mesh).
+free2Dcutoff = 4.0
+free2Delectrons = 5
+free2Dfermiarea = free2Delectrons/2*free2Dbz.volume
+free2Dfermilevel = free_fl2D(free2Delectrons)
+free2Dbandenergy = free_be2D(free2Delectrons)
+
+# Free electron 2D model
+mf2D = epm₋model2D(energy_conv, sheets, atom_types, atom_pos, coordinates, convention,
+    free2Dreal_latvecs, free2Drecip_latvecs, free2Dbz, free2Dibz, free2Dpointgroup,
+    free2Dfrac_trans, free2Ddist_ff, free2Drules, free2Dcutoff, "square",
+    "free electron model", free2Delectrons, free2Dfermiarea, free2Dfermilevel,
+    free2Dbandenergy)
 
 @doc """
     epm₋model()
@@ -681,7 +734,88 @@ for m=epm_names
     @eval $(Symbol(m,"_epm")) = epm₋model([v[var] for var=[vars₀;vars₁]]...)
     push!(epms, @eval $(Symbol(m,"_epm")))
 end
-        
+
+# Free electron model in 3D
+"""
+    free(x,y,z,s)
+
+The free electron model in 3D for a simple cubic lattice.
+"""
+free(x::Real,y::Real,z::Real,s::Integer)::AbstractVector{<:Real} = 
+    sort([(x-1)^2 + (y-1)^2 + (z-1)^2,
+          x^2 + (y-1)^2 + (z-1)^2,
+          (x+1)^2 + (y-1)^2 + (z-1)^2,
+
+          (x-1)^2 + y^2 + (z-1)^2,
+          x^2 + y^2 + (z-1)^2,
+          (x+1)^2 + y^2 + (z-1)^2,
+
+          (x-1)^2 + (y+1)^2 + (z-1)^2,
+          x^2 + (y+1)^2 + (z-1)^2,
+          (x+1)^2 + (y+1)^2 + (z-1)^2,           
+           
+          (x-1)^2 + (y-1)^2 + z^2,
+          x^2 + (y-1)^2 + z^2,
+          (x+1)^2 + (y-1)^2 + z^2,
+
+          (x-1)^2 + y^2 + z^2,
+          x^2 + y^2 + z^2,
+          (x+1)^2 + y^2 + z^2,
+
+          (x-1)^2 + (y+1)^2 + z^2,
+          x^2 + (y+1)^2 + z^2,
+          (x+1)^2 + (y+1)^2 + z^2,           
+
+          (x-1)^2 + (y-1)^2 + (z+1)^2,
+          x^2 + (y-1)^2 + (z+1)^2,
+          (x+1)^2 + (y-1)^2 + (z+1)^2,
+
+          (x-1)^2 + y^2 + (z+1)^2,
+          x^2 + y^2 + (z+1)^2,
+          (x+1)^2 + y^2 + (z+1)^2,
+
+          (x-1)^2 + (y+1)^2 + (z+1)^2,
+          x^2 + (y+1)^2 + (z+1)^2,
+          (x+1)^2 + (y+1)^2 + (z+1)^2])[1:s]
+
+"""
+    free_fl(m)
+The exact Fermi level for a free electron model with `m` electrons.
+"""
+free_fl(m::Integer)::Real = 1/4*(3*m/π)^(2/3)
+
+"""
+    free_be(m)
+The exact band energy for free electron model with `m` electrons.
+"""
+free_be(m::Integer)::Real = 2*3/40*m^(5/3)*(3/π)^(2/3)
+
+energy_conv = 1
+freesym_offset = [0.,0.,0.]
+convention = "ordinary"
+free_lat_type = "SC"
+free_rlat_type = "SC"
+free_lat_constants = [1.,1.,1.]
+free_lat_angles = [π/2, π/2, π/2]
+free_real_latvecs = [1. 0. 0.; 0. 1. 0.; 0. 0. 1.]
+free_recip_latvecs = [1. 0. 0.; 0. 1. 0.; 0. 0. 1.]
+(free_frac_trans, free_pointgroup) = calc_spacegroup(free_real_latvecs, atom_types, atom_pos, coordinates)
+free_bz = chull([0.5 -0.5 0.5; 0.5 -0.5 -0.5; 0.5 0.5 -0.5; 0.5 0.5 0.5; -0.5 0.5 -0.5; -0.5 0.5 0.5; -0.5 -0.5 -0.5; -0.5 -0.5 0.5])
+free_ibz = chull([0.5 0.0 0.0; 0.5 -0.5 0.0; 0.5 -0.5 0.5; 0.0 0.0 0.0])
+free_dist_ff = [[1.0],[0.0]]
+free_rules = [1.0 => 0.0]
+free_electrons = 5
+free_cutoff = 4.0
+free_fermiarea = free_electrons/2
+free_fermilevel = free_fl(free_electrons)
+free_bandenergy = free_be(free_electrons)
+
+mf = epm₋model(energy_conv, freesym_offset, atom_types, atom_pos, coordinates,
+    convention, sheets, "free electron model", free_lat_type, free_lat_constants,
+    free_lat_angles, free_real_latvecs, free_rlat_type, free_recip_latvecs,
+    free_pointgroup, free_frac_trans, free_bz, free_ibz, free_dist_ff, free_rules,
+    free_electrons, free_cutoff, free_fermiarea,free_fermilevel, 0.0,
+    free_bandenergy, 0.0)
 
 @doc """
     eval_epm(kpoint,rbasis,rules,cutoff,sheets,energy_conversion_factor;rtol,
@@ -693,7 +827,7 @@ Evaluate an empirical pseudopotential at a k-point.
 - `kpoint::AbstractVector{<:Real}:` a point at which the EPM is evaluated.
 - `rbasis::AbstractMatrix{<:Real}`: the reciprocal lattice basis as columns of
     a 3x3 real array.
-- `rules::Dict{Float64,Float64}`: a dictionary whose keys are distances between
+- `rules`: a dictionary whose keys are distances between
     reciprocal lattice points rounded to two decimals places and whose values
     are the empirical pseudopotential form factors.
 - `cutoff::Real`: the Fourier expansion cutoff.
@@ -1043,29 +1177,6 @@ Sn(x::Real,y::Real,z::Real,s::Integer)::AbstractVector{<:Real} = eigvals([(-1.14
 A k-point independent EPM for Zn.
 """
 Zn(x::Real,y::Real,z::Real,s::Integer)::AbstractVector{<:Real} = eigvals([(-1.34427002432143 + z)*(-1.34427002432143 + z) + x*x + y*y 0.0630000000000000 0.0630000000000000 0.0630000000000000 0 0.0630000000000000 0.0630000000000000 0.0630000000000000 0 0 0 -0.0220000000000000 0 0 0 0 0 0 0 0 0 0 0; 0.0630000000000000 (-1.24767872816767 + x)*(-1.24767872816767 + x) + (-0.720347649569776 + y)*(-0.720347649569776 + y) + (-0.672135012160716 + z)*(-0.672135012160716 + z) 0.0200000000000000 0.0200000000000000 0.0200000000000000 0 0 0 0 0.0630000000000000 0.0630000000000000 0.0630000000000000 0 0 0 -0.0220000000000000 0 0 0 0 0 0 0; 0.0630000000000000 0.0200000000000000 (-1.44069529913955 + y)*(-1.44069529913955 + y) + (-0.672135012160716 + z)*(-0.672135012160716 + z) + x*x 0 0.0200000000000000 0.0200000000000000 0 0 0.0630000000000000 0 0 0.0630000000000000 0.0630000000000000 0 0 0 -0.0220000000000000 0 0 0 0 0 0; 0.0630000000000000 0.0200000000000000 0 (-1.24767872816767 + x)*(-1.24767872816767 + x) + (-0.672135012160716 + z)*(-0.672135012160716 + z) + (0.720347649569776 + y)*(0.720347649569776 + y) 0.0200000000000000 0 0.0200000000000000 0 0.0630000000000000 0 0 0.0630000000000000 0 0.0630000000000000 0 0 0 -0.0220000000000000 0 0 0 0 0; 0 0.0200000000000000 0.0200000000000000 0.0200000000000000 (-0.672135012160716 + z)*(-0.672135012160716 + z) + x*x + y*y 0.0200000000000000 0.0200000000000000 0.0200000000000000 0.0630000000000000 0.0630000000000000 0.0630000000000000 0 0.0630000000000000 0.0630000000000000 0.0630000000000000 0 0 0 -0.0220000000000000 0 0 0 0; 0.0630000000000000 0 0.0200000000000000 0 0.0200000000000000 (-0.720347649569776 + y)*(-0.720347649569776 + y) + (-0.672135012160716 + z)*(-0.672135012160716 + z) + (1.24767872816767 + x)*(1.24767872816767 + x) 0 0.0200000000000000 0 0.0630000000000000 0 0.0630000000000000 0 0 0.0630000000000000 0 0 0 0 -0.0220000000000000 0 0 0; 0.0630000000000000 0 0 0.0200000000000000 0.0200000000000000 0 (-0.672135012160716 + z)*(-0.672135012160716 + z) + (1.44069529913955 + y)*(1.44069529913955 + y) + x*x 0.0200000000000000 0 0 0.0630000000000000 0.0630000000000000 0 0 0.0630000000000000 0 0 0 0 0 -0.0220000000000000 0 0; 0.0630000000000000 0 0 0 0.0200000000000000 0.0200000000000000 0.0200000000000000 (-0.672135012160716 + z)*(-0.672135012160716 + z) + (0.720347649569776 + y)*(0.720347649569776 + y) + (1.24767872816767 + x)*(1.24767872816767 + x) 0 0 0 0.0630000000000000 0.0630000000000000 0.0630000000000000 0 0 0 0 0 0 0 -0.0220000000000000 0; 0 0 0.0630000000000000 0.0630000000000000 0.0630000000000000 0 0 0 (-1.24767872816767 + x)*(-1.24767872816767 + x) + (-0.720347649569776 + y)*(-0.720347649569776 + y) + z*z 0.0200000000000000 0.0200000000000000 0.0200000000000000 0 0 0 0 0.0630000000000000 0.0630000000000000 0.0630000000000000 0 0 0 0; 0 0.0630000000000000 0 0 0.0630000000000000 0.0630000000000000 0 0 0.0200000000000000 (-1.44069529913955 + y)*(-1.44069529913955 + y) + x*x + z*z 0 0.0200000000000000 0.0200000000000000 0 0 0.0630000000000000 0 0 0.0630000000000000 0.0630000000000000 0 0 0; 0 0.0630000000000000 0 0 0.0630000000000000 0 0.0630000000000000 0 0.0200000000000000 0 (-1.24767872816767 + x)*(-1.24767872816767 + x) + (0.720347649569776 + y)*(0.720347649569776 + y) + z*z 0.0200000000000000 0 0.0200000000000000 0 0.0630000000000000 0 0 0.0630000000000000 0 0.0630000000000000 0 0; -0.0220000000000000 0.0630000000000000 0.0630000000000000 0.0630000000000000 0 0.0630000000000000 0.0630000000000000 0.0630000000000000 0.0200000000000000 0.0200000000000000 0.0200000000000000 x*x + y*y + z*z 0.0200000000000000 0.0200000000000000 0.0200000000000000 0.0630000000000000 0.0630000000000000 0.0630000000000000 0 0.0630000000000000 0.0630000000000000 0.0630000000000000 -0.0220000000000000; 0 0 0.0630000000000000 0 0.0630000000000000 0 0 0.0630000000000000 0 0.0200000000000000 0 0.0200000000000000 (-0.720347649569776 + y)*(-0.720347649569776 + y) + (1.24767872816767 + x)*(1.24767872816767 + x) + z*z 0 0.0200000000000000 0 0.0630000000000000 0 0.0630000000000000 0 0 0.0630000000000000 0; 0 0 0 0.0630000000000000 0.0630000000000000 0 0 0.0630000000000000 0 0 0.0200000000000000 0.0200000000000000 0 (1.44069529913955 + y)*(1.44069529913955 + y) + x*x + z*z 0.0200000000000000 0 0 0.0630000000000000 0.0630000000000000 0 0 0.0630000000000000 0; 0 0 0 0 0.0630000000000000 0.0630000000000000 0.0630000000000000 0 0 0 0 0.0200000000000000 0.0200000000000000 0.0200000000000000 (0.720347649569776 + y)*(0.720347649569776 + y) + (1.24767872816767 + x)*(1.24767872816767 + x) + z*z 0 0 0 0.0630000000000000 0.0630000000000000 0.0630000000000000 0 0; 0 -0.0220000000000000 0 0 0 0 0 0 0 0.0630000000000000 0.0630000000000000 0.0630000000000000 0 0 0 (-1.24767872816767 + x)*(-1.24767872816767 + x) + (-0.720347649569776 + y)*(-0.720347649569776 + y) + (0.672135012160716 + z)*(0.672135012160716 + z) 0.0200000000000000 0.0200000000000000 0.0200000000000000 0 0 0 0.0630000000000000; 0 0 -0.0220000000000000 0 0 0 0 0 0.0630000000000000 0 0 0.0630000000000000 0.0630000000000000 0 0 0.0200000000000000 (-1.44069529913955 + y)*(-1.44069529913955 + y) + (0.672135012160716 + z)*(0.672135012160716 + z) + x*x 0 0.0200000000000000 0.0200000000000000 0 0 0.0630000000000000; 0 0 0 -0.0220000000000000 0 0 0 0 0.0630000000000000 0 0 0.0630000000000000 0 0.0630000000000000 0 0.0200000000000000 0 (-1.24767872816767 + x)*(-1.24767872816767 + x) + (0.672135012160716 + z)*(0.672135012160716 + z) + (0.720347649569776 + y)*(0.720347649569776 + y) 0.0200000000000000 0 0.0200000000000000 0 0.0630000000000000; 0 0 0 0 -0.0220000000000000 0 0 0 0.0630000000000000 0.0630000000000000 0.0630000000000000 0 0.0630000000000000 0.0630000000000000 0.0630000000000000 0.0200000000000000 0.0200000000000000 0.0200000000000000 (0.672135012160716 + z)*(0.672135012160716 + z) + x*x + y*y 0.0200000000000000 0.0200000000000000 0.0200000000000000 0; 0 0 0 0 0 -0.0220000000000000 0 0 0 0.0630000000000000 0 0.0630000000000000 0 0 0.0630000000000000 0 0.0200000000000000 0 0.0200000000000000 (-0.720347649569776 + y)*(-0.720347649569776 + y) + (0.672135012160716 + z)*(0.672135012160716 + z) + (1.24767872816767 + x)*(1.24767872816767 + x) 0 0.0200000000000000 0.0630000000000000; 0 0 0 0 0 0 -0.0220000000000000 0 0 0 0.0630000000000000 0.0630000000000000 0 0 0.0630000000000000 0 0 0.0200000000000000 0.0200000000000000 0 (0.672135012160716 + z)*(0.672135012160716 + z) + (1.44069529913955 + y)*(1.44069529913955 + y) + x*x 0.0200000000000000 0.0630000000000000; 0 0 0 0 0 0 0 -0.0220000000000000 0 0 0 0.0630000000000000 0.0630000000000000 0.0630000000000000 0 0 0 0 0.0200000000000000 0.0200000000000000 0.0200000000000000 (0.672135012160716 + z)*(0.672135012160716 + z) + (0.720347649569776 + y)*(0.720347649569776 + y) + (1.24767872816767 + x)*(1.24767872816767 + x) 0.0630000000000000; 0 0 0 0 0 0 0 0 0 0 0 -0.0220000000000000 0 0 0 0.0630000000000000 0.0630000000000000 0.0630000000000000 0 0.0630000000000000 0.0630000000000000 0.0630000000000000 (1.34427002432143 + z)*(1.34427002432143 + z) + x*x + y*y])[1:s]
-
-"""
-    free(x,y,z,s)
-"""
-free(x::Real,y::Real,z::Real,s::Integer)::AbstractVector{<:Real} = 
-    sort([(x-1)^2 + y^2 + z^2,
-           x^2 + (y-1)^2 + z^2,
-           x^2 + y^2 + (z-1)^2,
-           x^2 + y^2 + z^2,
-           x^2 + y^2 + (z+1)^2,
-           x^2 + (y+1)^2 + z^2,
-           (x+1)^2 + y^2 + z^2])[1:s]
-"""
-    free_fl(m)
-The exact Fermi level for a free electron model with `m` electrons.
-"""
-free_fl(m::Integer)::Real = 1/4*(3*m/π)^(2/3)
-"""
-    free_be(m)
-The exact band energy for free electron model with `m` electrons.
-"""
-free_be(m::Integer)::Real = 3/40*m^(5/3)*(3/π)^(2/3)
-
 
 @doc """
 A dictionary whose keys are the labels of high symmetry points from the Python

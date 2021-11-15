@@ -166,7 +166,6 @@ function rectangular_method(epm::Union{epm₋model2D,epm₋model},
     
     totalstates = epm.sheets*num_kpoints
     maxoccupied_state = Int(maxoccupied_state)
-    @show maxoccupied_state
 
     counter = maxoccupied_state
     index = 0
@@ -195,7 +194,7 @@ end
 Calculate the Fermi level and band energy with the rectangular method without symmetry.
 """
 function rectangular_method(recip_latvecs::AbstractMatrix{<:Real},
-    rules::Dict{Float64,Float64}, electrons::Integer, cutoff::Real,
+    rules, electrons::Integer, cutoff::Real,
     sheets::Int, N::AbstractMatrix{<:Real},
     grid_offset::AbstractVector{<:Real}=[0,0], energy_factor::Real=RytoeV;
     rtol::Real=sqrt(eps(float(maximum(recip_latvecs)))),
@@ -215,15 +214,28 @@ function rectangular_method(recip_latvecs::AbstractMatrix{<:Real},
             energy_factor,rtol=rtol,atol=atol)
         else
             eigenvalues[1+(i-1)*sheets:(sheets*i)] = eval_epm(
-                func,integration_points[])    
+                func,integration_points[:,i],sheets)    
         end
+    end
+
+    # Account for partially occupied state
+    if mod(electrons*num_kpoints,2) == 1
+        part = true
+    else
+        part = false
     end
 
     sort!(eigenvalues)
     occupied_states = 1:ceil(Int,electrons*num_kpoints/2)
-    rectangle_size = det(recip_latvecs)/num_kpoints
+
+
+    rectangle_size = abs(det(recip_latvecs))/num_kpoints
     fermi_level = eigenvalues[occupied_states[end]]
     band_energy = rectangle_size*sum(eigenvalues[occupied_states])
+
+    if part
+        bandenergy -= rectangle_size*eigenvalues[occupied_states[2]]
+    end
 
     (num_kpoints,fermi_level,2*band_energy)
 end

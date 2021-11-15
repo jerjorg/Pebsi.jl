@@ -1,8 +1,12 @@
 using Test
 
-using Pebsi.Geometry: order_vertices!
+using Pebsi.Geometry: order_vertices!, insimplex
 using Pebsi.Polynomials: sample_simplex,barytocart,getpoly_coeffs
 using Pebsi.QuadraticIntegration
+using Pebsi.QuadraticIntegration: coeff_order1, coeff_order2, coeff_order3, coeff_order4,
+    vert_order1, vert_order2, vert_order3, vert_order4, slice_order1, slice_order2, slice_order3,
+    slice_order4
+
 
 function contains_intersect(intersects,int1)
     contained = false
@@ -779,29 +783,83 @@ end
     end
 
     @testset "quadslice_tanpt" begin
-        coeffs1 = [-1/10, -1/10, 9/10, -1/10, -1/10, 9/10, -1/10, -1/10, -1/10, 9/10]
-        coeffs2 = [-1.7, 1.5, 3.1, -5.5, 2.2, 5.1, 2.7, 3.3, -2.8, -1.6]
-        coeffs3 = [3.3, 0.2, -0.1, -1.2, 0.9, -5.9, -3.3, -2.8, -0.5, -2.1]
-        coeffs4 = [-2.8, -5.5, -2.1, -0.6, -0.3, -0.4, 3.1, 0.8, 0.4, 0.2]
-        coeffs5 = [-8.5, 9.1, 0.2, -1.1, -4.4, 0.0, 2.9, 3.8, 10.4, -3.6]
-        allcoeffs = [coeffs1, coeffs2, coeffs3, coeffs4, coeffs5];
-        tanpts = [quadslice_tanpt(c) for c=allcoeffs];
-        answers = 
-        [[[1.316227766016838, 0., 0., -0.316227766016838], 
-         [0.683772233983162, 0., 0., 0.3162277660168381]],
-        [[-0.8084695494747378, 0.8820090301270619, 0.08732560542355741, 0.8391349139241191],
-         [0.11312873763105125,1.8653332770067699, -0.3886574640630287, -0.5898045505747926]],
-        [[0.5361657815127215, -1.3364201312940243, 0.22566294275661122, 1.574591407024692],
-         [0.004065401040220495, 0.8624733213423368, 0.12788381301166446, 0.005577464605778385]], 
-        [[-0.15576097441441844, 0.6272013826335201, -0.5143662579910893, 1.0429258497719878],
-         [-0.014028620477238784, 0.135909681953521, 0.5845012941053981, 0.29361764441831967]],
-        [[0.13984834110082184, 0.4212822998383755, -0.21264267667437103, 0.6515120357351727],
-         [0.19586924482990495, 0.18537009535915194, 0.5605689176523143, 0.05819174215862836]]];
-        answers = map(x->reduce(hcat,x),answers)        
-            
-        for i=1:length(answers)
-            @test (answers[i][:,1] ≈ tanpts[i][:,1]) || (answers[i][:,1] ≈ tanpts[i][:,2])
-            @test (answers[i][:,2] ≈ tanpts[i][:,1]) || (answers[i][:,2] ≈ tanpts[i][:,2])
+        ans_tpts = [[0.18257418583505536, 0.18257418583505536, 0.18257418583505536],
+        [0.31622776601683794, 0.0, 0.0],
+        [0.0, 0.31622776601683794, 0.0],
+        [0.0, 0.0, 0.31622776601683794]]
+
+        tet = [0 1 0 0; 0 0 1 0; 0 0 0 1]
+        coeffs = [-1/10, -1/10, 9/10, -1/10, -1/10, 9/10, -1/10, -1/10, -1/10, 9/10]
+        for i=1:4
+            coeff_order = @eval $(Symbol("coeff_order"*string(i)))
+            vert_order = @eval $(Symbol("vert_order"*string(i)))
+            coeffsi = coeffs[coeff_order]
+            tbpt = quadslice_tanpt(coeffsi)[vert_order,:]    
+            if insimplex(tbpt[:,1]) p = 1 else p = 2 end
+            tpt = barytocart(tbpt[:,p],tet)
+            @test tpt ≈ ans_tpts[i]
+        end
+
+        ans_tpts = [[],
+            [0.14429938887061264, 0.2672456551994024, 0.41040275575832436],
+            [],
+            []]
+        tet = [0 1 0 0; 0 0 1 0; 0 0 0 1]
+        coeffs = [-1.7, 1.5, 3.1, -5.5, 2.2, 5.1, 2.7, 3.3, -2.8, -1.6]
+        for i=1:4
+            coeff_order = @eval $(Symbol("coeff_order"*string(i)))
+            vert_order = @eval $(Symbol("vert_order"*string(i)))
+            coeffsi = coeffs[coeff_order]
+            tbpt = quadslice_tanpt(coeffsi)[vert_order,:]    
+            if insimplex(tbpt[:,1]) p = 1 elseif insimplex(tbpt[:,2]) p = 2  else p = 0 end
+            if p == 0
+                @test ans_tpts[i] == []
+            else
+                tpt = barytocart(tbpt[:,p],tet)
+                @test tpt ≈ ans_tpts[i]
+            end
+        end
+
+        ans_tpts = [[0.27958451488210706, 0.11099974661264694, 0.33023622672501896],
+        [],
+        [0.19916508112729647, 0.1610281149843057, 0.3228550582398061],
+        []]
+    
+        tet = [0 1 0 0; 0 0 1 0; 0 0 0 1]
+        coeffs = [-1.61, 1.92, -0.46, -0.8, 1.03, -0.88, 0.96, -1.95, -0.27, 0.56]
+        for i=1:4
+            coeff_order = @eval $(Symbol("coeff_order"*string(i)))
+            vert_order = @eval $(Symbol("vert_order"*string(i)))
+            coeffsi = coeffs[coeff_order]
+            tbpt = quadslice_tanpt(coeffsi)[vert_order,:]    
+            if insimplex(tbpt[:,1]) p = 1 elseif insimplex(tbpt[:,2]) p = 2  else p = 0 end
+            if p == 0
+                @test ans_tpts[i] == []
+            else
+                tpt = barytocart(tbpt[:,p],tet)
+                @test tpt ≈ ans_tpts[i]
+            end
+        end
+
+        ans_tpts = [[0.4513621002767775, 0.13141495123059868, 0.12038109860944715],
+        [0.248161573423525, 0.25685172007121715, 0.04680496590597898],
+        [0.03292232846130888, 0.1627482766685301, 0.45411093098063193],
+        [0.14400314379590318, 0.8045052911069799, 0.01569541277902617]]
+    
+        tet = [0 1 0 0; 0 0 1 0; 0 0 0 1]
+        coeffs = [1.32, -1.78, 1.53, 0.25, -0.25, -0.05, -1.46, 0.87, 2.32, -0.25]
+        for i=1:4
+            coeff_order = @eval $(Symbol("coeff_order"*string(i)))
+            vert_order = @eval $(Symbol("vert_order"*string(i)))
+            coeffsi = coeffs[coeff_order]
+            tbpt = quadslice_tanpt(coeffsi)[vert_order,:]    
+            if insimplex(tbpt[:,1]) p = 1 elseif insimplex(tbpt[:,2]) p = 2  else p = 0 end
+            if p == 0
+                @test ans_tpts[i] == []
+            else
+                tpt = barytocart(tbpt[:,p],tet)
+                @test tpt ≈ ans_tpts[i]
+            end
         end
     end
 

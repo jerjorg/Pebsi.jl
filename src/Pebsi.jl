@@ -38,7 +38,7 @@ export bandstructure, init_bandstructure, quadval_vertex, corner_indices,
     two₋intersects_area₋volume, quad_area₋volume, get_intercoeffs, calc_fl,
     calc_flbe!, refine_mesh!, get_tolerances, quadratic_method!, truebe,
     bezcurve_intersects, getdomain, analytic_area1D, simpson, simpson2D, 
-    linept_dist, tetface_areas, simpson3D, quadslicev, quadslice_tanpt
+    linept_dist, tetface_areas, simpson3D, quadslice_tanpt
 
 # Plotting
 export meshplot, contourplot, bezplot, bezcurve_plot, polygonplot, 

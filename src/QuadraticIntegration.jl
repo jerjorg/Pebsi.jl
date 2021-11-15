@@ -28,7 +28,7 @@ export bandstructure, init_bandstructure, quadval_vertex, corner_indices,
     two₋intersects_area₋volume, quad_area₋volume, get_intercoeffs, calc_fl,
     calc_flbe!, refine_mesh!, get_tolerances, quadratic_method!, truebe, 
     bezcurve_intersects, getdomain, analytic_area1D, simpson, simpson2D, 
-    linept_dist, tetface_areas, simpson3D, quadslicev, quadslice_tanpt
+    linept_dist, tetface_areas, simpson3D, quadslice_tanpt
 
 @doc """
     bandstructure
@@ -2130,20 +2130,25 @@ face_ind = [[2,3,4],[1,3,4],[1,4,2],[1,2,3]]
 corner_ind = [1,2,3,4]
 
 # Labeled by corner opposite the face
-vert_order1 = [4,2,3,1]
-vert_order2 = [1,4,2,3]
-vert_order3 = [1,3,4,2]
-vert_order4 = [1,2,3,4]
+# The order of the sample points of a slice of the tetrahedron
+slice_order1 = [4,2,3,1]
+slice_order2 = [1,4,2,3]
+slice_order3 = [1,3,4,2]
+slice_order4 = [1,2,3,4]
 
+# The order of the coefficients of the 3D quadratic polynomial when the slices
+# area towards different corners
 coeff_order1 = [3, 8, 10, 5, 9, 6, 2, 7, 4, 1]
 coeff_order2 = [1, 4, 6, 7, 9, 10, 2, 5, 8, 3]
 coeff_order3 = [1, 7, 10, 2, 8, 3, 4, 9, 5, 6]
 coeff_order4 = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
 
-vert_map1 = [4,1,3,2]
-vert_map2 = [1,4,2,3]
-vert_map3 = [1,3,4,2]
-vert_map4 = [1,2,3,4]
+# The order of the vertices of the tetrahedron when the slices are taken towards
+# different corners of the tetrahedron
+vert_order1 = [4,1,3,2]
+vert_order2 = [1,4,2,3]
+vert_order3 = [1,3,4,2]
+vert_order4 = [1,2,3,4]
 
 function tetface_areas(tet)
     areas = zeros(4)
@@ -2205,13 +2210,13 @@ function simpson3D(coeffs,tetrahedron,num_slices,quantity;values=false,gauss=tru
  
     # Reorder coefficients and vertices
     coeff_order = @eval $(Symbol("coeff_order"*string(p)))
+    slice_order = @eval $(Symbol("slice_order"*string(p)))
     vert_order = @eval $(Symbol("vert_order"*string(p)))
-    vert_map = @eval $(Symbol("vert_map"*string(p)))
 
     if !split
         intervals = [0,1]
     else
-        tpts = quadslice_tanpt(coeffs[coeff_order])[vert_map,:]
+        tpts = quadslice_tanpt(coeffs[coeff_order])[vert_order,:]
         if insimplex(tpts[:,1],atol=atol)
             if insimplex(tpts[:,2],atol=atol)
                 intervals = [0; tpts[p,:]; 1]
@@ -2246,7 +2251,7 @@ function simpson3D(coeffs,tetrahedron,num_slices,quantity;values=false,gauss=tru
             [(1-t)/2,0,(1-t)/2,t],
             [0,(1-t)/2,(1-t)/2,t],
             [0,0,1-t,t]])
-            bpts = bpts[vert_order,:]
+            bpts = bpts[slice_order,:]
             pts = barytocart(bpts,tetrahedron)
             vals = eval_poly(bpts,coeffs,dim,deg)
             coeffs2D = getpoly_coeffs(vals,bpts2D,2,2)
@@ -2472,9 +2477,9 @@ function quadslice_tanpt(coeffs; atol=def_atol,rtol=def_rtol)
         a,b,c=abc
         sol = solve_quadratic(abc[1],abc[2],abc[3],atol=atol)
         if length(sol) == 0
-            sol = [Inf,Inf]
+            sol = [0,0]
         elseif length(sol) == 1
-            sol = [Inf,sol[1]]
+            sol = [sol[1],sol[1]]
         end
         stuv[i] = sol
     end

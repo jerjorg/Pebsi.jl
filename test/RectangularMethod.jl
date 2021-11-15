@@ -2,7 +2,7 @@ using Test
 
 import Pebsi.RectangularMethod: sample_unitcell, symreduce_grid,
     calculate_orbits, convert_mixedradix, rectangular_method
-import Pebsi.EPMs: free,free_fl,free_be
+import Pebsi.EPMs: free,free_fl,free_be, mf, mf2D
 
 import Base.Iterators: product
 import SymmetryReduceBZ.Symmetry: calc_pointgroup, calc_ibz, mapto_ibz,
@@ -123,9 +123,9 @@ import SymmetryReduceBZ.Utilities: contains
         coordinates = "Cartesian"
         convention = "ordinary"
         energy_factor = 1
-        N = [100 0; 0 100]
+        N = [20 0; 0 20]
         grid_offset = [0.5,0.5]
-        sheets=1:10
+        sheets=10
 
         vars1 = ["real_latvecs","recip_latvecs","rules","cutoff"]
         vars2 = ["electrons","fermilevel","bandenergy"]
@@ -155,13 +155,11 @@ import SymmetryReduceBZ.Utilities: contains
                 "fermilevel"*string(area)))
             electrons = getfield(Main,Symbol("m"*string(model)*
                 "electrons"*string(area)))
-
+            
             (num_unique,fermilevel,bandenergy) = rectangular_method(
-            real_latvecs,atom_types,atom_pos,rules,electrons,cutoff,
-                sheets,N,grid_offset,convention,coordinates,energy_factor)
+                recip_latvecs,rules,electrons,cutoff,sheets,N,grid_offset,energy_factor)
 
-            @test abs(fermilevel - fermilevel_sol) < 1e-2
-            @test abs(bandenergy - bandenergy_sol) < 1e-3
+            @test abs(bandenergy - bandenergy_sol)/bandenergy_sol < 1e-3
         end
         
         rtol=1e-9
@@ -170,8 +168,8 @@ import SymmetryReduceBZ.Utilities: contains
         atom_types = [0]
         atom_pos = Array([0 0 0]')
         electrons = 3
-        cutoff = 1
-        sheets = 1:7
+        cutoff = 1.0
+        sheets = 7
         rules = Dict(0.0 => 0.0)
         grid_offset = [0.5,0.5,0.5]
         convention = "ordinary"
@@ -179,15 +177,23 @@ import SymmetryReduceBZ.Utilities: contains
         energy_factor = 1
         n = 80
         N = [n 0 0; 0 n 0; 0 0 n]
-        tmp = rectangular_method(real_latvecs,atom_types,atom_pos,rules,electrons,cutoff,
-            sheets,N,grid_offset,convention,coordinates,energy_factor,rtol=rtol,atol=atol,func=free)
-
+        tmp = rectangular_method(real_latvecs,rules,electrons,cutoff,sheets,N,
+            grid_offset,energy_factor,rtol=rtol,atol=atol,func=free)
+            
         fl = free_fl(electrons)
         be = free_be(electrons)
 
         @test abs(fl-tmp[2]) < 1e-3
         @test abs(be - tmp[3]) < 1e-4
-        
-    
+            
     end
+
+    n,fl,be = rectangular_method(mf2D,100)
+    @test abs(fl - mf2D.fermilevel) < 1e-3
+    @test abs(be - mf2D.bandenergy) < 1e-7
+    
+    n,fl,be = rectangular_method(mf,50)
+    @test abs(fl - mf.fermilevel) < 1e-3
+    @test abs(be - mf.bandenergy) < 1e-6
+
 end
