@@ -37,12 +37,13 @@ Create a generalized regular grid over the unit cell.
 
 # Examples
 ```jldoctest
+using Pebsi.RectangularMethod: sample_unitcell
 recip_latvecs = [1 0; 0 1]
 N = [2 0; 0 2]
 grid_offset = [0.5, 0.5]
 sample_unitcell(recip_latvecs,N,grid_offset)
 # output
-2×4 Array{Real,2}:
+2×4 Matrix{Float64}:
  0.25  0.75  0.25  0.75
  0.25  0.25  0.75  0.75
 ```
@@ -51,7 +52,7 @@ function sample_unitcell(latvecs::AbstractMatrix{<:Real},
     N::AbstractArray{<:Integer,2},
     grid_offset::AbstractVector{<:Real}=zeros(size(N,1));
     rtol::Real=sqrt(eps(float(maximum(latvecs)))),
-    atol::Real=def_atol)::Array{Float64,2}
+    atol::Real=def_atol)::AbstractMatrix{Float64}
 
     H = hnf(matrix(ZZ,N))
     H = convert(Array{Int,2},Array(H))
@@ -70,7 +71,7 @@ function sample_unitcell(latvecs::AbstractMatrix{<:Real},
     else
         throw(ArgumentError("The lattice vectors and offset are incompatible."))
     end
-
+    
     mapto_unitcell(grid,latvecs,inv_latvecs,"Cartesian",rtol=rtol,atol=atol)
 end
 
@@ -99,7 +100,7 @@ import Pebsi.EPMs: m11
 import Pebsi.RectangularMethod: rectangular_method
 rectangular_method(m11,3)
 # output
-(3, 0.6898935531252085, 1.010633880786488)
+(3, 0.6898935531209884, 2.021267761566246)
 ```
 """
 function rectangular_method(epm::Union{epm₋model2D,epm₋model},
@@ -269,6 +270,7 @@ Calculate the symmetrically unique points and their weights in a GR grid.
 
 # Examples
 ```jldoctest
+using Pebsi.RectangularMethod: symreduce_grid
 recip_latvecs = [1 0; 0 1]
 N = [2 0; 0 2]
 grid_offset = [0.5, 0.5]
@@ -277,7 +279,7 @@ pointgroup = [[0.0 -1.0; -1.0 0.0], [0.0 -1.0; 1.0 0.0], [-1.0 0.0; 0.0 -1.0],
     [0.0 1.0; -1.0 0.0], [0.0 1.0; 1.0 0.0]]
 symreduce_grid(recip_latvecs,N,grid_offset,pointgroup)
 # output
-([4], [0.25; 0.25])
+([4], [0.25; 0.25], [[0.25 0.75 0.75 0.25; 0.25 0.75 0.25 0.75]])
 ```
 """
 function symreduce_grid(recip_latvecs::AbstractMatrix{<:Real},
@@ -381,6 +383,7 @@ Convert a mixed-radix number to an integer.
 
 # Examples
 ```jldoctest
+using Pebsi.RectangularMethod: convert_mixedradix
 dials = [1,2]
 dial_sizes = [3,4]
 convert_mixedradix(dials,dial_sizes)
@@ -419,6 +422,7 @@ Calculate the index of a point in a generalized regular grid.
 
 # Examples
 ```jldoctest
+using Pebsi.RectangularMethod: kpoint_index
 point = [0.5, 0.5]
 offset = [0,0]
 invK = [0.25  0; 0 0.25]
@@ -470,17 +474,16 @@ Calculate the points of the grid in each orbit the hard way.
 
 # Examples
 ```jldoctest
-import Pebsi.RectangularMethod: calculate_orbits, coordinatescell
+import Pebsi.RectangularMethod: calculate_orbits, sample_unitcell
 import SymmetryReduceBZ.Symmetry: calc_pointgroup
 recip_latvecs = [1 0; 0 1]
 N = [2 0; 0 2]
 grid_offset = [0.5, 0.5]
 pointgroup = calc_pointgroup(recip_latvecs)
-
 grid = sample_unitcell(recip_latvecs,N,grid_offset)
 calculate_orbits(grid,pointgroup,recip_latvecs)
 # output
-1-element Array{Array{Float64,2},1}:
+1-element Vector{Matrix{Float64}}:
  [0.75 0.75 0.25 0.25; 0.75 0.25 0.75 0.25]
 ```
 """

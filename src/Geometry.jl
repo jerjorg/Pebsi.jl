@@ -1,7 +1,7 @@
 module Geometry
 
 using ..Defaults: def_atol
-using LinearAlgebra: dot,cross,norm,det
+using LinearAlgebra: dot, cross, norm, det
 using Base.Iterators: product
 
 export order_vertices!, sample_simplex, barytocart, carttobary, simplex_size, 
@@ -11,9 +11,29 @@ export order_vertices!, sample_simplex, barytocart, carttobary, simplex_size,
 @doc """
     order_vertices(vertices)
 
-Put the vertices of a triangle (columns of an array) in counterclockwise order.
+Put the vertices of a triangle in counterclockwise order.
+
+# Arguments
+- `vertices::AbstractMatrix{<:Real}`: the vertices of the triangle in columns of
+    a matrix.
+
+# Returns
+- `vertices::AbstractMatrix{<:Real}`: the vertices of the triangle in columns of
+    a matrix where increasing the column number moves around the triangle
+    counterclockwise.
+
+# Examples
+```jldoctest
+using Pebsi.Geometry: order_vertices!
+triangle = [0 1 1; 0 1 0]
+order_vertices!(triangle)
+# output
+2×3 Matrix{Int64}:
+ 0  1  1
+ 0  0  1
+```
 """
-function order_vertices!(vertices::AbstractMatrix{<:Real})
+function order_vertices!(vertices::AbstractMatrix{<:Real})::AbstractMatrix{<:Real}
     for i=1:3
         j = mod1(i+1,3)
         k = mod1(i+2,3)
@@ -37,7 +57,8 @@ Get the sample points of a simplex for a polynomial approximation.
 - `deg::Integer`: the degree of the polynomial approximations.
 
 # Returns
-- `::AbstractMatrix{<:Real}`: the points on the simplex as columns of an array.
+- `::AbstractMatrix{<:Real}`: the points on the simplex in Cartesian coordinates
+    as columns of a matrix.
 
 # Examples
 ```jldoctest
@@ -46,7 +67,7 @@ dim = 2
 deg = 1
 sample_simplex(dim,deg)
 # output
-3×3 Array{Float64,2}:
+3×3 Matrix{Float64}:
  1.0  0.0  0.0
  0.0  1.0  0.0
  0.0  0.0  1.0
@@ -67,7 +88,7 @@ Convert a point from barycentric to Cartesian coordinates.
 # Arguments
 - `barypt::AbstractVector{<:Real}`: a point in Barycentric coordinates.
 - `simplex::AbstractMatrix{<:Real}`: the vertices of a simplex as columns of
-    an array.
+    an array in Cartesian coordinates.
 
 # Returns
 - `::AbstractVector{<:Real}`: the point in Cartesian coordinates.
@@ -79,7 +100,7 @@ barypt = [0,0,1]
 simplex = [0.0 0.5 0.5; 1.0 1.0 0.0]
 barytocart(barypt,simplex)
 # output
-2-element Array{Float64,1}:
+2-element Vector{Float64}:
  0.5
  0.0
 ```
@@ -92,7 +113,25 @@ end
 @doc """
     barytocart(barypts,simplex)
 
-Convert points as columns on an array from barycentric to Cartesian coordinates.
+Convert points from barycentric to Cartesian coordinates.
+
+# Arguments
+- `barypts::AbstractMatrix{<:Real}`: a matrix of points in barycentric
+    coordinates as columns.
+- `simplex::AbstractMatrix{<:Real}`: the Cartesian coordinates of the corners of
+    a triangle.
+
+# Examples
+```jldoctest
+using Pebsi.Geometry: barytocart
+pts = [0 0; 0 1; 1 0; 0 0]
+triangle = [0 1 1; 0 0 1]
+barytocart(pts,triangle)
+# output
+2×2 Matrix{Float64}:
+ 0.5  1.0
+ 0.0  0.0
+```
 """
 function barytocart(barypts::AbstractMatrix{<:Real},
     simplex::AbstractMatrix{<:Real})::AbstractMatrix{<:Real}
@@ -105,8 +144,24 @@ end
 Transform a point from Cartesian to barycentric coordinates.
 
 # Arguments
-- `pt::AbstractVector{<:Real}`: the point in Cartesian coordinates
+- `pt::AbstractVector{<:Real}`: the point in Cartesian coordinates.
 - `simplex::AbstractMatrix{<:Real}`: the corners of the simplex as columns of an array.
+
+# Returns
+- `::AbstractVector{<:Real}`: the same point in barycentric coordinates.
+
+# Examples
+```jldoctest
+using Pebsi.Geometry: carttobary
+triangle = [0. 1. 1.; 0. 0. 1.]
+pt = [0.5,0.5]
+carttobary(pt,triangle)
+# output
+3-element Vector{Float64}:
+ 0.5
+ 0.0
+ 0.5
+```
 """
 function carttobary(pt::AbstractVector{<:Real},
         simplex::AbstractMatrix{<:Real})::AbstractVector{<:Real}
@@ -115,12 +170,31 @@ function carttobary(pt::AbstractVector{<:Real},
 end
 
 @doc """
-    carttobary(pt,simplex)
+    carttobary(pts,simplex)
 
-Transform an array of points from Cartesian to barycentric coordinates.
+Transform points from Cartesian to barycentric coordinates.
 
 # Arguments
-- `pts::AbstractMatrix{<:Real}`: the points in Cartesian coordinates as columns of an array.
+- `pts::AbstractMatrix{<:Real}`: the points in Cartesian coordinates as columns 
+    of a matrix.
+- `simplex::AbstractMatrix{<:Real}`: the Cartesian coordinates of the corners of
+    a triangle as columns of a matrix.
+
+# Output
+- `::AbstractMatrix{<:Real}`: the same provided points in barycentric coordinates
+    in columns of a matrix.
+# Examples
+```jldoctest
+using Pebsi.Geometry: carttobary
+pts = [0.25 0.5; 0.25 0.5]
+triangle = [0. 1. 1.; 0. 0. 1.]
+carttobary(pts,triangle)
+# output
+3×2 Matrix{Float64}:
+ 0.75  0.5
+ 0.0   0.0
+ 0.25  0.5
+```
 """
 function carttobary(pts::AbstractMatrix{<:Real},
         simplex::AbstractMatrix{<:Real})::AbstractMatrix{<:Real}
@@ -187,14 +261,26 @@ Check if an array of points in Barycentric coordinates lie within a simplex.
 # Arguments
 - `bpts::AbstractMatrix{<:Real}`: an arry of points in barycentric coordinates
     as columns of an array.
-- `atol::Real=1e-9`: absolute tolerance.
+- `atol::Real=1e-9`: an absolute tolerance.
+
+# Returns
+- `Bool`: is `true` if all the points lie within the simplex
+
+# Examples
+```jldoctest
+using Pebsi.Geometry: insimplex
+bpts = [0 0; 0 1; 1 0]
+insimplex(bpts)
+# output
+true
+```
 """
 function insimplex(bpts::AbstractMatrix{<:Real},atol::Real=def_atol)
-    all(mapslices(x->insimplex(x,atol=atol),bpts,dims=1))
+    all(mapslices(x->insimplex(x,atol=atol),bpts,dims=1))::Bool
 end
 
 @doc """
-    lineseg₋pt_dist(pt,line_seg)
+    lineseg₋pt_dist(p3,line_seg,line;atol)
 
 Calculate the shortest distance from a point to a line segment.
 
@@ -214,7 +300,7 @@ Calculate the shortest distance from a point to a line segment.
 import Pebsi.Geometry: lineseg₋pt_dist
 lineseg = [0 0; 0 1]
 pt = [0.5, 0.5]
-lineseg₋pt_dist(lineseg,pt)
+lineseg₋pt_dist(pt,lineseg)
 # output
 0.5000000000000001
 ```
@@ -246,8 +332,22 @@ Determine if a point lies within a polygon where both are embedded in 3D.
     the polygon.
 - `polygon`: the Cartesian coordinates of the corners of a polygon as columns of
     a matrix.
+
+# Returns
+- `Bool`: true if the point lines inside the triangle (including boundaries)
+
+# Examples
+```jldoctest
+using Pebsi.Geometry: point_in_polygon
+using Pebsi.Geometry: point_in_polygon
+point = [0,0,1]
+polygon = [-1 1 1 -1; -1 -1 1 1; 1 1 1 1]
+point_in_polygon(point,polygon)
+# output
+true
+```
 """
-function point_in_polygon(pt,polygon; atol=def_atol)
+function point_in_polygon(pt,polygon; atol=def_atol)::Bool
     x,y,z=pt
     npts = size(polygon,2)
     s1 = zeros(npts); s2 = zeros(npts); s3 = zeros(npts)
@@ -275,14 +375,26 @@ end
 Calculate the minimum distance between a point and a finite plane.
 
 # Arguments
-- `pt`: the 3D Cartesian coordinates of a point embedded in 3D.
-- `face`: the 3D Cartesian coordinates of the corners of a face that lie on the
-    same plane as columns of a matrix.
+- `pt::AbstractVector{<:Real}`: the 3D Cartesian coordinates of a point embedded
+    in 3D.
+- `face::AbstractMatrix{<:Real}`: the 3D Cartesian coordinates of the corners of
+    a face that lie on the same plane as columns of a matrix.
 
 # Returns
-- The minimum distance from the point to the plane.
+- `::Real`: The minimum distance from the point to the plane.
+
+# Examples
+```jldoctest
+using Pebsi.Geometry:ptface_mindist
+pt = [1,0,0]
+face = [0 0 0 0; -1 1 1 -1; -1 -1 1 1]
+ptface_mindist(pt,face)
+# output
+1.0
+```
 """
-function ptface_mindist(pt,face)
+function ptface_mindist(pt::AbstractVector{<:Real},
+    face::AbstractMatrix{<:Real})::Real
     # Use points that are not colinear to find a normal vector perpendicular to the face.
     i = 3
     v₁ = face[:,2] - face[:,1]
@@ -316,10 +428,10 @@ Calculate the affine transformation that maps points to the xy-plane.
 
 # Arguments
 - `pts::AbstractMatrix{<:Real}`: Cartesian points as the columns of a matrix.
-    The points must all lie on a plane in 3D.
+    The points must all lie on the same plane in 3D.
 
 # Returns
-- `M::AbstractMatrix{<:Real}`: the affine transformation matrix that operates
+- `::AbstractMatrix{<:Real}`: the affine transformation matrix that operates
     on points in homogeneous coordinates from the left.
 
 # Examples

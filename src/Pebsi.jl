@@ -21,7 +21,9 @@ export bernstein_basis, getpoly_coeffs, eval_poly, getbez_pts₋wts,
 
 # EPMs
 export epm_names, epm_names2D, eval_epm, epm₋model2D, epm₋model, free, free_fl,
-    free_be, epms, epms2D
+    free_be, free2D, free_fl2D, free_be2D, epms, epms2D, m11, m12, m13, m21, m22, 
+    m23, m31, m32, m33, m41, m42, m43, m51, m52, m53, mf, Ag_epm, Al_epm, Au_epm, Cs_epm, Cu_epm, In_epm,
+    K_epm, Li_epm, Na_epm, Pb_epm, Rb_epm, Sn_epm, Zn_epm, free_epm
 
 # Mesh
 export get_neighbors, choose_neighbors, choose_neighbors3D, ibz_init₋mesh,

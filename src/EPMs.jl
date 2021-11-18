@@ -13,19 +13,14 @@ using ..Defaults: def_atol
 using SymmetryReduceBZ.Lattices: genlat_FCC, genlat_BCC, genlat_HEX,
     genlat_BCT, get_recip_latvecs
 using SymmetryReduceBZ.Symmetry: calc_spacegroup
-
-using PyCall: pyimport
-using PyPlot: subplots
-using QHull: chull,Chull
-using SymmetryReduceBZ.Lattices: get_recip_latvecs
 using SymmetryReduceBZ.Utilities: sample_circle, sample_sphere
-using LinearAlgebra: norm, Symmetric, eigvals, dot
-using SparseArrays: SparseMatrixCSC
+using QHull: chull, Chull
+using LinearAlgebra: Symmetric, eigvals
 using Distances: SqEuclidean, pairwise!
-using Arpack: eigs
 
 export epm_names, epm_names2D, eval_epm, epm₋model2D, epm₋model, free, free_fl,
-    free_be, epms, epms2D, RytoeV, eVtoRy
+    free_be, free2D, free_fl2D, free_be2D, epms, epms2D, RytoeV, eVtoRy,
+    free_epm, mf
 
 Ag_name = "Ag"
 Al_name = "Al"
@@ -44,6 +39,9 @@ Zn_name = "Zn"
 epm_names = [Ag_name,Al_name,Au_name,Cs_name,Cu_name,In_name,K_name,Li_name,
     Na_name,Pb_name,Rb_name,Sn_name,Zn_name]
 epm_names2D = ["m"*string(i)*string(j) for i=1:5 for j=1:3]
+
+for name in epm_names @eval export $(Symbol(name*"_epm")) end
+for name in epm_names2D @eval export $(Symbol(name)) end
 
 # The lattice types of the EPMs (follows the naming convention
 # of High-throughput electronic band structure calculations:
@@ -151,7 +149,7 @@ Sn_rlatvecs = get_recip_latvecs(Sn_latvecs,"angular")
 Zn_rlatvecs = get_recip_latvecs(Zn_latvecs,"angular")
 
 # EPM rules for replacing distances with pseudopotential form factors
-# Distances are for the angular reciprocal space convention.
+# Distances are for the angular reciprocal-space convention.
 Ag_dist_ff = [[1.99,7.95],[0.195,0.121]]
 Al_dist_ff = [[2.02,8.09],[0.0179,0.0562]]
 Au_dist_ff = [[1.99,7.98],[0.252,0.152]]
@@ -180,6 +178,7 @@ Rb_rules = [1.46 => -0.002]
 Sn_rules = [4.48 => 0.033,1.65 => -0.056,2.38 => -0.069,3.75 => 0.051]
 Zn_rules = [1.34 => -0.022,1.59 => 0.063,1.44 => 0.02]
 
+# The number of electrons for pseudopotential models
 Ag_electrons = 1
 Al_electrons = 3
 Au_electrons = 1
@@ -194,6 +193,7 @@ Rb_electrons = 1
 Sn_electrons = 4
 Zn_electrons = 2
 
+# The number of sheets included in band energy calculations
 Ag_sheets = 1 + 2
 Al_sheets = 4 + 2
 Au_sheets = 1 + 2
@@ -264,20 +264,6 @@ expansions where the number of terms in the expansions for all k-points changed.
 # Rb_cutoff = 2.98 
 # Sn_cutoff = 3.84 
 # Zn_cutoff = 3.7 
-
-# Ag_terms = 1459
-# Al_terms = 2229
-# Au_terms = 3143
-# Cs_terms = 3456
-# Cu_terms = 2910
-# In_terms = 231
-# K_terms = 249
-# Li_terms = 249
-# Na_terms = 249
-# Pb_terms = 229
-# Rb_terms = 249
-# Sn_terms = 343
-# Zn_terms = 173
 
 eVtoRy = 0.07349864435130871395
 RytoeV = 13.6056931229942343775
@@ -564,15 +550,55 @@ m5fermilevel3 = 1.4883818861326563
 m5bandenergy3 = 5.65179242276863
 
 @doc """
-    epm₋model2D(energy_conv,sheets,real_latvecs,recip_latvecs,bz,ibz,pointgroup,
-        frac_trans,rules,cutoff,electrons,fermiarea,fermilevel,bandenergy)
+    epm₋model2D(energy_conv, sheets, atom_types, atom_pos, coordinates, convention,
+        real_latvecs, recip_latvecs, bz, ibz, pointgroup, frac_trans, dist_ff, rules,
+        cutoff, rlat_type, name, electrons, fermiarea, fermilevel, bandenergy)
 
-A container for all the information about the 2D empirical pseudopotential model(s).
+A container for information about the 2D empirical pseudopotential models (EPM).
+
+# Arguments
+- `energy_conv::Real`: A energy conversion factor energy eigenvalues of EPM.
+- `sheets::Integer`: the number of sheets or eigenvalues included in computations.
+- `atom_types::Vector{<:Integer}`: a list of atom types as integers in the same 
+    order as `atom_pos`.
+- `atom_pos::Matrix{<:Real}`: the positions of atoms as columns of a matrix.
+- `coordinates::String`: the coordinates in which the atoms are specified in 
+    `atom_pos`. Options include "Cartesian" and "lattice".
+- `convention::String`: the convention for going between real and reciprocal space.
+    Options include "ordinary" and "angular".
+- `real_latvecs::Matrix{<:Real}`: the real lattice vectors in Cartesian coordinates
+    as columns of a matrix.
+- `recip_latvecs::Matrix{<:Real}`: the reciprocal lattice vectors in Cartesian
+    coorinates as columns of a matrix.
+- `bz::Chull{<:Real}`: the Brillouin zone of the EPM as a convex hull object from
+    the Julia package QHull. This can be calculated with the Julia package 
+    `SymmetryReduceBZ`.
+- `ibz::Chull{<:Real}`: the irreducible Brillouin zone of the EPM.
+- `pointgroup::Vector{Matrix{Float64}}`: the point group of the real-space crystal.
+- `frac_trans::Vector{Vector{Float64}}`: the fractional translations from the space
+    group of the crystal.
+- `dist_ff::Vector{Vector{Float64}}`: the distances and form factors for the EPM.
+    The list array of the nested array contains the distances and the second array
+    contains the corresponding pseudopotential form factors.
+- `rules::Vector{Pair{Float64, Float64}}`: another format for the distances and 
+    form factors for the EPM.
+- `cutoff::Real`: the cutoff distance for the Fourier expansion for the EPM. The
+   number of terms kept in the Fourier expansion is the same as the number of 
+   lattice points for the reciprocal lattice of the EPM that fit within a circle
+    of radius `cutoff`.
+- `rlat_type::String`: the lattice of type of the reciprocal lattice.
+
+- `name::String`: the name of the EPM.
+- `electrons::Real`: the number of electrons for the EPM.
+- `fermiarea::Real`: the Fermi area of the EPM or the area of the shadows of the 
+    occupied sheets.
+- `fermilevel::Real`: the true Fermi level for the EPM.
+- `bandenergy::Real`: the true band energy for the EPM.
 """
 mutable struct epm₋model2D
     energy_conv::Real
-    sheets::Int 
-    atom_types::Vector{<:Int}
+    sheets::Integer 
+    atom_types::Vector{<:Integer}
     atom_pos::Matrix{<:Real}
     coordinates::String
     convention::String
@@ -640,13 +666,13 @@ free2D(x::Real,y::Real,s::Integer)::AbstractVector{<:Real} =
             x^2 + (y+1)^2,
             (x+1)^2 + y^2])[1:s]
 
-"""
+@doc """
     free_fl2D(m)
 The exact Fermi level for a 2D free electron model with `m` electrons.
 """
 free_fl2D(m::Integer)::Real = m/(2π)
 
-"""
+@doc """
     free_be2D(m)
 The exact band energy for a 2D free electron model with `m` electrons.
 """
@@ -672,7 +698,7 @@ free2Dfermilevel = free_fl2D(free2Delectrons)
 free2Dbandenergy = free_be2D(free2Delectrons)
 
 # Free electron 2D model
-mf2D = epm₋model2D(energy_conv, sheets, atom_types, atom_pos, coordinates, convention,
+mf = epm₋model2D(energy_conv, sheets, atom_types, atom_pos, coordinates, convention,
     free2Dreal_latvecs, free2Drecip_latvecs, free2Dbz, free2Dibz, free2Dpointgroup,
     free2Dfrac_trans, free2Ddist_ff, free2Drules, free2Dcutoff, "square",
     "free electron model", free2Delectrons, free2Dfermiarea, free2Dfermilevel,
@@ -682,6 +708,52 @@ mf2D = epm₋model2D(energy_conv, sheets, atom_types, atom_pos, coordinates, con
     epm₋model()
 
 A container for all the information about the empirical pseudopotential models.
+
+- `energy_conv::Real`: A energy conversion factor energy eigenvalues of EPM.
+- `sym_offset::Vector{<:Real}`: a symmetry preserving offset for a regular *k*-point
+    grid.
+- `atom_types::Vector{<:Integer}`: a list of atom types as integers in the same 
+    order as `atom_pos`.
+- `atom_pos::Matrix{<:Real}`: the positions of atoms as columns of a matrix.
+- `coordinates::String`: the coordinates in which the atoms are specified in 
+    `atom_pos`. Options include "Cartesian" and "lattice".
+- `convention::String`: the convention for going between real and reciprocal space.
+    Options include "ordinary" and "angular".
+- `sheets::Integer`: the number of sheets or eigenvalues included in computations.
+- `name::String`: the name of the EPM.
+- `lat_type::String`: the lattice type for the real-space lattice.
+- `lat_constants::Vector{<:Real}`: the lattice constants for the real-space lattice
+    and the conventional unit cell.
+- `lat_angles::Vector{<:Real}`: the lattice angles for the real-space lattice and 
+    conventional unit cell.
+- `real_latvecs::Matrix{<:Real}`: the real lattice vectors in Cartesian coordinates
+    as columns of a matrix.
+- `rlat_type::String`: the lattice of type of the reciprocal lattice.
+- `recip_latvecs::Matrix{<:Real}`: the reciprocal lattice vectors in Cartesian
+    coorinates as columns of a matrix.
+- `pointgroup::Vector{Matrix{Float64}}`: the point group of the real-space crystal.
+- `frac_trans::Vector{Vector{Float64}}`: the fractional translations from the space
+    group of the crystal.
+- `bz::Chull{<:Real}`: the Brillouin zone of the EPM as a convex hull object from
+    the Julia package QHull. This can be calculated with the Julia package 
+    `SymmetryReduceBZ`.
+- `ibz::Chull{<:Real}`: the irreducible Brillouin zone of the EPM.
+- `dist_ff::Vector{Vector{Float64}}`: the distances and form factors for the EPM.
+    The list array of the nested array contains the distances and the second array
+    contains the corresponding pseudopotential form factors.
+- `rules::Vector{Pair{Float64, Float64}}`: another format for the distances and 
+    form factors for the EPM.
+- `electrons::Real`: the number of electrons for the EPM.
+- `cutoff::Real`: the cutoff distance for the Fourier expansion for the EPM. The
+    number of terms kept in the Fourier expansion is the same as the number of 
+    lattice points for the reciprocal lattice of the EPM that fit within a circle
+    of radius `cutoff`.
+- `fermiarea::Real`: the Fermi area of the EPM or the area of the shadows of the 
+    occupied sheets.
+- `fermilevel::Real`: the true Fermi level for the EPM.
+- `fl_error::Real`: the estimated error in the true Fermi level.
+- `bandenergy::Real`: the true band energy for the EPM.
+- `be_error::Real`: the estimated error in the true band energy.
 """
 mutable struct epm₋model
     energy_conv::Real 
@@ -810,7 +882,7 @@ free_fermiarea = free_electrons/2
 free_fermilevel = free_fl(free_electrons)
 free_bandenergy = free_be(free_electrons)
 
-mf = epm₋model(energy_conv, freesym_offset, atom_types, atom_pos, coordinates,
+free_epm = epm₋model(energy_conv, freesym_offset, atom_types, atom_pos, coordinates,
     convention, sheets, "free electron model", free_lat_type, free_lat_constants,
     free_lat_angles, free_real_latvecs, free_rlat_type, free_recip_latvecs,
     free_pointgroup, free_frac_trans, free_bz, free_ibz, free_dist_ff, free_rules,
@@ -821,15 +893,15 @@ mf = epm₋model(energy_conv, freesym_offset, atom_types, atom_pos, coordinates,
     eval_epm(kpoint,rbasis,rules,cutoff,sheets,energy_conversion_factor;rtol,
         atol,func)
 
-Evaluate an empirical pseudopotential at a k-point.
+Evaluate an empirical pseudopotential model (EPM) at a k-point.
 
 # Arguments
 - `kpoint::AbstractVector{<:Real}:` a point at which the EPM is evaluated.
-- `rbasis::AbstractMatrix{<:Real}`: the reciprocal lattice basis as columns of
-    a 3x3 real array.
-- `rules`: a dictionary whose keys are distances between
-    reciprocal lattice points rounded to two decimals places and whose values
-    are the empirical pseudopotential form factors.
+- `rbasis::AbstractMatrix{<:Real}`: the reciprocal lattice vectors in columns of
+    a matrix.
+- `rules`: a vector of pairs where the first elements of the pairs are distances
+    between reciprocal lattice points rounded to two decimals places and second
+    elements are the empirical pseudopotential form factors.
 - `cutoff::Real`: the Fourier expansion cutoff.
 - `sheets::Int`: the number of eigenenergies returned.
 - `energy_conversion_factor::Real=RytoeV`: converts the energy eigenvalue units
@@ -848,23 +920,23 @@ Evaluate an empirical pseudopotential at a k-point.
 import Pebsi.EPMs: eval_epm
 kpoint = [0,0,0]
 rlatvecs = [1 0 0; 0 1 0; 0 0 1]
-rules = Dict(1.00 => .01, 2.00 => 0.015)
+rules = [1.00 => .01, 2.00 => 0.015]
 cutoff = 3.0
-sheets = 1:10
+sheets = 10
 eval_epm(kpoint, rlatvecs, rules, cutoff, sheets)
 # output
-10-element Array{Float64,1}:
- -0.012572222255690903
- 13.392395133818168
- 13.392395133818248
- 13.392395133818322
- 13.803213112862565
- 13.803213112862627
- 13.803213665491697
- 26.79812229071137
- 26.7981222907114
- 26.798122290711415
-```
+ 10-element Vector{Float64}:
+ -0.025091555116792823
+ 13.191390044925443
+ 13.191390044925663
+ 13.591143909078465
+ 13.591143909078552
+ 13.591143909078642
+ 14.396491921113055
+ 26.800000569752516
+ 26.80000056975255
+ 26.800303409287515
+ ```
 """
 function eval_epm(kpoint::AbstractVector{<:Real},
     rbasis::AbstractMatrix{<:Real}, rules, cutoff::Real,
@@ -910,7 +982,6 @@ function eval_epm(kpoint::AbstractVector{<:Real},
         end
     end
     eigvals(Symmetric(ham))[1:sheets]*energy_conversion_factor
-    # eigs(SparseMatrixCSC(ham),ritzvec=false,nev=2*sheets,which=:SR)[1][1:sheets]*energy_conversion_factor: 
 end
 
 
@@ -920,14 +991,12 @@ end
 Evaluate an empirical pseudopotential at each point in an array.
 
 # Arguments
-- `kpoints::AbstractMatrix{<:Real}`: an array of k-points as columns of an
-    array.
+- `kpoints::AbstractMatrix{<:Real}`: an array of k-points as columns of a matrix.
 """
 function eval_epm(kpoints::AbstractMatrix{<:Real},
     rbasis::AbstractMatrix{<:Real}, rules, cutoff::Real,
-    sheets::Int,energy_conversion_factor::Real=RytoeV;
-    rtol::Real=sqrt(eps(float(maximum(rbasis)))),
-    atol::Real=def_atol,
+    sheets::Int, energy_conversion_factor::Real=RytoeV;
+    rtol::Real=sqrt(eps(float(maximum(rbasis)))), atol::Real=def_atol,
     func::Union{Nothing,Function}=nothing)::AbstractMatrix{<:Real}
 
     if !(func == nothing)
@@ -941,34 +1010,34 @@ end
 @doc """
     eval_epm(kpoint,epm;rtol,atol,func,sheets)
 
-Evaluate an empirical pseudopotential at a k-point.
+Calculate the eigenvalues of an empirical pseudopotential at a *k*-point.
 
 # Arguments
-- `kpoint::AbstractVector{<:Real}`: a k-point at which the EPM is evaluated.
+- `kpoint::AbstractVector{<:Real}`: a *k*-point in Cartesian coordinates at 
+    which to evaluate the EPM.
 - `epm::Union{epm₋model2D,epm₋model}`: an empirical pseudopotential.
-- `rtol::Real=sqrt(eps(float(maximum(epm.recip_latvecs))))`: a relative tolerance.
-- `atol::Real=def_atol`: an absolute tolerances
-- `sheets::Integer=-1`: the number of sheets for the k-point independent EPM.
+- `rtol::Real=sqrt(eps(float(maximum(epm.recip_latvecs))))`: a relative tolerance
+    for finite-precision comparisons. In this case, the tolerance identifies points
+    that are close to being within a sphere or circle in the Fourier expansion.
+- `atol::Real=def_atol`: an absolute tolerance for finite-precision comparisons.
+- `sheets::Integer=-1`: the number of sheets for the k-point independent EPM. If
+    not provided, the number of sheets specified by the EPM container is used.
 
 # Returns
-- `::AbstractVector{<:Real}`: the eigenenergies at the k-point for the EPM.
+- `::AbstractVector{<:Real}`: the eigenvalues at the specified *k*-point for the EPM.
 
 # Examples
 ```jldoctest
 import Pebsi.EPMs: eval_epm,Al_epm
 eval_epm([0,0,0],Al_epm)
-# output 
-10-element Vector{Float64}:
+# output
+6-element Vector{Float64}:
  -0.05904720925479707
  26.68476356943067
  26.684763569434374
  26.68476356943802
  26.713073023266258
  28.17466342570331
- 28.24043839738628
- 28.24043839738743
- 28.240438397392488
- 36.545883436839766
 ```
 """
 function eval_epm(kpoint::AbstractVector{<:Real},
@@ -1016,42 +1085,32 @@ function eval_epm(kpoint::AbstractVector{<:Real},
         end
     end
     eigvals(Symmetric(ham))[1:sheets]*epm.energy_conv
-    # eigs(SparseMatrixCSC(ham),ritzvec=false,nev=2*sheets,which=:SR)[1][1:sheets]*epm.energy_conv 
 end
 
 @doc """
     eval_epm(kpoints,epm,rtol,atol,func,sheets)
 
-Evaluate an EPM an many k-points.
+Evaluate an EPM an many *k*-points.
 
 # Arguments
-- `kpoints::AbstractMatrix{<:Real}`: a matrix whose columns are k-point points.
+- `kpoints::AbstractMatrix{<:Real}`: a matrix whose columns are *k*-point points.
 - `epm::Union{epm₋model2D,epm₋model}`: an EPM model.
 - `rtol::Real=sqrt(eps(float(maximum(epm.recip_latvecs))))`: a relative tolerance.
 - `atol::Real=def_atol`: an absolute tolerance.
-- `func::Union{Nothing,Function}=nothing`: a k-point independent EPM.
-- `sheets::Integer=10`: the number of sheets for the k-point independent EPM.
+- `sheets::Integer=-1`: the number of sheets for the *k*-point independent EPM.
+    If not provided, the number of sheets specified by the EPM container is used.
 
 # Returns
-- `::AbstractMatrix{<:Real}`: a matrix whose columns are eigenvalues at the 
-    k-point in the same column.
+- `::AbstractMatrix{<:Real}`: a matrix whose columns are eigenvalues of the EPM 
+    at the *k*-point in the same column in `kpoints`.
 
 # Examples
 ```jldoctest
 import Pebsi.EPMs: eval_epm, Al_epm
-eval_epm([0 0; 0 1; 0 0],Al_epm)
+eigvals = eval_epm([0 0; 0 1; 0 0],Al_epm)
+size(eigvals)
 # output
-10×2 Matrix{Float64}:
- -0.0590472   5.54208
- 26.6848     13.5071
- 26.6848     18.7083
- 26.6848     18.7083
- 26.7131     18.7174
- 28.1747     18.7612
- 28.2404     41.9315
- 28.2404     41.9643
- 28.2404     42.2674
- 36.5459     42.2674
+(6, 2)
 ```
 """
 function eval_epm(kpoints::AbstractMatrix{<:Real},
@@ -1062,129 +1121,4 @@ function eval_epm(kpoints::AbstractMatrix{<:Real},
     mapslices(x->eval_epm(x,epm,rtol=rtol,atol=atol,sheets=sheets),
     kpoints,dims=1)
 end
-
-@doc """
-    eval_epm(kpoint,func)
-
-Evaluate a *k*-point independent EPM `func` at a provided *k*-point.
-"""
-function eval_epm(func::Function,kpoint::AbstractVector{<:Real},s::Integer)
-    func(kpoint...,s)
-end
-
-@doc """
-    eval_epm(kpoints,func)
-
-Evaluate a *k*-point independent EPM `func` at *k*-points that are columns of a matrix.
-"""
-function eval_epm(func::Function,kpoints::AbstractMatrix{<:Real},s::Integer)
-    mapslices(x->eval_epm(func,x,s),kpoints,dims=1)
-end
-
-#=
-k-point independent models have at least 15 terms in the Fourier expansion and 
-no more 23 (Zn). Because the number of terms is so small, some pseudopotential 
-form factors of a model may not appear in the Hamiltonian of the model.
-=#
-
-@doc """
-    Ag(x,y,z,s)
-
-A k-point independent EPM for Ag.
-"""
-Ag(x::Real,y::Real,z::Real,s::Integer)::AbstractVector{<:Real} = eigvals([(-0.813873564743926 + x)*(-0.813873564743926 + x) + (-0.813873564743926 + y)*(-0.813873564743926 + y) + (-0.813873564743926 + z)*(-0.813873564743926 + z) 0.195000000000000 0.195000000000000 0 0.195000000000000 0 0 0.195000000000000 0 0 0 0 0 0 0.121000000000000; 0.195000000000000 (-1.62774712948785 + x)*(-1.62774712948785 + x) + y*y + z*z 0 0.195000000000000 0 0.195000000000000 0 0 0.195000000000000 0 0 0 0 0 0; 0.195000000000000 0 (-1.62774712948785 + y)*(-1.62774712948785 + y) + x*x + z*z 0.195000000000000 0 0 0.195000000000000 0 0 0.195000000000000 0 0 0 0 0; 0 0.195000000000000 0.195000000000000 (-0.813873564743926 + x)*(-0.813873564743926 + x) + (-0.813873564743926 + y)*(-0.813873564743926 + y) + (0.813873564743926 + z)*(0.813873564743926 + z) 0 0 0 0.195000000000000 0 0 0.195000000000000 0.121000000000000 0 0 0; 0.195000000000000 0 0 0 (-1.62774712948785 + z)*(-1.62774712948785 + z) + x*x + y*y 0.195000000000000 0.195000000000000 0 0 0 0 0.195000000000000 0 0 0; 0 0.195000000000000 0 0 0.195000000000000 (-0.813873564743926 + x)*(-0.813873564743926 + x) + (-0.813873564743926 + z)*(-0.813873564743926 + z) + (0.813873564743926 + y)*(0.813873564743926 + y) 0 0.195000000000000 0 0.121000000000000 0 0 0.195000000000000 0 0; 0 0 0.195000000000000 0 0.195000000000000 0 (-0.813873564743926 + y)*(-0.813873564743926 + y) + (-0.813873564743926 + z)*(-0.813873564743926 + z) + (0.813873564743926 + x)*(0.813873564743926 + x) 0.195000000000000 0.121000000000000 0 0 0 0 0.195000000000000 0; 0.195000000000000 0 0 0.195000000000000 0 0.195000000000000 0.195000000000000 x*x + y*y + z*z 0.195000000000000 0.195000000000000 0 0.195000000000000 0 0 0.195000000000000; 0 0.195000000000000 0 0 0 0 0.121000000000000 0.195000000000000 (-0.813873564743926 + x)*(-0.813873564743926 + x) + (0.813873564743926 + y)*(0.813873564743926 + y) + (0.813873564743926 + z)*(0.813873564743926 + z) 0 0.195000000000000 0 0.195000000000000 0 0; 0 0 0.195000000000000 0 0 0.121000000000000 0 0.195000000000000 0 (-0.813873564743926 + y)*(-0.813873564743926 + y) + (0.813873564743926 + x)*(0.813873564743926 + x) + (0.813873564743926 + z)*(0.813873564743926 + z) 0.195000000000000 0 0 0.195000000000000 0; 0 0 0 0.195000000000000 0 0 0 0 0.195000000000000 0.195000000000000 (1.62774712948785 + z)*(1.62774712948785 + z) + x*x + y*y 0 0 0 0.195000000000000; 0 0 0 0.121000000000000 0.195000000000000 0 0 0.195000000000000 0 0 0 (-0.813873564743926 + z)*(-0.813873564743926 + z) + (0.813873564743926 + x)*(0.813873564743926 + x) + (0.813873564743926 + y)*(0.813873564743926 + y) 0.195000000000000 0.195000000000000 0; 0 0 0 0 0 0.195000000000000 0 0 0.195000000000000 0 0 0.195000000000000 (1.62774712948785 + y)*(1.62774712948785 + y) + x*x + z*z 0 0.195000000000000; 0 0 0 0 0 0 0.195000000000000 0 0 0.195000000000000 0 0.195000000000000 0 (1.62774712948785 + x)*(1.62774712948785 + x) + y*y + z*z 0.195000000000000; 0.121000000000000 0 0 0 0 0 0 0.195000000000000 0 0 0.195000000000000 0 0.195000000000000 0.195000000000000 (0.813873564743926 + x)*(0.813873564743926 + x) + (0.813873564743926 + y)*(0.813873564743926 + y) + (0.813873564743926 + z)*(0.813873564743926 + z)])[1:s]
-
-@doc """
-    Al(x,y,z,s)
-
-A k-point independent EPM for Al.
-"""
-Al(x::Real,y::Real,z::Real,s::Integer)::AbstractVector{<:Real} = eigvals([(-0.82107382091626 + x)*(-0.82107382091626 + x) + (-0.82107382091626 + y)*(-0.82107382091626 + y) + (-0.82107382091626 + z)*(-0.82107382091626 + z) 0.0179000000000000 0.0179000000000000 0 0.0179000000000000 0 0 0.0179000000000000 0 0 0 0 0 0 0.0562000000000000; 0.0179000000000000 (-1.64214764183252 + x)*(-1.64214764183252 + x) + (-2.22044604925031e-16 + y)*(-2.22044604925031e-16 + y) + (1.11022302462516e-16 + z)*(1.11022302462516e-16 + z) 0 0.0179000000000000 0 0.0179000000000000 0 0 0.0179000000000000 0 0 0 0 0 0; 0.0179000000000000 0 (-1.64214764183252 + y)*(-1.64214764183252 + y) + (-2.22044604925031e-16 + x)*(-2.22044604925031e-16 + x) + (1.11022302462516e-16 + z)*(1.11022302462516e-16 + z) 0.0179000000000000 0 0 0.0179000000000000 0 0 0.0179000000000000 0 0 0 0 0; 0 0.0179000000000000 0.0179000000000000 (-0.82107382091626 + x)*(-0.82107382091626 + x) + (-0.82107382091626 + y)*(-0.82107382091626 + y) + (0.82107382091626 + z)*(0.82107382091626 + z) 0 0 0 0.0179000000000000 0 0 0.0179000000000000 0.0562000000000000 0 0 0; 0.0179000000000000 0 0 0 (-1.64214764183252 + z)*(-1.64214764183252 + z) + (-3.33066907387547e-16 + x)*(-3.33066907387547e-16 + x) + (-3.33066907387547e-16 + y)*(-3.33066907387547e-16 + y) 0.0179000000000000 0.0179000000000000 0 0 0 0 0.0179000000000000 0 0 0; 0 0.0179000000000000 0 0 0.0179000000000000 (-0.82107382091626 + x)*(-0.82107382091626 + x) + (-0.82107382091626 + z)*(-0.82107382091626 + z) + (0.821073820916259 + y)*(0.821073820916259 + y) 0 0.0179000000000000 0 0.0562000000000000 0 0 0.0179000000000000 0 0; 0 0 0.0179000000000000 0 0.0179000000000000 0 (-0.82107382091626 + y)*(-0.82107382091626 + y) + (-0.82107382091626 + z)*(-0.82107382091626 + z) + (0.821073820916259 + x)*(0.821073820916259 + x) 0.0179000000000000 0.0562000000000000 0 0 0 0 0.0179000000000000 0; 0.0179000000000000 0 0 0.0179000000000000 0 0.0179000000000000 0.0179000000000000 x*x + y*y + z*z 0.0179000000000000 0.0179000000000000 0 0.0179000000000000 0 0 0.0179000000000000; 0 0.0179000000000000 0 0 0 0 0.0562000000000000 0.0179000000000000 (-0.821073820916259 + x)*(-0.821073820916259 + x) + (0.82107382091626 + z)*(0.82107382091626 + z) + (0.82107382091626 + y)*(0.82107382091626 + y) 0 0.0179000000000000 0 0.0179000000000000 0 0; 0 0 0.0179000000000000 0 0 0.0562000000000000 0 0.0179000000000000 0 (-0.821073820916259 + y)*(-0.821073820916259 + y) + (0.82107382091626 + z)*(0.82107382091626 + z) + (0.82107382091626 + x)*(0.82107382091626 + x) 0.0179000000000000 0 0 0.0179000000000000 0; 0 0 0 0.0179000000000000 0 0 0 0 0.0179000000000000 0.0179000000000000 (3.33066907387547e-16 + x)*(3.33066907387547e-16 + x) + (3.33066907387547e-16 + y)*(3.33066907387547e-16 + y) + (1.64214764183252 + z)*(1.64214764183252 + z) 0 0 0 0.0179000000000000; 0 0 0 0.0562000000000000 0.0179000000000000 0 0 0.0179000000000000 0 0 0 (-0.82107382091626 + z)*(-0.82107382091626 + z) + (0.82107382091626 + x)*(0.82107382091626 + x) + (0.82107382091626 + y)*(0.82107382091626 + y) 0.0179000000000000 0.0179000000000000 0; 0 0 0 0 0 0.0179000000000000 0 0 0.0179000000000000 0 0 0.0179000000000000 (-1.11022302462516e-16 + z)*(-1.11022302462516e-16 + z) + (2.22044604925031e-16 + x)*(2.22044604925031e-16 + x) + (1.64214764183252 + y)*(1.64214764183252 + y) 0 0.0179000000000000; 0 0 0 0 0 0 0.0179000000000000 0 0 0.0179000000000000 0 0.0179000000000000 0 (-1.11022302462516e-16 + z)*(-1.11022302462516e-16 + z) + (2.22044604925031e-16 + y)*(2.22044604925031e-16 + y) + (1.64214764183252 + x)*(1.64214764183252 + x) 0.0179000000000000; 0.0562000000000000 0 0 0 0 0 0 0.0179000000000000 0 0 0.0179000000000000 0 0.0179000000000000 0.0179000000000000 (0.82107382091626 + z)*(0.82107382091626 + z) + (0.82107382091626 + x)*(0.82107382091626 + x) + (0.82107382091626 + y)*(0.82107382091626 + y)])[1:s]
-
-@doc """
-    Au(x,y,z,s)
-
-A k-point independent EPM for Au.
-"""
-Au(x::Real,y::Real,z::Real,s::Integer)::AbstractVector{<:Real} = eigvals([(-0.815288684804078 + x)*(-0.815288684804078 + x) + (-0.815288684804078 + y)*(-0.815288684804078 + y) + (-0.815288684804078 + z)*(-0.815288684804078 + z) 0.252000000000000 0.252000000000000 0 0.252000000000000 0 0 0.252000000000000 0 0 0 0 0 0 0.152000000000000; 0.252000000000000 (-1.63057736960816 + x)*(-1.63057736960816 + x) + y*y + z*z 0 0.252000000000000 0 0.252000000000000 0 0 0.252000000000000 0 0 0 0 0 0; 0.252000000000000 0 (-1.63057736960816 + y)*(-1.63057736960816 + y) + x*x + z*z 0.252000000000000 0 0 0.252000000000000 0 0 0.252000000000000 0 0 0 0 0; 0 0.252000000000000 0.252000000000000 (-0.815288684804078 + x)*(-0.815288684804078 + x) + (-0.815288684804078 + y)*(-0.815288684804078 + y) + (0.815288684804078 + z)*(0.815288684804078 + z) 0 0 0 0.252000000000000 0 0 0.252000000000000 0.152000000000000 0 0 0; 0.252000000000000 0 0 0 (-1.63057736960816 + z)*(-1.63057736960816 + z) + x*x + y*y 0.252000000000000 0.252000000000000 0 0 0 0 0.252000000000000 0 0 0; 0 0.252000000000000 0 0 0.252000000000000 (-0.815288684804078 + x)*(-0.815288684804078 + x) + (-0.815288684804078 + z)*(-0.815288684804078 + z) + (0.815288684804078 + y)*(0.815288684804078 + y) 0 0.252000000000000 0 0.152000000000000 0 0 0.252000000000000 0 0; 0 0 0.252000000000000 0 0.252000000000000 0 (-0.815288684804078 + y)*(-0.815288684804078 + y) + (-0.815288684804078 + z)*(-0.815288684804078 + z) + (0.815288684804078 + x)*(0.815288684804078 + x) 0.252000000000000 0.152000000000000 0 0 0 0 0.252000000000000 0; 0.252000000000000 0 0 0.252000000000000 0 0.252000000000000 0.252000000000000 x*x + y*y + z*z 0.252000000000000 0.252000000000000 0 0.252000000000000 0 0 0.252000000000000; 0 0.252000000000000 0 0 0 0 0.152000000000000 0.252000000000000 (-0.815288684804078 + x)*(-0.815288684804078 + x) + (0.815288684804078 + y)*(0.815288684804078 + y) + (0.815288684804078 + z)*(0.815288684804078 + z) 0 0.252000000000000 0 0.252000000000000 0 0; 0 0 0.252000000000000 0 0 0.152000000000000 0 0.252000000000000 0 (-0.815288684804078 + y)*(-0.815288684804078 + y) + (0.815288684804078 + x)*(0.815288684804078 + x) + (0.815288684804078 + z)*(0.815288684804078 + z) 0.252000000000000 0 0 0.252000000000000 0; 0 0 0 0.252000000000000 0 0 0 0 0.252000000000000 0.252000000000000 (1.63057736960816 + z)*(1.63057736960816 + z) + x*x + y*y 0 0 0 0.252000000000000; 0 0 0 0.152000000000000 0.252000000000000 0 0 0.252000000000000 0 0 0 (-0.815288684804078 + z)*(-0.815288684804078 + z) + (0.815288684804078 + x)*(0.815288684804078 + x) + (0.815288684804078 + y)*(0.815288684804078 + y) 0.252000000000000 0.252000000000000 0; 0 0 0 0 0 0.252000000000000 0 0 0.252000000000000 0 0 0.252000000000000 (1.63057736960816 + y)*(1.63057736960816 + y) + x*x + z*z 0 0.252000000000000; 0 0 0 0 0 0 0.252000000000000 0 0 0.252000000000000 0 0.252000000000000 0 (1.63057736960816 + x)*(1.63057736960816 + x) + y*y + z*z 0.252000000000000; 0.152000000000000 0 0 0 0 0 0 0.252000000000000 0 0 0.252000000000000 0 0.252000000000000 0.252000000000000 (0.815288684804078 + x)*(0.815288684804078 + x) + (0.815288684804078 + y)*(0.815288684804078 + y) + (0.815288684804078 + z)*(0.815288684804078 + z)])[1:s]
-
-@doc """
-    Cs(x,y,z,s)
-
-A k-point independent EPM for Cs.
-"""
-Cs(x::Real,y::Real,z::Real,s::Integer)::AbstractVector{<:Real} = eigvals([(-1.08285973169371 + x)*(-1.08285973169371 + x) + y*y + z*z 0 0 0 -0.0300000000000000 0 0 0 -0.0300000000000000 0 -0.0300000000000000 0 0 0 -0.0300000000000000 0 0 0 0; 0 (-0.541429865846855 + x)*(-0.541429865846855 + x) + (-0.541429865846855 + y)*(-0.541429865846855 + y) + z*z 0 0 0 -0.0300000000000000 0 0 0 0 -0.0300000000000000 0 -0.0300000000000000 -0.0300000000000000 -0.0300000000000000 0 -0.0300000000000000 0 0; 0 0 (-0.541429865846855 + x)*(-0.541429865846855 + x) + (0.541429865846855 + z)*(0.541429865846855 + z) + y*y -0.0300000000000000 0 0 0 0 -0.0300000000000000 0 0 -0.0300000000000000 0 0 -0.0300000000000000 -0.0300000000000000 0 -0.0300000000000000 0; 0 0 -0.0300000000000000 (-1.08285973169371 + y)*(-1.08285973169371 + y) + x*x + z*z 0 0 -0.0300000000000000 0 0 0 0 0 -0.0300000000000000 0 0 0 -0.0300000000000000 0 0; -0.0300000000000000 0 0 0 (-0.541429865846855 + y)*(-0.541429865846855 + y) + (0.541429865846855 + z)*(0.541429865846855 + z) + x*x 0 -0.0300000000000000 -0.0300000000000000 0 0 0 0 0 0 0 0 -0.0300000000000000 -0.0300000000000000 -0.0300000000000000; 0 -0.0300000000000000 0 0 0 (1.08285973169371 + z)*(1.08285973169371 + z) + x*x + y*y 0 -0.0300000000000000 0 0 0 -0.0300000000000000 0 0 0 0 0 -0.0300000000000000 0; 0 0 0 -0.0300000000000000 -0.0300000000000000 0 (-0.541429865846855 + x)*(-0.541429865846855 + x) + (-0.541429865846855 + z)*(-0.541429865846855 + z) + y*y 0 0 0 -0.0300000000000000 -0.0300000000000000 0 0 0 -0.0300000000000000 0 -0.0300000000000000 0; 0 0 0 0 -0.0300000000000000 -0.0300000000000000 0 (-0.541429865846855 + x)*(-0.541429865846855 + x) + (0.541429865846855 + y)*(0.541429865846855 + y) + z*z -0.0300000000000000 0 0 0 -0.0300000000000000 -0.0300000000000000 0 0 -0.0300000000000000 0 0; -0.0300000000000000 0 -0.0300000000000000 0 0 0 0 -0.0300000000000000 (-0.541429865846855 + y)*(-0.541429865846855 + y) + (-0.541429865846855 + z)*(-0.541429865846855 + z) + x*x 0 0 0 -0.0300000000000000 0 0 0 0 -0.0300000000000000 -0.0300000000000000; 0 0 0 0 0 0 0 0 0 x*x + y*y + z*z 0 0 0 0 0 0 0 0 0; -0.0300000000000000 -0.0300000000000000 0 0 0 0 -0.0300000000000000 0 0 0 (0.541429865846855 + y)*(0.541429865846855 + y) + (0.541429865846855 + z)*(0.541429865846855 + z) + x*x -0.0300000000000000 0 0 0 0 -0.0300000000000000 0 -0.0300000000000000; 0 0 -0.0300000000000000 0 0 -0.0300000000000000 -0.0300000000000000 0 0 0 -0.0300000000000000 (-0.541429865846855 + y)*(-0.541429865846855 + y) + (0.541429865846855 + x)*(0.541429865846855 + x) + z*z 0 -0.0300000000000000 -0.0300000000000000 0 0 0 0; 0 -0.0300000000000000 0 -0.0300000000000000 0 0 0 -0.0300000000000000 -0.0300000000000000 0 0 0 (0.541429865846855 + x)*(0.541429865846855 + x) + (0.541429865846855 + z)*(0.541429865846855 + z) + y*y 0 -0.0300000000000000 -0.0300000000000000 0 0 0; 0 -0.0300000000000000 0 0 0 0 0 -0.0300000000000000 0 0 0 -0.0300000000000000 0 (-1.08285973169371 + z)*(-1.08285973169371 + z) + x*x + y*y 0 0 0 -0.0300000000000000 0; -0.0300000000000000 -0.0300000000000000 -0.0300000000000000 0 0 0 0 0 0 0 0 -0.0300000000000000 -0.0300000000000000 0 (-0.541429865846855 + z)*(-0.541429865846855 + z) + (0.541429865846855 + y)*(0.541429865846855 + y) + x*x 0 0 0 -0.0300000000000000; 0 0 -0.0300000000000000 0 0 0 -0.0300000000000000 0 0 0 0 0 -0.0300000000000000 0 0 (1.08285973169371 + y)*(1.08285973169371 + y) + x*x + z*z -0.0300000000000000 0 0; 0 -0.0300000000000000 0 -0.0300000000000000 -0.0300000000000000 0 0 -0.0300000000000000 0 0 -0.0300000000000000 0 0 0 0 -0.0300000000000000 (-0.541429865846855 + z)*(-0.541429865846855 + z) + (0.541429865846855 + x)*(0.541429865846855 + x) + y*y 0 0; 0 0 -0.0300000000000000 0 -0.0300000000000000 -0.0300000000000000 -0.0300000000000000 0 -0.0300000000000000 0 0 0 0 -0.0300000000000000 0 0 0 (0.541429865846855 + x)*(0.541429865846855 + x) + (0.541429865846855 + y)*(0.541429865846855 + y) + z*z 0; 0 0 0 0 -0.0300000000000000 0 0 0 -0.0300000000000000 0 -0.0300000000000000 0 0 0 -0.0300000000000000 0 0 0 (1.08285973169371 + x)*(1.08285973169371 + x) + y*y + z*z])[1:s]
-
-@doc """
-    Cu(x,y,z,s)
-
-A k-point independent EPM for Cu.
-"""
-Cu(x::Real,y::Real,z::Real,s::Integer)::AbstractVector{<:Real} = eigvals([(-1.83955536572772 + x)*(-1.83955536572772 + x) + y*y + z*z 0 0 0.282000000000000 0 0.282000000000000 0 0 0 0 0 0 0 0.282000000000000 0 0.282000000000000 0 0 0; 0 (-0.919777682863858 + x)*(-0.919777682863858 + x) + (-0.919777682863858 + y)*(-0.919777682863858 + y) + z*z 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0.282000000000000 0; 0 0 (-0.919777682863858 + x)*(-0.919777682863858 + x) + (0.919777682863858 + z)*(0.919777682863858 + z) + y*y 0 0 0 0 0 0 0 0 0 0 0 0 0 0.282000000000000 0 0; 0.282000000000000 0 0 (-1.83955536572772 + y)*(-1.83955536572772 + y) + x*x + z*z 0 0.282000000000000 0 0 0 0 0 0 0 0.282000000000000 0 0 0 0 0.282000000000000; 0 0 0 0 (-0.919777682863858 + y)*(-0.919777682863858 + y) + (0.919777682863858 + z)*(0.919777682863858 + z) + x*x 0 0 0 0 0 0 0 0 0 0.282000000000000 0 0 0 0; 0.282000000000000 0 0 0.282000000000000 0 (1.83955536572772 + z)*(1.83955536572772 + z) + x*x + y*y 0 0 0 0 0 0 0 0 0 0.282000000000000 0 0 0.282000000000000; 0 0 0 0 0 0 (-0.919777682863858 + x)*(-0.919777682863858 + x) + (-0.919777682863858 + z)*(-0.919777682863858 + z) + y*y 0 0 0 0 0 0.282000000000000 0 0 0 0 0 0; 0 0 0 0 0 0 0 (-0.919777682863858 + x)*(-0.919777682863858 + x) + (0.919777682863858 + y)*(0.919777682863858 + y) + z*z 0 0 0 0.282000000000000 0 0 0 0 0 0 0; 0 0 0 0 0 0 0 0 (-0.919777682863858 + y)*(-0.919777682863858 + y) + (-0.919777682863858 + z)*(-0.919777682863858 + z) + x*x 0 0.282000000000000 0 0 0 0 0 0 0 0; 0 0 0 0 0 0 0 0 0 x*x + y*y + z*z 0 0 0 0 0 0 0 0 0; 0 0 0 0 0 0 0 0 0.282000000000000 0 (0.919777682863858 + y)*(0.919777682863858 + y) + (0.919777682863858 + z)*(0.919777682863858 + z) + x*x 0 0 0 0 0 0 0 0; 0 0 0 0 0 0 0 0.282000000000000 0 0 0 (-0.919777682863858 + y)*(-0.919777682863858 + y) + (0.919777682863858 + x)*(0.919777682863858 + x) + z*z 0 0 0 0 0 0 0; 0 0 0 0 0 0 0.282000000000000 0 0 0 0 0 (0.919777682863858 + x)*(0.919777682863858 + x) + (0.919777682863858 + z)*(0.919777682863858 + z) + y*y 0 0 0 0 0 0; 0.282000000000000 0 0 0.282000000000000 0 0 0 0 0 0 0 0 0 (-1.83955536572772 + z)*(-1.83955536572772 + z) + x*x + y*y 0 0.282000000000000 0 0 0.282000000000000; 0 0 0 0 0.282000000000000 0 0 0 0 0 0 0 0 0 (-0.919777682863858 + z)*(-0.919777682863858 + z) + (0.919777682863858 + y)*(0.919777682863858 + y) + x*x 0 0 0 0; 0.282000000000000 0 0 0 0 0.282000000000000 0 0 0 0 0 0 0 0.282000000000000 0 (1.83955536572772 + y)*(1.83955536572772 + y) + x*x + z*z 0 0 0.282000000000000; 0 0 0.282000000000000 0 0 0 0 0 0 0 0 0 0 0 0 0 (-0.919777682863858 + z)*(-0.919777682863858 + z) + (0.919777682863858 + x)*(0.919777682863858 + x) + y*y 0 0; 0 0.282000000000000 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 (0.919777682863858 + x)*(0.919777682863858 + x) + (0.919777682863858 + y)*(0.919777682863858 + y) + z*z 0; 0 0 0 0.282000000000000 0 0.282000000000000 0 0 0 0 0 0 0 0.282000000000000 0 0.282000000000000 0 0 (1.83955536572772 + x)*(1.83955536572772 + x) + y*y + z*z])[1:s]
-
-@doc """
-    In(x,y,z,s)
-
-A k-point independent EPM for In.
-"""
-In(x::Real,y::Real,z::Real,s::Integer)::AbstractVector{<:Real} = eigvals([(-1.02232107178321 + x)*(-1.02232107178321 + x) + (-1.02232107178321 + y)*(-1.02232107178321 + y) + z*z 0 0 0 0 0 0 0 0 0 0 0 0 0 0.0200000000000000; 0 (-1.02232107178321 + x)*(-1.02232107178321 + x) + (0.672228496082037 + z)*(0.672228496082037 + z) + y*y 0 0 0 0 0 0 0 0 0 0 0 0 0; 0 0 (-1.02232107178321 + y)*(-1.02232107178321 + y) + (0.672228496082037 + z)*(0.672228496082037 + z) + x*x 0 0 0 0 0 0 0 0 0 0 0 0; 0 0 0 (1.34445699216407 + z)*(1.34445699216407 + z) + x*x + y*y 0 0 0 0 0 0 0 0 0 0 0; 0 0 0 0 (-1.02232107178321 + x)*(-1.02232107178321 + x) + (-0.672228496082037 + z)*(-0.672228496082037 + z) + y*y 0 0 0 0 0 0 0 0 0 0; 0 0 0 0 0 (-1.02232107178321 + x)*(-1.02232107178321 + x) + (1.02232107178321 + y)*(1.02232107178321 + y) + z*z 0 0 0 0.0200000000000000 0 0 0 0 0; 0 0 0 0 0 0 (-1.02232107178321 + y)*(-1.02232107178321 + y) + (-0.672228496082037 + z)*(-0.672228496082037 + z) + x*x 0 0 0 0 0 0 0 0; 0 0 0 0 0 0 0 x*x + y*y + z*z 0 0 0 0 0 0 0; 0 0 0 0 0 0 0 0 (0.672228496082037 + z)*(0.672228496082037 + z) + (1.02232107178321 + y)*(1.02232107178321 + y) + x*x 0 0 0 0 0 0; 0 0 0 0 0 0.0200000000000000 0 0 0 (-1.02232107178321 + y)*(-1.02232107178321 + y) + (1.02232107178321 + x)*(1.02232107178321 + x) + z*z 0 0 0 0 0; 0 0 0 0 0 0 0 0 0 0 (0.672228496082037 + z)*(0.672228496082037 + z) + (1.02232107178321 + x)*(1.02232107178321 + x) + y*y 0 0 0 0; 0 0 0 0 0 0 0 0 0 0 0 (-1.34445699216407 + z)*(-1.34445699216407 + z) + x*x + y*y 0 0 0; 0 0 0 0 0 0 0 0 0 0 0 0 (-0.672228496082037 + z)*(-0.672228496082037 + z) + (1.02232107178321 + y)*(1.02232107178321 + y) + x*x 0 0; 0 0 0 0 0 0 0 0 0 0 0 0 0 (-0.672228496082037 + z)*(-0.672228496082037 + z) + (1.02232107178321 + x)*(1.02232107178321 + x) + y*y 0; 0.0200000000000000 0 0 0 0 0 0 0 0 0 0 0 0 0 (1.02232107178321 + x)*(1.02232107178321 + x) + (1.02232107178321 + y)*(1.02232107178321 + y) + z*z])[1:s]
-
-@doc """
-    K(x,y,z,s)
-
-A k-point independent EPM for K.
-"""
-K(x::Real,y::Real,z::Real,s::Integer)::AbstractVector{<:Real} = eigvals([(-1.24808766095835 + x)*(-1.24808766095835 + x) + y*y + z*z 0 0 -0.00900000000000000 0.00750000000000000 -0.00900000000000000 0 0 0.00750000000000000 0 0.00750000000000000 0 0 -0.00900000000000000 0.00750000000000000 -0.00900000000000000 0 0 0; 0 (-0.624043830479176 + x)*(-0.624043830479176 + x) + (-0.624043830479176 + y)*(-0.624043830479176 + y) + z*z 0 0 0 0.00750000000000000 0 0 0 0 0.00750000000000000 0 0.00750000000000000 0.00750000000000000 0.00750000000000000 0 0.00750000000000000 -0.00900000000000000 0; 0 0 (-0.624043830479176 + x)*(-0.624043830479176 + x) + (0.624043830479176 + z)*(0.624043830479176 + z) + y*y 0.00750000000000000 0 0 0 0 0.00750000000000000 0 0 0.00750000000000000 0 0 0.00750000000000000 0.00750000000000000 -0.00900000000000000 0.00750000000000000 0; -0.00900000000000000 0 0.00750000000000000 (-1.24808766095835 + y)*(-1.24808766095835 + y) + x*x + z*z 0 -0.00900000000000000 0.00750000000000000 0 0 0 0 0 0.00750000000000000 -0.00900000000000000 0 0 0.00750000000000000 0 -0.00900000000000000; 0.00750000000000000 0 0 0 (-0.624043830479176 + y)*(-0.624043830479176 + y) + (0.624043830479176 + z)*(0.624043830479176 + z) + x*x 0 0.00750000000000000 0.00750000000000000 0 0 0 0 0 0 -0.00900000000000000 0 0.00750000000000000 0.00750000000000000 0.00750000000000000; -0.00900000000000000 0.00750000000000000 0 -0.00900000000000000 0 (1.24808766095835 + z)*(1.24808766095835 + z) + x*x + y*y 0 0.00750000000000000 0 0 0 0.00750000000000000 0 0 0 -0.00900000000000000 0 0.00750000000000000 -0.00900000000000000; 0 0 0 0.00750000000000000 0.00750000000000000 0 (-0.624043830479176 + x)*(-0.624043830479176 + x) + (-0.624043830479176 + z)*(-0.624043830479176 + z) + y*y 0 0 0 0.00750000000000000 0.00750000000000000 -0.00900000000000000 0 0 0.00750000000000000 0 0.00750000000000000 0; 0 0 0 0 0.00750000000000000 0.00750000000000000 0 (-0.624043830479176 + x)*(-0.624043830479176 + x) + (0.624043830479176 + y)*(0.624043830479176 + y) + z*z 0.00750000000000000 0 0 -0.00900000000000000 0.00750000000000000 0.00750000000000000 0 0 0.00750000000000000 0 0; 0.00750000000000000 0 0.00750000000000000 0 0 0 0 0.00750000000000000 (-0.624043830479176 + y)*(-0.624043830479176 + y) + (-0.624043830479176 + z)*(-0.624043830479176 + z) + x*x 0 -0.00900000000000000 0 0.00750000000000000 0 0 0 0 0.00750000000000000 0.00750000000000000; 0 0 0 0 0 0 0 0 0 x*x + y*y + z*z 0 0 0 0 0 0 0 0 0; 0.00750000000000000 0.00750000000000000 0 0 0 0 0.00750000000000000 0 -0.00900000000000000 0 (0.624043830479176 + y)*(0.624043830479176 + y) + (0.624043830479176 + z)*(0.624043830479176 + z) + x*x 0.00750000000000000 0 0 0 0 0.00750000000000000 0 0.00750000000000000; 0 0 0.00750000000000000 0 0 0.00750000000000000 0.00750000000000000 -0.00900000000000000 0 0 0.00750000000000000 (-0.624043830479176 + y)*(-0.624043830479176 + y) + (0.624043830479176 + x)*(0.624043830479176 + x) + z*z 0 0.00750000000000000 0.00750000000000000 0 0 0 0; 0 0.00750000000000000 0 0.00750000000000000 0 0 -0.00900000000000000 0.00750000000000000 0.00750000000000000 0 0 0 (0.624043830479176 + x)*(0.624043830479176 + x) + (0.624043830479176 + z)*(0.624043830479176 + z) + y*y 0 0.00750000000000000 0.00750000000000000 0 0 0; -0.00900000000000000 0.00750000000000000 0 -0.00900000000000000 0 0 0 0.00750000000000000 0 0 0 0.00750000000000000 0 (-1.24808766095835 + z)*(-1.24808766095835 + z) + x*x + y*y 0 -0.00900000000000000 0 0.00750000000000000 -0.00900000000000000; 0.00750000000000000 0.00750000000000000 0.00750000000000000 0 -0.00900000000000000 0 0 0 0 0 0 0.00750000000000000 0.00750000000000000 0 (-0.624043830479176 + z)*(-0.624043830479176 + z) + (0.624043830479176 + y)*(0.624043830479176 + y) + x*x 0 0 0 0.00750000000000000; -0.00900000000000000 0 0.00750000000000000 0 0 -0.00900000000000000 0.00750000000000000 0 0 0 0 0 0.00750000000000000 -0.00900000000000000 0 (1.24808766095835 + y)*(1.24808766095835 + y) + x*x + z*z 0.00750000000000000 0 -0.00900000000000000; 0 0.00750000000000000 -0.00900000000000000 0.00750000000000000 0.00750000000000000 0 0 0.00750000000000000 0 0 0.00750000000000000 0 0 0 0 0.00750000000000000 (-0.624043830479176 + z)*(-0.624043830479176 + z) + (0.624043830479176 + x)*(0.624043830479176 + x) + y*y 0 0; 0 -0.00900000000000000 0.00750000000000000 0 0.00750000000000000 0.00750000000000000 0.00750000000000000 0 0.00750000000000000 0 0 0 0 0.00750000000000000 0 0 0 (0.624043830479176 + x)*(0.624043830479176 + x) + (0.624043830479176 + y)*(0.624043830479176 + y) + z*z 0; 0 0 0 -0.00900000000000000 0.00750000000000000 -0.00900000000000000 0 0 0.00750000000000000 0 0.00750000000000000 0 0 -0.00900000000000000 0.00750000000000000 -0.00900000000000000 0 0 (1.24808766095835 + x)*(1.24808766095835 + x) + y*y + z*z])[1:s]
-
-@doc """
-    Li(x,y,z,s)
-
-A k-point independent EPM for Li.
-"""
-Li(x::Real,y::Real,z::Real,s::Integer)::AbstractVector{<:Real} = eigvals([(-1.89455149547847 + x)*(-1.89455149547847 + x) + y*y + z*z 0 0 0 0.110000000000000 0 0 0 0.110000000000000 0 0.110000000000000 0 0 0 0.110000000000000 0 0 0 0; 0 (-0.947275747739237 + x)*(-0.947275747739237 + x) + (-0.947275747739237 + y)*(-0.947275747739237 + y) + z*z 0 0 0 0.110000000000000 0 0 0 0 0.110000000000000 0 0.110000000000000 0.110000000000000 0.110000000000000 0 0.110000000000000 0 0; 0 0 (-0.947275747739237 + x)*(-0.947275747739237 + x) + (0.947275747739237 + z)*(0.947275747739237 + z) + y*y 0.110000000000000 0 0 0 0 0.110000000000000 0 0 0.110000000000000 0 0 0.110000000000000 0.110000000000000 0 0.110000000000000 0; 0 0 0.110000000000000 (-1.89455149547847 + y)*(-1.89455149547847 + y) + x*x + z*z 0 0 0.110000000000000 0 0 0 0 0 0.110000000000000 0 0 0 0.110000000000000 0 0; 0.110000000000000 0 0 0 (-0.947275747739237 + y)*(-0.947275747739237 + y) + (0.947275747739237 + z)*(0.947275747739237 + z) + x*x 0 0.110000000000000 0.110000000000000 0 0 0 0 0 0 0 0 0.110000000000000 0.110000000000000 0.110000000000000; 0 0.110000000000000 0 0 0 (1.89455149547847 + z)*(1.89455149547847 + z) + x*x + y*y 0 0.110000000000000 0 0 0 0.110000000000000 0 0 0 0 0 0.110000000000000 0; 0 0 0 0.110000000000000 0.110000000000000 0 (-0.947275747739237 + x)*(-0.947275747739237 + x) + (-0.947275747739237 + z)*(-0.947275747739237 + z) + y*y 0 0 0 0.110000000000000 0.110000000000000 0 0 0 0.110000000000000 0 0.110000000000000 0; 0 0 0 0 0.110000000000000 0.110000000000000 0 (-0.947275747739237 + x)*(-0.947275747739237 + x) + (0.947275747739237 + y)*(0.947275747739237 + y) + z*z 0.110000000000000 0 0 0 0.110000000000000 0.110000000000000 0 0 0.110000000000000 0 0; 0.110000000000000 0 0.110000000000000 0 0 0 0 0.110000000000000 (-0.947275747739237 + y)*(-0.947275747739237 + y) + (-0.947275747739237 + z)*(-0.947275747739237 + z) + x*x 0 0 0 0.110000000000000 0 0 0 0 0.110000000000000 0.110000000000000; 0 0 0 0 0 0 0 0 0 x*x + y*y + z*z 0 0 0 0 0 0 0 0 0; 0.110000000000000 0.110000000000000 0 0 0 0 0.110000000000000 0 0 0 (0.947275747739237 + y)*(0.947275747739237 + y) + (0.947275747739237 + z)*(0.947275747739237 + z) + x*x 0.110000000000000 0 0 0 0 0.110000000000000 0 0.110000000000000; 0 0 0.110000000000000 0 0 0.110000000000000 0.110000000000000 0 0 0 0.110000000000000 (-0.947275747739237 + y)*(-0.947275747739237 + y) + (0.947275747739237 + x)*(0.947275747739237 + x) + z*z 0 0.110000000000000 0.110000000000000 0 0 0 0; 0 0.110000000000000 0 0.110000000000000 0 0 0 0.110000000000000 0.110000000000000 0 0 0 (0.947275747739237 + x)*(0.947275747739237 + x) + (0.947275747739237 + z)*(0.947275747739237 + z) + y*y 0 0.110000000000000 0.110000000000000 0 0 0; 0 0.110000000000000 0 0 0 0 0 0.110000000000000 0 0 0 0.110000000000000 0 (-1.89455149547847 + z)*(-1.89455149547847 + z) + x*x + y*y 0 0 0 0.110000000000000 0; 0.110000000000000 0.110000000000000 0.110000000000000 0 0 0 0 0 0 0 0 0.110000000000000 0.110000000000000 0 (-0.947275747739237 + z)*(-0.947275747739237 + z) + (0.947275747739237 + y)*(0.947275747739237 + y) + x*x 0 0 0 0.110000000000000; 0 0 0.110000000000000 0 0 0 0.110000000000000 0 0 0 0 0 0.110000000000000 0 0 (1.89455149547847 + y)*(1.89455149547847 + y) + x*x + z*z 0.110000000000000 0 0; 0 0.110000000000000 0 0.110000000000000 0.110000000000000 0 0 0.110000000000000 0 0 0.110000000000000 0 0 0 0 0.110000000000000 (-0.947275747739237 + z)*(-0.947275747739237 + z) + (0.947275747739237 + x)*(0.947275747739237 + x) + y*y 0 0; 0 0 0.110000000000000 0 0.110000000000000 0.110000000000000 0.110000000000000 0 0.110000000000000 0 0 0 0 0.110000000000000 0 0 0 (0.947275747739237 + x)*(0.947275747739237 + x) + (0.947275747739237 + y)*(0.947275747739237 + y) + z*z 0; 0 0 0 0 0.110000000000000 0 0 0 0.110000000000000 0 0.110000000000000 0 0 0 0.110000000000000 0 0 0 (1.89455149547847 + x)*(1.89455149547847 + x) + y*y + z*z])[1:s]
-
-@doc """
-    Na(x,y,z,s)
-
-A k-point independent EPM for Na.
-"""
-Na(x::Real,y::Real,z::Real,s::Integer)::AbstractVector{<:Real} = eigvals([(-1.89455149547847 + x)*(-1.89455149547847 + x) + y*y + z*z 0 0 0 0.110000000000000 0 0 0 0.110000000000000 0 0.110000000000000 0 0 0 0.110000000000000 0 0 0 0; 0 (-0.947275747739237 + x)*(-0.947275747739237 + x) + (-0.947275747739237 + y)*(-0.947275747739237 + y) + z*z 0 0 0 0.110000000000000 0 0 0 0 0.110000000000000 0 0.110000000000000 0.110000000000000 0.110000000000000 0 0.110000000000000 0 0; 0 0 (-0.947275747739237 + x)*(-0.947275747739237 + x) + (0.947275747739237 + z)*(0.947275747739237 + z) + y*y 0.110000000000000 0 0 0 0 0.110000000000000 0 0 0.110000000000000 0 0 0.110000000000000 0.110000000000000 0 0.110000000000000 0; 0 0 0.110000000000000 (-1.89455149547847 + y)*(-1.89455149547847 + y) + x*x + z*z 0 0 0.110000000000000 0 0 0 0 0 0.110000000000000 0 0 0 0.110000000000000 0 0; 0.110000000000000 0 0 0 (-0.947275747739237 + y)*(-0.947275747739237 + y) + (0.947275747739237 + z)*(0.947275747739237 + z) + x*x 0 0.110000000000000 0.110000000000000 0 0 0 0 0 0 0 0 0.110000000000000 0.110000000000000 0.110000000000000; 0 0.110000000000000 0 0 0 (1.89455149547847 + z)*(1.89455149547847 + z) + x*x + y*y 0 0.110000000000000 0 0 0 0.110000000000000 0 0 0 0 0 0.110000000000000 0; 0 0 0 0.110000000000000 0.110000000000000 0 (-0.947275747739237 + x)*(-0.947275747739237 + x) + (-0.947275747739237 + z)*(-0.947275747739237 + z) + y*y 0 0 0 0.110000000000000 0.110000000000000 0 0 0 0.110000000000000 0 0.110000000000000 0; 0 0 0 0 0.110000000000000 0.110000000000000 0 (-0.947275747739237 + x)*(-0.947275747739237 + x) + (0.947275747739237 + y)*(0.947275747739237 + y) + z*z 0.110000000000000 0 0 0 0.110000000000000 0.110000000000000 0 0 0.110000000000000 0 0; 0.110000000000000 0 0.110000000000000 0 0 0 0 0.110000000000000 (-0.947275747739237 + y)*(-0.947275747739237 + y) + (-0.947275747739237 + z)*(-0.947275747739237 + z) + x*x 0 0 0 0.110000000000000 0 0 0 0 0.110000000000000 0.110000000000000; 0 0 0 0 0 0 0 0 0 x*x + y*y + z*z 0 0 0 0 0 0 0 0 0; 0.110000000000000 0.110000000000000 0 0 0 0 0.110000000000000 0 0 0 (0.947275747739237 + y)*(0.947275747739237 + y) + (0.947275747739237 + z)*(0.947275747739237 + z) + x*x 0.110000000000000 0 0 0 0 0.110000000000000 0 0.110000000000000; 0 0 0.110000000000000 0 0 0.110000000000000 0.110000000000000 0 0 0 0.110000000000000 (-0.947275747739237 + y)*(-0.947275747739237 + y) + (0.947275747739237 + x)*(0.947275747739237 + x) + z*z 0 0.110000000000000 0.110000000000000 0 0 0 0; 0 0.110000000000000 0 0.110000000000000 0 0 0 0.110000000000000 0.110000000000000 0 0 0 (0.947275747739237 + x)*(0.947275747739237 + x) + (0.947275747739237 + z)*(0.947275747739237 + z) + y*y 0 0.110000000000000 0.110000000000000 0 0 0; 0 0.110000000000000 0 0 0 0 0 0.110000000000000 0 0 0 0.110000000000000 0 (-1.89455149547847 + z)*(-1.89455149547847 + z) + x*x + y*y 0 0 0 0.110000000000000 0; 0.110000000000000 0.110000000000000 0.110000000000000 0 0 0 0 0 0 0 0 0.110000000000000 0.110000000000000 0 (-0.947275747739237 + z)*(-0.947275747739237 + z) + (0.947275747739237 + y)*(0.947275747739237 + y) + x*x 0 0 0 0.110000000000000; 0 0 0.110000000000000 0 0 0 0.110000000000000 0 0 0 0 0 0.110000000000000 0 0 (1.89455149547847 + y)*(1.89455149547847 + y) + x*x + z*z 0.110000000000000 0 0; 0 0.110000000000000 0 0.110000000000000 0.110000000000000 0 0 0.110000000000000 0 0 0.110000000000000 0 0 0 0 0.110000000000000 (-0.947275747739237 + z)*(-0.947275747739237 + z) + (0.947275747739237 + x)*(0.947275747739237 + x) + y*y 0 0; 0 0 0.110000000000000 0 0.110000000000000 0.110000000000000 0.110000000000000 0 0.110000000000000 0 0 0 0 0.110000000000000 0 0 0 (0.947275747739237 + x)*(0.947275747739237 + x) + (0.947275747739237 + y)*(0.947275747739237 + y) + z*z 0; 0 0 0 0 0.110000000000000 0 0 0 0.110000000000000 0 0.110000000000000 0 0 0 0.110000000000000 0 0 0 (1.89455149547847 + x)*(1.89455149547847 + x) + y*y + z*z])[1:s]
-
-@doc """
-    Pb(x,y,z,s)
-
-A k-point independent EPM for Pb.
-"""
-Pb(x::Real,y::Real,z::Real,s::Integer)::AbstractVector{<:Real} = eigvals([(-0.6715890106758 + x)*(-0.6715890106758 + x) + (-0.6715890106758 + y)*(-0.6715890106758 + y) + (-0.6715890106758 + z)*(-0.6715890106758 + z) -0.0840000000000000 -0.0840000000000000 0 -0.0840000000000000 0 0 -0.0840000000000000 0 0 0 0 0 0 -0.0390000000000000; -0.0840000000000000 (-1.3431780213516 + x)*(-1.3431780213516 + x) + y*y + z*z 0 -0.0840000000000000 0 -0.0840000000000000 0 0 -0.0840000000000000 0 0 0 0 0 0; -0.0840000000000000 0 (-1.3431780213516 + y)*(-1.3431780213516 + y) + x*x + z*z -0.0840000000000000 0 0 -0.0840000000000000 0 0 -0.0840000000000000 0 0 0 0 0; 0 -0.0840000000000000 -0.0840000000000000 (-0.6715890106758 + x)*(-0.6715890106758 + x) + (-0.6715890106758 + y)*(-0.6715890106758 + y) + (0.6715890106758 + z)*(0.6715890106758 + z) 0 0 0 -0.0840000000000000 0 0 -0.0840000000000000 -0.0390000000000000 0 0 0; -0.0840000000000000 0 0 0 (-1.3431780213516 + z)*(-1.3431780213516 + z) + x*x + y*y -0.0840000000000000 -0.0840000000000000 0 0 0 0 -0.0840000000000000 0 0 0; 0 -0.0840000000000000 0 0 -0.0840000000000000 (-0.6715890106758 + x)*(-0.6715890106758 + x) + (-0.6715890106758 + z)*(-0.6715890106758 + z) + (0.6715890106758 + y)*(0.6715890106758 + y) 0 -0.0840000000000000 0 -0.0390000000000000 0 0 -0.0840000000000000 0 0; 0 0 -0.0840000000000000 0 -0.0840000000000000 0 (-0.6715890106758 + y)*(-0.6715890106758 + y) + (-0.6715890106758 + z)*(-0.6715890106758 + z) + (0.6715890106758 + x)*(0.6715890106758 + x) -0.0840000000000000 -0.0390000000000000 0 0 0 0 -0.0840000000000000 0; -0.0840000000000000 0 0 -0.0840000000000000 0 -0.0840000000000000 -0.0840000000000000 x*x + y*y + z*z -0.0840000000000000 -0.0840000000000000 0 -0.0840000000000000 0 0 -0.0840000000000000; 0 -0.0840000000000000 0 0 0 0 -0.0390000000000000 -0.0840000000000000 (-0.6715890106758 + x)*(-0.6715890106758 + x) + (0.6715890106758 + y)*(0.6715890106758 + y) + (0.6715890106758 + z)*(0.6715890106758 + z) 0 -0.0840000000000000 0 -0.0840000000000000 0 0; 0 0 -0.0840000000000000 0 0 -0.0390000000000000 0 -0.0840000000000000 0 (-0.6715890106758 + y)*(-0.6715890106758 + y) + (0.6715890106758 + x)*(0.6715890106758 + x) + (0.6715890106758 + z)*(0.6715890106758 + z) -0.0840000000000000 0 0 -0.0840000000000000 0; 0 0 0 -0.0840000000000000 0 0 0 0 -0.0840000000000000 -0.0840000000000000 (1.3431780213516 + z)*(1.3431780213516 + z) + x*x + y*y 0 0 0 -0.0840000000000000; 0 0 0 -0.0390000000000000 -0.0840000000000000 0 0 -0.0840000000000000 0 0 0 (-0.6715890106758 + z)*(-0.6715890106758 + z) + (0.6715890106758 + x)*(0.6715890106758 + x) + (0.6715890106758 + y)*(0.6715890106758 + y) -0.0840000000000000 -0.0840000000000000 0; 0 0 0 0 0 -0.0840000000000000 0 0 -0.0840000000000000 0 0 -0.0840000000000000 (1.3431780213516 + y)*(1.3431780213516 + y) + x*x + z*z 0 -0.0840000000000000; 0 0 0 0 0 0 -0.0840000000000000 0 0 -0.0840000000000000 0 -0.0840000000000000 0 (1.3431780213516 + x)*(1.3431780213516 + x) + y*y + z*z -0.0840000000000000; -0.0390000000000000 0 0 0 0 0 0 -0.0840000000000000 0 0 -0.0840000000000000 0 -0.0840000000000000 -0.0840000000000000 (0.6715890106758 + x)*(0.6715890106758 + x) + (0.6715890106758 + y)*(0.6715890106758 + y) + (0.6715890106758 + z)*(0.6715890106758 + z)])[1:s]
-
-@doc """
-    Rb(x,y,z,s)
-
-A k-point independent EPM for Rb.
-"""
-Rb(x::Real,y::Real,z::Real,s::Integer)::AbstractVector{<:Real} = eigvals([(-1.19066245481464 + x)*(-1.19066245481464 + x) + y*y + z*z 0 0 0 -0.00200000000000000 0 0 0 -0.00200000000000000 0 -0.00200000000000000 0 0 0 -0.00200000000000000 0 0 0 0; 0 (-0.595331227407319 + x)*(-0.595331227407319 + x) + (-0.595331227407319 + y)*(-0.595331227407319 + y) + z*z 0 0 0 -0.00200000000000000 0 0 0 0 -0.00200000000000000 0 -0.00200000000000000 -0.00200000000000000 -0.00200000000000000 0 -0.00200000000000000 0 0; 0 0 (-0.595331227407319 + x)*(-0.595331227407319 + x) + (0.595331227407319 + z)*(0.595331227407319 + z) + y*y -0.00200000000000000 0 0 0 0 -0.00200000000000000 0 0 -0.00200000000000000 0 0 -0.00200000000000000 -0.00200000000000000 0 -0.00200000000000000 0; 0 0 -0.00200000000000000 (-1.19066245481464 + y)*(-1.19066245481464 + y) + x*x + z*z 0 0 -0.00200000000000000 0 0 0 0 0 -0.00200000000000000 0 0 0 -0.00200000000000000 0 0; -0.00200000000000000 0 0 0 (-0.595331227407319 + y)*(-0.595331227407319 + y) + (0.595331227407319 + z)*(0.595331227407319 + z) + x*x 0 -0.00200000000000000 -0.00200000000000000 0 0 0 0 0 0 0 0 -0.00200000000000000 -0.00200000000000000 -0.00200000000000000; 0 -0.00200000000000000 0 0 0 (1.19066245481464 + z)*(1.19066245481464 + z) + x*x + y*y 0 -0.00200000000000000 0 0 0 -0.00200000000000000 0 0 0 0 0 -0.00200000000000000 0; 0 0 0 -0.00200000000000000 -0.00200000000000000 0 (-0.595331227407319 + x)*(-0.595331227407319 + x) + (-0.595331227407319 + z)*(-0.595331227407319 + z) + y*y 0 0 0 -0.00200000000000000 -0.00200000000000000 0 0 0 -0.00200000000000000 0 -0.00200000000000000 0; 0 0 0 0 -0.00200000000000000 -0.00200000000000000 0 (-0.595331227407319 + x)*(-0.595331227407319 + x) + (0.595331227407319 + y)*(0.595331227407319 + y) + z*z -0.00200000000000000 0 0 0 -0.00200000000000000 -0.00200000000000000 0 0 -0.00200000000000000 0 0; -0.00200000000000000 0 -0.00200000000000000 0 0 0 0 -0.00200000000000000 (-0.595331227407319 + y)*(-0.595331227407319 + y) + (-0.595331227407319 + z)*(-0.595331227407319 + z) + x*x 0 0 0 -0.00200000000000000 0 0 0 0 -0.00200000000000000 -0.00200000000000000; 0 0 0 0 0 0 0 0 0 x*x + y*y + z*z 0 0 0 0 0 0 0 0 0; -0.00200000000000000 -0.00200000000000000 0 0 0 0 -0.00200000000000000 0 0 0 (0.595331227407319 + y)*(0.595331227407319 + y) + (0.595331227407319 + z)*(0.595331227407319 + z) + x*x -0.00200000000000000 0 0 0 0 -0.00200000000000000 0 -0.00200000000000000; 0 0 -0.00200000000000000 0 0 -0.00200000000000000 -0.00200000000000000 0 0 0 -0.00200000000000000 (-0.595331227407319 + y)*(-0.595331227407319 + y) + (0.595331227407319 + x)*(0.595331227407319 + x) + z*z 0 -0.00200000000000000 -0.00200000000000000 0 0 0 0; 0 -0.00200000000000000 0 -0.00200000000000000 0 0 0 -0.00200000000000000 -0.00200000000000000 0 0 0 (0.595331227407319 + x)*(0.595331227407319 + x) + (0.595331227407319 + z)*(0.595331227407319 + z) + y*y 0 -0.00200000000000000 -0.00200000000000000 0 0 0; 0 -0.00200000000000000 0 0 0 0 0 -0.00200000000000000 0 0 0 -0.00200000000000000 0 (-1.19066245481464 + z)*(-1.19066245481464 + z) + x*x + y*y 0 0 0 -0.00200000000000000 0; -0.00200000000000000 -0.00200000000000000 -0.00200000000000000 0 0 0 0 0 0 0 0 -0.00200000000000000 -0.00200000000000000 0 (-0.595331227407319 + z)*(-0.595331227407319 + z) + (0.595331227407319 + y)*(0.595331227407319 + y) + x*x 0 0 0 -0.00200000000000000; 0 0 -0.00200000000000000 0 0 0 -0.00200000000000000 0 0 0 0 0 -0.00200000000000000 0 0 (1.19066245481464 + y)*(1.19066245481464 + y) + x*x + z*z -0.00200000000000000 0 0; 0 -0.00200000000000000 0 -0.00200000000000000 -0.00200000000000000 0 0 -0.00200000000000000 0 0 -0.00200000000000000 0 0 0 0 -0.00200000000000000 (-0.595331227407319 + z)*(-0.595331227407319 + z) + (0.595331227407319 + x)*(0.595331227407319 + x) + y*y 0 0; 0 0 -0.00200000000000000 0 -0.00200000000000000 -0.00200000000000000 -0.00200000000000000 0 -0.00200000000000000 0 0 0 0 -0.00200000000000000 0 0 0 (0.595331227407319 + x)*(0.595331227407319 + x) + (0.595331227407319 + y)*(0.595331227407319 + y) + z*z 0; 0 0 0 0 -0.00200000000000000 0 0 0 -0.00200000000000000 0 -0.00200000000000000 0 0 0 -0.00200000000000000 0 0 0 (1.19066245481464 + x)*(1.19066245481464 + x) + y*y + z*z])[1:s]
-
-@doc """
-    Sn(x,y,z,s)
-
-A k-point independent EPM for Sn.
-"""
-Sn(x::Real,y::Real,z::Real,s::Integer)::AbstractVector{<:Real} = eigvals([(-1.14027227570066 + x)*(-1.14027227570066 + x) + y*y + z*z 0 0 0 -0.0560000000000000 0 0 -0.0560000000000000 0 -0.0560000000000000 0 0 -0.0560000000000000 0 0 0 0; 0 (-0.570136137850332 + x)*(-0.570136137850332 + x) + (-0.570136137850332 + y)*(-0.570136137850332 + y) + z*z 0 0 0 0 0 0 0 -0.0560000000000000 0 -0.0560000000000000 -0.0560000000000000 0 -0.0560000000000000 0 0; 0 0 (-0.570136137850332 + x)*(-0.570136137850332 + x) + (1.04495090674709 + z)*(1.04495090674709 + z) + y*y -0.0560000000000000 0 0 0 0 0 0 -0.0560000000000000 0 0 -0.0560000000000000 -0.0690000000000000 -0.0560000000000000 0; 0 0 -0.0560000000000000 (-1.14027227570066 + y)*(-1.14027227570066 + y) + (-1.11022302462516e-16 + x)*(-1.11022302462516e-16 + x) + z*z 0 -0.0560000000000000 0 0 0 0 0 -0.0560000000000000 0 0 -0.0560000000000000 0 0; -0.0560000000000000 0 0 0 (-0.570136137850332 + y)*(-0.570136137850332 + y) + (-1.11022302462516e-16 + x)*(-1.11022302462516e-16 + x) + (1.04495090674709 + z)*(1.04495090674709 + z) 0 -0.0560000000000000 0 0 0 0 0 -0.0690000000000000 0 0 -0.0560000000000000 -0.0560000000000000; 0 0 0 -0.0560000000000000 0 (-1.04495090674709 + z)*(-1.04495090674709 + z) + (-0.570136137850332 + x)*(-0.570136137850332 + x) + y*y 0 0 0 0 -0.0560000000000000 -0.0690000000000000 0 -0.0560000000000000 0 -0.0560000000000000 0; 0 0 0 0 -0.0560000000000000 0 (-0.570136137850332 + x)*(-0.570136137850332 + x) + (0.570136137850332 + y)*(0.570136137850332 + y) + z*z -0.0560000000000000 0 0 0 -0.0560000000000000 0 0 -0.0560000000000000 0 0; -0.0560000000000000 0 0 0 0 0 -0.0560000000000000 (-1.04495090674709 + z)*(-1.04495090674709 + z) + (-0.570136137850332 + y)*(-0.570136137850332 + y) + x*x 0 -0.0690000000000000 0 0 0 0 0 -0.0560000000000000 -0.0560000000000000; 0 0 0 0 0 0 0 0 x*x + y*y + z*z 0 0 0 0 0 0 0 0; -0.0560000000000000 -0.0560000000000000 0 0 0 0 0 -0.0690000000000000 0 (0.570136137850332 + y)*(0.570136137850332 + y) + (1.04495090674709 + z)*(1.04495090674709 + z) + x*x -0.0560000000000000 0 0 0 0 0 -0.0560000000000000; 0 0 -0.0560000000000000 0 0 -0.0560000000000000 0 0 0 -0.0560000000000000 (-0.570136137850332 + y)*(-0.570136137850332 + y) + (0.570136137850332 + x)*(0.570136137850332 + x) + z*z 0 -0.0560000000000000 0 0 0 0; 0 -0.0560000000000000 0 -0.0560000000000000 0 -0.0690000000000000 -0.0560000000000000 0 0 0 0 (0.570136137850332 + x)*(0.570136137850332 + x) + (1.04495090674709 + z)*(1.04495090674709 + z) + y*y 0 -0.0560000000000000 0 0 0; -0.0560000000000000 -0.0560000000000000 0 0 -0.0690000000000000 0 0 0 0 0 -0.0560000000000000 0 (-1.04495090674709 + z)*(-1.04495090674709 + z) + (1.11022302462516e-16 + x)*(1.11022302462516e-16 + x) + (0.570136137850332 + y)*(0.570136137850332 + y) 0 0 0 -0.0560000000000000; 0 0 -0.0560000000000000 0 0 -0.0560000000000000 0 0 0 0 0 -0.0560000000000000 0 (1.11022302462516e-16 + x)*(1.11022302462516e-16 + x) + (1.14027227570066 + y)*(1.14027227570066 + y) + z*z -0.0560000000000000 0 0; 0 -0.0560000000000000 -0.0690000000000000 -0.0560000000000000 0 0 -0.0560000000000000 0 0 0 0 0 0 -0.0560000000000000 (-1.04495090674709 + z)*(-1.04495090674709 + z) + (0.570136137850332 + x)*(0.570136137850332 + x) + y*y 0 0; 0 0 -0.0560000000000000 0 -0.0560000000000000 -0.0560000000000000 0 -0.0560000000000000 0 0 0 0 0 0 0 (0.570136137850332 + x)*(0.570136137850332 + x) + (0.570136137850332 + y)*(0.570136137850332 + y) + z*z 0; 0 0 0 0 -0.0560000000000000 0 0 -0.0560000000000000 0 -0.0560000000000000 0 0 -0.0560000000000000 0 0 0 (1.14027227570066 + x)*(1.14027227570066 + x) + y*y + z*z])[1:s]
-
-@doc """
-    Zn(x,y,z,s)
-
-A k-point independent EPM for Zn.
-"""
-Zn(x::Real,y::Real,z::Real,s::Integer)::AbstractVector{<:Real} = eigvals([(-1.34427002432143 + z)*(-1.34427002432143 + z) + x*x + y*y 0.0630000000000000 0.0630000000000000 0.0630000000000000 0 0.0630000000000000 0.0630000000000000 0.0630000000000000 0 0 0 -0.0220000000000000 0 0 0 0 0 0 0 0 0 0 0; 0.0630000000000000 (-1.24767872816767 + x)*(-1.24767872816767 + x) + (-0.720347649569776 + y)*(-0.720347649569776 + y) + (-0.672135012160716 + z)*(-0.672135012160716 + z) 0.0200000000000000 0.0200000000000000 0.0200000000000000 0 0 0 0 0.0630000000000000 0.0630000000000000 0.0630000000000000 0 0 0 -0.0220000000000000 0 0 0 0 0 0 0; 0.0630000000000000 0.0200000000000000 (-1.44069529913955 + y)*(-1.44069529913955 + y) + (-0.672135012160716 + z)*(-0.672135012160716 + z) + x*x 0 0.0200000000000000 0.0200000000000000 0 0 0.0630000000000000 0 0 0.0630000000000000 0.0630000000000000 0 0 0 -0.0220000000000000 0 0 0 0 0 0; 0.0630000000000000 0.0200000000000000 0 (-1.24767872816767 + x)*(-1.24767872816767 + x) + (-0.672135012160716 + z)*(-0.672135012160716 + z) + (0.720347649569776 + y)*(0.720347649569776 + y) 0.0200000000000000 0 0.0200000000000000 0 0.0630000000000000 0 0 0.0630000000000000 0 0.0630000000000000 0 0 0 -0.0220000000000000 0 0 0 0 0; 0 0.0200000000000000 0.0200000000000000 0.0200000000000000 (-0.672135012160716 + z)*(-0.672135012160716 + z) + x*x + y*y 0.0200000000000000 0.0200000000000000 0.0200000000000000 0.0630000000000000 0.0630000000000000 0.0630000000000000 0 0.0630000000000000 0.0630000000000000 0.0630000000000000 0 0 0 -0.0220000000000000 0 0 0 0; 0.0630000000000000 0 0.0200000000000000 0 0.0200000000000000 (-0.720347649569776 + y)*(-0.720347649569776 + y) + (-0.672135012160716 + z)*(-0.672135012160716 + z) + (1.24767872816767 + x)*(1.24767872816767 + x) 0 0.0200000000000000 0 0.0630000000000000 0 0.0630000000000000 0 0 0.0630000000000000 0 0 0 0 -0.0220000000000000 0 0 0; 0.0630000000000000 0 0 0.0200000000000000 0.0200000000000000 0 (-0.672135012160716 + z)*(-0.672135012160716 + z) + (1.44069529913955 + y)*(1.44069529913955 + y) + x*x 0.0200000000000000 0 0 0.0630000000000000 0.0630000000000000 0 0 0.0630000000000000 0 0 0 0 0 -0.0220000000000000 0 0; 0.0630000000000000 0 0 0 0.0200000000000000 0.0200000000000000 0.0200000000000000 (-0.672135012160716 + z)*(-0.672135012160716 + z) + (0.720347649569776 + y)*(0.720347649569776 + y) + (1.24767872816767 + x)*(1.24767872816767 + x) 0 0 0 0.0630000000000000 0.0630000000000000 0.0630000000000000 0 0 0 0 0 0 0 -0.0220000000000000 0; 0 0 0.0630000000000000 0.0630000000000000 0.0630000000000000 0 0 0 (-1.24767872816767 + x)*(-1.24767872816767 + x) + (-0.720347649569776 + y)*(-0.720347649569776 + y) + z*z 0.0200000000000000 0.0200000000000000 0.0200000000000000 0 0 0 0 0.0630000000000000 0.0630000000000000 0.0630000000000000 0 0 0 0; 0 0.0630000000000000 0 0 0.0630000000000000 0.0630000000000000 0 0 0.0200000000000000 (-1.44069529913955 + y)*(-1.44069529913955 + y) + x*x + z*z 0 0.0200000000000000 0.0200000000000000 0 0 0.0630000000000000 0 0 0.0630000000000000 0.0630000000000000 0 0 0; 0 0.0630000000000000 0 0 0.0630000000000000 0 0.0630000000000000 0 0.0200000000000000 0 (-1.24767872816767 + x)*(-1.24767872816767 + x) + (0.720347649569776 + y)*(0.720347649569776 + y) + z*z 0.0200000000000000 0 0.0200000000000000 0 0.0630000000000000 0 0 0.0630000000000000 0 0.0630000000000000 0 0; -0.0220000000000000 0.0630000000000000 0.0630000000000000 0.0630000000000000 0 0.0630000000000000 0.0630000000000000 0.0630000000000000 0.0200000000000000 0.0200000000000000 0.0200000000000000 x*x + y*y + z*z 0.0200000000000000 0.0200000000000000 0.0200000000000000 0.0630000000000000 0.0630000000000000 0.0630000000000000 0 0.0630000000000000 0.0630000000000000 0.0630000000000000 -0.0220000000000000; 0 0 0.0630000000000000 0 0.0630000000000000 0 0 0.0630000000000000 0 0.0200000000000000 0 0.0200000000000000 (-0.720347649569776 + y)*(-0.720347649569776 + y) + (1.24767872816767 + x)*(1.24767872816767 + x) + z*z 0 0.0200000000000000 0 0.0630000000000000 0 0.0630000000000000 0 0 0.0630000000000000 0; 0 0 0 0.0630000000000000 0.0630000000000000 0 0 0.0630000000000000 0 0 0.0200000000000000 0.0200000000000000 0 (1.44069529913955 + y)*(1.44069529913955 + y) + x*x + z*z 0.0200000000000000 0 0 0.0630000000000000 0.0630000000000000 0 0 0.0630000000000000 0; 0 0 0 0 0.0630000000000000 0.0630000000000000 0.0630000000000000 0 0 0 0 0.0200000000000000 0.0200000000000000 0.0200000000000000 (0.720347649569776 + y)*(0.720347649569776 + y) + (1.24767872816767 + x)*(1.24767872816767 + x) + z*z 0 0 0 0.0630000000000000 0.0630000000000000 0.0630000000000000 0 0; 0 -0.0220000000000000 0 0 0 0 0 0 0 0.0630000000000000 0.0630000000000000 0.0630000000000000 0 0 0 (-1.24767872816767 + x)*(-1.24767872816767 + x) + (-0.720347649569776 + y)*(-0.720347649569776 + y) + (0.672135012160716 + z)*(0.672135012160716 + z) 0.0200000000000000 0.0200000000000000 0.0200000000000000 0 0 0 0.0630000000000000; 0 0 -0.0220000000000000 0 0 0 0 0 0.0630000000000000 0 0 0.0630000000000000 0.0630000000000000 0 0 0.0200000000000000 (-1.44069529913955 + y)*(-1.44069529913955 + y) + (0.672135012160716 + z)*(0.672135012160716 + z) + x*x 0 0.0200000000000000 0.0200000000000000 0 0 0.0630000000000000; 0 0 0 -0.0220000000000000 0 0 0 0 0.0630000000000000 0 0 0.0630000000000000 0 0.0630000000000000 0 0.0200000000000000 0 (-1.24767872816767 + x)*(-1.24767872816767 + x) + (0.672135012160716 + z)*(0.672135012160716 + z) + (0.720347649569776 + y)*(0.720347649569776 + y) 0.0200000000000000 0 0.0200000000000000 0 0.0630000000000000; 0 0 0 0 -0.0220000000000000 0 0 0 0.0630000000000000 0.0630000000000000 0.0630000000000000 0 0.0630000000000000 0.0630000000000000 0.0630000000000000 0.0200000000000000 0.0200000000000000 0.0200000000000000 (0.672135012160716 + z)*(0.672135012160716 + z) + x*x + y*y 0.0200000000000000 0.0200000000000000 0.0200000000000000 0; 0 0 0 0 0 -0.0220000000000000 0 0 0 0.0630000000000000 0 0.0630000000000000 0 0 0.0630000000000000 0 0.0200000000000000 0 0.0200000000000000 (-0.720347649569776 + y)*(-0.720347649569776 + y) + (0.672135012160716 + z)*(0.672135012160716 + z) + (1.24767872816767 + x)*(1.24767872816767 + x) 0 0.0200000000000000 0.0630000000000000; 0 0 0 0 0 0 -0.0220000000000000 0 0 0 0.0630000000000000 0.0630000000000000 0 0 0.0630000000000000 0 0 0.0200000000000000 0.0200000000000000 0 (0.672135012160716 + z)*(0.672135012160716 + z) + (1.44069529913955 + y)*(1.44069529913955 + y) + x*x 0.0200000000000000 0.0630000000000000; 0 0 0 0 0 0 0 -0.0220000000000000 0 0 0 0.0630000000000000 0.0630000000000000 0.0630000000000000 0 0 0 0 0.0200000000000000 0.0200000000000000 0.0200000000000000 (0.672135012160716 + z)*(0.672135012160716 + z) + (0.720347649569776 + y)*(0.720347649569776 + y) + (1.24767872816767 + x)*(1.24767872816767 + x) 0.0630000000000000; 0 0 0 0 0 0 0 0 0 0 0 -0.0220000000000000 0 0 0 0.0630000000000000 0.0630000000000000 0.0630000000000000 0 0.0630000000000000 0.0630000000000000 0.0630000000000000 (1.34427002432143 + z)*(1.34427002432143 + z) + x*x + y*y])[1:s]
-
-@doc """
-A dictionary whose keys are the labels of high symmetry points from the Python
-package `seekpath`. The the values are the same labels but in a better-looking
-format.
-"""
-labels_dict=Dict("GAMMA"=>"Γ","X"=>"X","U"=>"U","L"=>"L","W"=>"W","X"=>"X","K"=>"K",
-                 "H"=>"H","N"=>"N","P"=>"P","Y"=>"Y","M"=>"M","A"=>"A","L_2"=>"L₂",
-                 "V_2"=>"V₂","I_2"=>"I₂","I"=>"I","M_2"=>"M₂","Y"=>"Y",
-                 "Z"=>"Z","Z_0"=>"Z₀")
 end

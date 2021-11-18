@@ -33,7 +33,7 @@ import SymPy: symbols
 s,t,u=symbols("s,t,u")
 bernstein_basis([s,t,u],2,2)
 # output
-6-element Array{SymPy.Sym,1}:
+6-element Vector{SymPy.Sym}:
  1.0*s^2
  2.0⋅s⋅t
  1.0*t^2
@@ -84,7 +84,7 @@ dim = 2
 deg = 2
 getpoly_coeffs(values,simplex_bpts,dim,deg)
 # output
-6-element Array{Float64,1}:
+6-element Vector{Float64}:
   0.4
   0.65
   0.3
@@ -115,6 +115,7 @@ Evaluate a polynomial at a point.
 
 # Examples
 ```jldoctest
+using Pebsi.Polynomials: eval_poly
 barypt = [1,0,0]
 coeffs = [0.4, 0.65, 0.3, -0.9, -0.25, -0.2]
 dim = 2
@@ -136,13 +137,14 @@ Evaluate a polynomial for each point in an array (points are columns).
 
 # Examples
 ```jldoctest
+using Pebsi.Polynomials: eval_poly
 simplex_bpts = [1.0 0.5 0.0 0.5 0.0 0.0; 0.0 0.5 1.0 0.0 0.5 0.0; 0.0 0.0 0.0 0.5 0.5 1.0]
 coeffs = [0.4, 0.5, 0.4, -0.2, -0.1, -0.3]
 dim = 2
 deg = 2
 eval_poly(simplex_bpts,coeffs,dim,deg)
 # output
-6-element Array{Float64,1}:
+6-element Vector{Float64}:
   0.4
   0.44999999999999996
   0.4
@@ -175,15 +177,15 @@ Calculate the Bezier points and weights of a level curve of a Quadratic surface 
 
 # Examples
 ```jldoctest
-import Pebsi.getbez_pts₋wts(bezpts,p₀,p₁)
+using  Pebsi.Polynomials: getbez_pts₋wts
 bezpts = [-1.0 0.0 1.0 -0.5 0.5 0.0; 0.0 0.0 0.0 0.5 0.5 1.0; 0.0 1.0 0.0 1.0 -1.0 0.0]
 p₀ = [1,0]
 p₂ = [0,1]
-getbez_pts₋wts(bezpts,p₀,p₂)
-# output 
-2-element Array{Array{Float64,N} where N,1}:
+bptswts = getbez_pts₋wts(bezpts,p₀,p₂)
+# output
+2-element Vector{Array{Float64, N} where N}:
  [1.0 0.0 0.0; 0.0 0.3333333333333333 1.0]
- [1.0, 1.6770509831248424, 1.0]
+ [1.0, 1.5, 1.0]
 ```
 """
 function getbez_pts₋wts(bezpts::AbstractMatrix{<:Real},
@@ -264,7 +266,7 @@ bezpts = [0.0 0.0 1.0; 1.0 1/3 0.0]
 bezwts = [1.0, 1.5, 1.0]
 eval_bezcurve(t,bezpts,bezwts)
 # output
-2-element Array{Float64,1}:
+2-element Vector{Float64}:
  0.2
  0.4
 ```
@@ -302,8 +304,9 @@ Classify the conic section of a level curve of a quadratic surface.
 ```jldoctest
 import Pebsi.QuadraticIntegration: conicsection
 coeffs = [0.36, -1.64, 0.36, -0.64, -0.64, 0.36]
+conicsection(coeffs)
 # output
-"elipse"
+"ellipse"
 ```
 """
 function conicsection(coeffs::AbstractVector{<:Real};
@@ -352,7 +355,7 @@ Find the solutions to a quadratic equation.
 # Returns
 
 # Examples
-```jldoctest
+```
 
 
 ```

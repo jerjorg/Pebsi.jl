@@ -325,10 +325,11 @@ Calculate the location where a level curve of a quadratic surface at z=0 interse
 
 # Examples
 ```jldoctest
+using Pebsi.QuadraticIntegration: simplex_intersects
 bezpts = [-1.0 0.0 1.0 -0.5 0.5 0.0; 0.0 0.0 0.0 0.5 0.5 1.0; 0.0 -1.0 -2.0 1.0 0.0 2.0]
 simplex_intersects(bezpts)
 # output
-3-element Array{Array,1}:
+3-element Vector{Array}:
  [-1.0; 0.0]
  [0.5; 0.5]
  Any[]
@@ -372,7 +373,7 @@ import Pebsi.QuadraticIntegration: saddlepoint
 coeffs = [0.36, -1.64, 0.36, -0.64, -0.64, 0.36]
 saddlepoint(coeffs)
 # output
-3-element Array{Float64,1}:
+3-element Vector{Float64}:
  0.5000000000000001
  4.163336342344338e-17
  0.5000000000000001
@@ -406,14 +407,12 @@ Split a Bezier surface once into sub-Bezier surfaces with the Delaunay method.
 
 # Examples
 ```jldoctest
-import Pebsi.QuadraticIntegration: split_triangle
+import Pebsi.QuadraticIntegration: split_bezsurf₁
 bezpts = [-1.0 0.0 1.0 -0.5 0.5 0.0; 0.0 0.0 0.0 0.5 0.5 1.0; 0.0 1.0 0.0 1.0 -1.0 0.0]
-split_bezsurf₁(bezpts)
+sbezpts = split_bezsurf₁(bezpts)
+length(sbezpts)
 # output
-3-element Array{Array{Float64,2},1}:
- [0.0 0.5 … 0.0 -1.0; 0.6 0.3 … 0.0 0.0; 0.08000000000000002 -0.40000000000000013 … 1.0 0.0]
- [0.0 0.0 … -0.5 -1.0; 0.6 0.8 … 0.5 0.0; 0.08000000000000002 -2.7755575615628914e-17 … 1.0 0.0]
- [0.0 0.0 … 0.5 1.0; 0.6 0.8 … 0.5 0.0; 0.08000000000000002 -2.7755575615628914e-17 … -1.0 0.0]
+6
 ```
 """
 function split_bezsurf₁(bezpts::AbstractMatrix{<:Real},
@@ -487,13 +486,12 @@ Split a Bezier surface into sub-Bezier surfaces with the Delaunay method.
 
 # Examples
 ```jldoctest
-import Pebsi.QuadraticIntegration: split_triangle
-bezpts = [-0.09385488270304788 0.12248162346376468 0.3388181296305772 0.09890589198180941 0.315242398148622 0.2916666666666667; 0.9061451172969521 0.7836634938331875 0.6611818703694228 0.6266836697595872 0.5042020462958225 0.34722222222222227; 0.0 7.949933953535975 3.9968028886505635e-15 8.042737134030771 -5.792491135426262 -11.720219017094017]
-split_bezsurf₁(bezpts)
+import Pebsi.QuadraticIntegration: split_bezsurf
+bezpts = [0. 0.5 1 0.5 1 1; 0. 0. 0. 0.5 0.5 1; 1.1 1.2 -1.3 1.4 1.5 1.6]
+split_bezsurf(bezpts)
 # output
-2-element Array{Array{Float64,2},1}:
- [0.1291676795676943 0.23399290459913574 … 0.12248162346376468 -0.09385488270304788; 0.5828106204960847 0.6219962454327537 … 0.7836634938331875 0.9061451172969521; -5.329070518200751e-15 -4.5330445462060594e-15 … 7.9499339535359725 0.0]
- [0.1291676795676943 0.2104171731171805 … 0.315242398148622 0.3388181296305772; 0.5828106204960847 0.46501642135915344 … 0.5042020462958225 0.6611818703694228; -5.329070518200751e-15 -3.39004820851129 … -5.792491135426261 -1.1479627341393213e-15]
+1-element Vector{Matrix{Float64}}:
+ [0.0 0.5 … 1.0 1.0; 0.0 0.0 … 0.5 1.0; 1.1 1.2 … 1.5 1.6]
 ```
 """
 function split_bezsurf(bezpts::AbstractMatrix{<:Real};atol=def_atol)::AbstractArray
@@ -533,6 +531,7 @@ Calculate the area within a triangle and a canonical, rational, Bezier curve.
 
 # Examples
 ```jldoctest
+using Pebsi.QuadraticIntegration: analytic_area
 w = 1.0
 analytic_area(w)
 # output
@@ -573,7 +572,7 @@ coeffs = [0.2,0.2,0.3,-0.3,0.4,-0.4]
 w = 0.3
 analytic_volume(coeffs,w)
 # output
-0.4426972170733675
+-0.029814783582691722
 ```
 """
 function analytic_volume(coeffs::AbstractVector{<:Real},w::Real)::Real
@@ -619,7 +618,7 @@ bezpts = [-1.0 0.0 1.0 -0.5 0.5 0.0; 0.0 0.0 0.0 0.5 0.5 1.0; -0.25 -0.25 3.75 -
 subtriangle = [-0.5 0.0 -0.6464466094067263; 0.0 1.0 0.35355339059327373]
 sub₋coeffs(bezpts,subtriangle)
 # output
-6-element Array{Float64,1}:
+6-element Vector{Float64}:
   0.0
   0.25
   1.75
@@ -836,9 +835,9 @@ Calculate the area of the shadow of a quadric or the volume beneath the quadrati
 ```jldoctest
 import Pebsi.QuadraticIntegration: quad_area₋volume
 bezpts = [-1.0 0.0 1.0 -0.5 0.5 0.0; 0.0 0.0 0.0 0.5 0.5 1.0; 2/3 -4/3 2/3 -2/3 -2/3 0]
-quad_area₋volume(bezpts,"area")
+quad_area₋volume(bezpts,"area") ≈ 0.8696051011068969
 # output
-0.869605101106897
+true
 ```
 """
 function quad_area₋volume(bezpts::AbstractMatrix{<:Real},
@@ -868,8 +867,7 @@ Calculate the interval Bezier points for all sheets.
     in the `mesh`.
 - `eigenvals::AbstractMatrix{<:Real}`: a matrix of eigenvalues for the symmetrically
     distinc points as columns of a matrix.
-- `simplicesᵢ::Vector{Vector{Int64}}`: the simplices of `mesh` that do not
-    include the box points.
+- `simplicesᵢ::Vector`: the simplices of `mesh` that do not include the box points.
 - `fatten::Real`: scale the interval coefficients by this amount.
 - `num_near_neigh::Int`: the number of neighbors included.
 - `sigma::Int`: the number of sheets summed and then interpolated, if any.
@@ -882,42 +880,33 @@ Calculate the interval Bezier points for all sheets.
 ```jldoctest
 import Pebsi.EPMs: m2ibz,m2pointgroup,m2recip_latvecs,m2rules,m2cutoff,eval_epm
 import Pebsi.Mesh: ibz_init₋mesh, get_extmesh, notbox_simplices
-import Pebsi.QuadraticIntegration: get_inter₋bezpts
-
+import Pebsi.QuadraticIntegration: get_intercoeffs
 n = 10
 mesh = ibz_init₋mesh(m2ibz,n)
 simplicesᵢ = notbox_simplices(mesh)
-
 num_near_neigh = 2
-ext_mesh,sym₋unique = get_extmesh(m2ibz,mesh,m2pointgroup,m2recip_latvecs,num_near_neigh)
-
+mesh,ext_mesh,sym₋unique = get_extmesh(m2ibz,mesh,m2pointgroup,m2recip_latvecs,num_near_neigh)
 sheets = 7
 energy_conv = 1
 eigenvals = zeros(sheets,size(mesh.points,1))
 for i = sort(unique(sym₋unique))[2:end]
     eigenvals[:,i] = eval_epm(mesh.points[i,:],m2recip_latvecs,m2rules,m2cutoff,sheets,energy_conv)
 end
-
 index = 1
-get_intercoeffs(index,mesh,ext_mesh,sym₋unique,eigenvals,simplicesᵢ)
+intercoeffs,bezcoeffs = get_intercoeffs(index,mesh,ext_mesh,sym₋unique,eigenvals,simplicesᵢ)
+length(bezcoeffs)
 # output
-7-element Vector{Matrix{Float64}}:
- [-0.4170406590890757 -0.44894253681741786 … -0.418185036063509 -0.4087992707500061; -0.4170406590890757 -0.4130115291504489 … -0.38325424751903675 -0.4087992707500061]
- [-0.09968473377219263 -0.10467222688790542 … -0.16182723345176916 -0.11471023344428993; -0.09968473377219263 -0.03966774615259443 … -0.09724196302121388 -0.11471023344428993]
- [0.06333883794674595 0.06176891894277915 … 0.05053770503975599 0.059530423104755405; 0.06333883794674595 0.07433130559535622 … 0.06321666534916602 0.059530423104755405]
- [0.9336184268894858 0.8965079932976808 … 0.9422896105253507 0.9616264337394995; 0.9336184268894858 0.9442386828910152 … 0.9986202705442639 0.9616264337394995]
- [1.0370385907264408 0.98617538886686 … 1.0192740316847344 1.025752774169218; 1.0370385907264408 1.0340184952232654 … 1.0650238198456579 1.025752774169218]
- [1.243798381547987 1.1209957076784376 … 1.2392094226656643 1.2828198059158602; 1.243798381547987 1.255588675708819 … 1.3708953013582792 1.2828198059158602]
- [1.7629457567764115 1.7492156915207968 … 1.586750383315745 1.7117209463142664; 1.7629457567764115 1.9545533797734849 … 1.7735112086457399 1.7117209463142664]
+7
 ```
 """
-function get_intercoeffs(index::Int,mesh::PyObject,ext_mesh::PyObject,
-        sym₋unique::AbstractVector{<:Real},eigenvals::AbstractMatrix{<:Real},
-        simplicesᵢ::Vector{Vector{Int64}},fatten::Real=def_fatten,
+function get_intercoeffs(index::Int, mesh::PyObject, ext_mesh::PyObject,
+        sym₋unique::AbstractVector{<:Real}, eigenvals::AbstractMatrix{<:Real},
+        simplicesᵢ::Vector,
+        fatten::Real=def_fatten,
         num_near_neigh::Int=def_num_near_neigh; sigma::Real=0,
         epm::Union{Nothing,epm₋model2D,epm₋model}=nothing,
         neighbor_method::Int=def_neighbor_method,
-        num_neighbors::Union{Nothing,Int}=nothing)
+        num_neighbors::Union{Nothing,Integer}=nothing)
      
     simplexᵢ = simplicesᵢ[index]
     simplex = Matrix(mesh.points[simplexᵢ,:]')
@@ -1906,11 +1895,13 @@ Determine where a quadratic curve is equal to zero.
 
 # Examples
 ```jldoctest
-using Pebsi.Simpson: bezcurve_intersects
+using Pebsi.QuadraticIntegration: bezcurve_intersects
 coeffs = [0,1,-1]
 bezcurve_intersects(coeffs)
 # output
-[2/3]
+2-element Vector{Float64}:
+ 0.0
+ 0.6666666666666666
 ```
 """
 function bezcurve_intersects(bezcoeffs::AbstractVector{<:Real};
@@ -1936,11 +1927,13 @@ Calculate the interval(s) of a quadratic where it is less than 0 between (0,1).
 
 # Examples
 ```jldoctest
-using Pebsi.Simpson: getdomain
+using Pebsi.QuadraticIntegration: getdomain
 coeffs = [0,1,-1]
 getdomain(coeffs)
 # output
-[2/3,1]
+2-element Vector{Any}:
+ 0.6666666666666666
+ 1.0
 ```
 """
 function getdomain(bezcoeffs::AbstractVector{<:Real};
@@ -1989,17 +1982,17 @@ Calculate the area of a quadratic where it is less than zero between (0,1).
 
 # Examples
 ```jldoctest
-using Pebsi.Simpson: analytic_area1D
-coeffs = [0,1,-1]
-limits = [0,1]
+using Pebsi.QuadraticIntegration: analytic_area1D
+coeffs = [0.,1.,-1.]
+limits = [0.,1.]
 analytic_area1D(coeffs,limits)
 # output
--0.1481481481481482
+0.0
 ```
 """
 function analytic_area1D(coeffs::AbstractVector{<:Real},limits::AbstractVector)::Real
     if length(limits) == 0
-        area = 0
+        area = 0.
     elseif length(limits) == 2
         a,b,c = coeffs
         t0,t1 = limits
@@ -2031,7 +2024,7 @@ Integrate the area below a list of values within an interval.
 
 # Examples
 ```jldoctest
-using Pebsi.Simpson: simpson
+using Pebsi.QuadraticIntegration: simpson
 f(x)=x^3+x^2+1
 v=map(x->f(x),range(-1,3,step=0.1))
 simpson(v,4)
@@ -2115,7 +2108,7 @@ Calculate the shortest distance between a point and a line embedded in 2D.
 
 # Example
 ```jldoctest
-using Pebsi.Simpson: linept_dist
+using Pebsi.QuadraticIntegration: linept_dist
 line = [0 1; 0 0]
 pt = [0,2]
 # output

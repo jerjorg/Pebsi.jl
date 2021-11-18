@@ -2,7 +2,7 @@ using Test
 
 import Pebsi.RectangularMethod: sample_unitcell, symreduce_grid,
     calculate_orbits, convert_mixedradix, rectangular_method
-import Pebsi.EPMs: free,free_fl,free_be, mf, mf2D
+import Pebsi.EPMs: free,free_fl,free_be, mf, free_epm
 
 import Base.Iterators: product
 import SymmetryReduceBZ.Symmetry: calc_pointgroup, calc_ibz, mapto_ibz,
@@ -188,12 +188,12 @@ import SymmetryReduceBZ.Utilities: contains
             
     end
 
-    n,fl,be = rectangular_method(mf2D,100)
-    @test abs(fl - mf2D.fermilevel) < 1e-3
-    @test abs(be - mf2D.bandenergy) < 1e-7
-    
-    n,fl,be = rectangular_method(mf,50)
+    n,fl,be = rectangular_method(mf,100)
     @test abs(fl - mf.fermilevel) < 1e-3
-    @test abs(be - mf.bandenergy) < 1e-6
+    @test abs(be - mf.bandenergy) < 1e-7
+    
+    n,fl,be = rectangular_method(free_epm,50)
+    @test abs(fl - free_epm.fermilevel) < 1e-3
+    @test abs(be - free_epm.bandenergy) < 1e-6
 
 end

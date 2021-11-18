@@ -2,7 +2,7 @@ module Mesh
 
 using ..Geometry: simplex_size, barytocart, lineseg₋pt_dist, ptface_mindist
 using ..Polynomials: sample_simplex
-using ..Defaults: def_atol, def_rtol, def_mesh_scale, def_max_neighbor_tol,
+using ..Defaults: def_atol, def_mesh_scale, def_max_neighbor_tol,
     def_neighbors_per_bin2D, def_neighbors_per_bin3D, def_num_neighbors2D, 
     def_num_neighbors3D
 using SymmetryReduceBZ.Utilities: unique_points, get_uniquefacets
@@ -39,11 +39,9 @@ index = 2
 mesh = spatial.Delaunay(pts)
 get_neighbors(index,mesh)
 # output
-5-element Array{Int64,1}:
- 4
- 1
+2-element Vector{Int64}:
  5
- 3
+ 6
 ```
 """
 function get_neighbors(index::Int,mesh::PyObject,
@@ -54,7 +52,7 @@ function get_neighbors(index::Int,mesh::PyObject,
     indices .+= 1
     indptr .+= 1
     neighborsᵢ = Vector{Int64}(indptr[indices[index]:indices[index+1]-1])
-    # The mesh is enclosed in a box. Don't include neighbors that are the points
+    # The mesh is enclosed in a box. Don't include neighbors that are the corners
     # of the box.
     neighborsᵢ = filter(x->!(x in [ignore; index]), unique(neighborsᵢ))
     for _=2:num₋neighbors
@@ -66,7 +64,45 @@ function get_neighbors(index::Int,mesh::PyObject,
     unique(neighborsᵢ)
 end
 
-function choose_neighbors(simplex,neighborsᵢ,neighbors;num_neighbors=nothing)
+@doc """
+    choose_neighbors(simplex,neighborsᵢ,neighbors;num_neighbors)
+
+Select neighbors to include in interval coefficient calculations.
+
+# Arguments
+- `simplex::AbstractMatrix{<:Real}`: the Cartesian coordinates of the corners of
+   a triangle in columns of a matrix.
+- `neighborsᵢ::AbstractVector{<:Integer}`: the positions of the neighbors in the
+    extended mesh.
+- `neighbors::AbstractMatrix{<:Real}`: the coordinates of the neighboring points
+    in columns of a matrix.
+- `num_neighbors::Integer=nothing`: the number of neighbors to include in the 
+    calculation of interval coefficients.
+
+# Returns
+- `neighᵢ::AbstractVector{<:Integer}`: the positions of the neighboring points
+    to include in the calculation of interval coefficients in the extended mesh.
+
+# Examples
+```jldoctest
+using Pebsi.Mesh: choose_neighbors
+using Pebsi.Mesh: choose_neighbors
+triangle = [0. 1. 1.; 0. 0. 1.]
+neighborsᵢ = [5, 6, 7, 8, 9, 10]
+neighbors = [-1. -1. 0. 1. 2. 0.; 0. 1. 2. 2. 3. 4.]
+num_neighbors = 4
+choose_neighbors(triangle,neighborsᵢ,neighbors,num_neighbors=num_neighbors)
+# output
+4-element Vector{Integer}:
+ 5
+ 8
+ 7
+ 6
+```
+"""
+function choose_neighbors(simplex::AbstractMatrix{<:Real},
+    neighborsᵢ::AbstractVector{<:Integer}, neighbors::AbstractMatrix{<:Real};
+    num_neighbors::Integer=nothing)::AbstractVector{<:Integer}
 
     dim = size(simplex,1)
     if num_neighbors == nothing
@@ -80,7 +116,6 @@ function choose_neighbors(simplex,neighborsᵢ,neighbors;num_neighbors=nothing)
     neighborsᵢ = neighborsᵢ[order]
     distances = [minimum([
         lineseg₋pt_dist(neighbors[:,j],simplex[:,[i,mod1(i+1,3)]]) for i=1:3]) for j=1:size(neighbors,2)]
-    # dorder = sortperm(sortperm(distances))
     
     # Group neighboring points by angle ranges
     nbins = round(Int,num_neighbors/neighbors_per_bin)
@@ -104,10 +139,10 @@ function choose_neighbors(simplex,neighborsᵢ,neighbors;num_neighbors=nothing)
         dorder = sortperm(distances)
         angle_ran[p] = neighborsᵢ[angle_ran[p][dorder]]
     end
-    # angle_ran[p] = angle_ran[p][sortperm(dorder[angle_ran[p]])]
+    
     # Select the points within the angle ranges that are closest to the sample points of the triangle.
     c = 0
-    neighᵢ = []
+    neighᵢ = Vector{Integer}(undef,0)
     while length(neighᵢ) < num_neighbors
         c += 1
         for i=1:nbins
@@ -131,13 +166,29 @@ Select neighboring points that are close and uniformly surround the tetrahedron.
 # Arguments
 - `simplex`: the corners of the tetrahedron as columns of a matrix in Cartesian
     coordinates.
-- `neighborsᵢ`: the indices of all neighboring points
+- `neighborsᵢ`: the indices of all neighboring points.
 - `neighbors`: the Cartesian coordinates of neighboring points as columns of a
-    matrix
-- `num_neighbors`: the number of neighbors to keep
+    matrix.
+- `num_neighbors`: the number of neighbors to keep.
 
 # Returnts
-- `neighᵢ`: the indices of neighboring points kept
+- `neighᵢ`: the indices of neighboring points kept.
+
+# Examples
+```jldoctest
+using Pebsi.Mesh: choose_neighbors3D
+tetrahedron = [0. 1. 0. 0.; 0. 0. 1. 0.; 0. 0. 0. 1.]
+neighborsᵢ = [9, 10, 11, 12, 13, 14, 15, 16]
+neighbors = [-2. -2. -2. -2. 2. 2. 2. 2. ; -2. -2. 2. 2. -2. -2. 2. 2.; -2. 2. -2. 2. -2. 2. -2. 2.]
+num_neighbors = 4
+choose_neighbors3D(tetrahedron,neighborsᵢ,neighbors,num_neighbors=num_neighbors)
+# output
+4-element Vector{Any}:
+ 14
+ 16
+ 10
+ 15
+```
 """
 function choose_neighbors3D(simplex,neighborsᵢ,neighbors;num_neighbors=nothing)
 
@@ -187,8 +238,8 @@ function choose_neighbors3D(simplex,neighborsᵢ,neighbors;num_neighbors=nothing
     for i = 1:nbinsθ
         for θᵢ in binsθ[i]
             for j = 1:nbinsϕ
-                if θᵢ in binsϕ[j]
-                    push!(angle_ran[i][j],θᵢ)
+                if ϕⱼ in binsϕ[j]
+                    push!(angle_ran[i][j],ϕⱼ)
                 end
             end
         end
@@ -204,7 +255,7 @@ function choose_neighbors3D(simplex,neighborsᵢ,neighbors;num_neighbors=nothing
             angle_ran[i][j] = angle_ran[i][j][order]
         end
     end
-
+     
     c = 0
     neighᵢ = []
     while length(neighᵢ) < num_neighbors
@@ -236,17 +287,19 @@ Create a triangulation of a roughly uniform mesh over the IBZ.
 # Returns
 - `mesh::PyObject`: a triangulation of a uniform mesh over the IBZ. To avoid
     collinear triangles at the boundary of the IBZ, the IBZ is enclosed in a 
-    square. The first four points are the corners of the square and need to be 
-    disregarded in subsequent computations.
+    square. The first four (eight) points are the corners of the square (cube) 
+    and need to be disregarded in subsequent computations.
 
 # Examples
 ```jldoctest
-import Pebsi.EPMs: m2ibz
+using QHull
 import Pebsi.Mesh: ibz_init₋mesh
-n = 5
-ibz_init₋mesh(ibz,n)
+ibz = chull(Matrix([0. 0. 1. 1.; 0. 1. 0. 1.]'))
+n = 2
+mesh = ibz_init₋mesh(ibz,n)
+mesh.npoints
 # output
-PyObject <scipy.spatial.qhull.Delaunay object at 0x19483d130>
+8
 ```
 """
 function ibz_init₋mesh(ibz::Chull{<:Real},n::Int;
@@ -283,7 +336,7 @@ function ibz_init₋mesh(ibz::Chull{<:Real},n::Int;
 end
 
 @doc """
-    get_sym₋unique(mesh,pointgroup;rtol,atol)
+    get_sym₋unique!(mesh,pointgroup;rtol,atol)
 
 Calculate the symmetrically unique points within the IBZ.
 
@@ -298,9 +351,32 @@ Calculate the symmetrically unique points within the IBZ.
 - `sym₋unique::AbstractVector{<:Int}`: a vector that gives the position of the k-point
     that is equivalent to each k-point (except for the first 4 points or the
     points of the box). The first k-points, after the first 4, are unique.
+- `mesh::PyObject`: a triangulation of a uniform mesh over the IBZ. To avoid
+    collinear triangles at the boundary of the IBZ, the IBZ is enclosed in a 
+    square. The first four (eight) points are the corners of the square (cube) 
+    and need to be disregarded in subsequent computations.
 
 # Examples
 ```jldoctest
+using Pebsi.EPMs: m51
+using Pebsi.Mesh: get_sym₋unique!, ibz_init₋mesh
+mesh = ibz_init₋mesh(m51.ibz,3)
+sym_unique,mesh = get_sym₋unique!(mesh,m51.pointgroup)
+sym_unique
+# output
+12-element Vector{Int64}:
+  0
+  0
+  0
+  0
+  5
+  6
+  7
+  8
+  9
+ 10
+ 11
+  7
 ```
 """
 function get_sym₋unique!(mesh::PyObject,pointgroup::Vector{Matrix{Float64}};
@@ -362,42 +438,32 @@ Determine all simplices in a triangulation that do not contain a box point.
 
 # Arguments
 - `mesh::PyObject`: a triangulation of a mesh over the IBZ enclosed in a box. It
-    is assumed that the first four points in the mesh are the box points.
+    is assumed that the first four (eight) points in the mesh are the box points.
 
 # Returns
-    `simplicesᵢ::Vector{Vector{Int}}`: the simplices of the triangulation without
-        box points.
+- `simplicesᵢ::Vector{Vector{Integer}}`: the simplices of the triangulation without
+    box points.
 
 # Examples
 ```jldoctest
-using PyCall
-spatial = pyimport("scipy.spatial")
-pts = [-0.4940169358562923 -0.9141379262169073; -0.4940169358562923 0.24056261216234398; 0.6606836025229589 -0.9141379262169073; 0.6606836025229589 0.24056261216234398; 0.0 -0.5773502691896256; 0.06249999999999997 -0.541265877365274; 0.12499999999999994 -0.5051814855409225; 0.18749999999999992 -0.4690970937165708; 0.2499999999999999 -0.4330127018922192; 0.0 -0.4330127018922192; 0.06249999999999997 -0.3969283100678676; 0.12499999999999994 -0.360843918243516; 0.18749999999999992 -0.3247595264191644; 0.0 -0.2886751345948128; 0.06249999999999997 -0.25259074277046123; 0.12499999999999994 -0.2165063509461096; 0.0 -0.1443375672974064; 0.06249999999999997 -0.1082531754730548; 0.0 0.0]
-mesh = spatial.Delaunay(pts)
+using Pebsi.EPMs: m51
+using Pebsi.Mesh: ibz_init₋mesh, notbox_simplices
+mesh = ibz_init₋mesh(m51.ibz,3)
 notbox_simplices(mesh)
 # output
-16-element Vector{Vector{Int64}}:
- [19, 17, 18]
- [15, 17, 14]
- [6, 10, 5]
- [10, 11, 14]
- [17, 15, 18]
- [15, 16, 18]
- [13, 15, 12]
- [15, 13, 16]
- [8, 13, 12]
- [13, 8, 9]
- [11, 8, 12]
- [8, 11, 7]
- [6, 11, 10]
- [11, 6, 7]
- [15, 11, 12]
- [11, 15, 14]
+8-element Vector{Vector{Int64}}:
+ [10, 6, 9]
+ [10, 8, 12]
+ [8, 10, 9]
+ [11, 5, 6]
+ [11, 10, 12]
+ [10, 11, 6]
+ [7, 11, 12]
+ [5, 11, 7]
 ```
 """
-function notbox_simplices(mesh::PyObject)::Vector{Vector{Int}}
-
-    simplicesᵢ = Vector{Any}(zeros(size(mesh.simplices,1)))
+function notbox_simplices(mesh::PyObject)::Vector{Vector{<:Integer}}
+    simplicesᵢ = [Vector{Int}(mesh.simplices[i,:]) for i=1:size(mesh.simplices,1)]
     dim = size(mesh.points,2)
     if dim == 2 jend = 4 else jend = 8 end
     n = 0
@@ -412,7 +478,7 @@ function notbox_simplices(mesh::PyObject)::Vector{Vector{Int}}
             end
         end
     end
-    Vector{Vector{Int}}(simplicesᵢ[1:n])    
+    simplicesᵢ[1:n]
 end
 
 @doc """
@@ -431,36 +497,23 @@ Determine which points are on the boundary of the IBZ (or any convex hull).
 
 # Examples
 ```jldoctest
-import Pebsi.EPMs: m2ibz
-using PyCall
-spatial = pyimport("scipy.spatial")
-import Pebsi.QuadraticIntegration: get_cvpts
-pts = [-0.4940169358562923 -0.9141379262169073; -0.4940169358562923 0.24056261216234398; 0.6606836025229589 -0.9141379262169073; 0.6606836025229589 0.24056261216234398; 0.0 -0.5773502691896256; 0.0357142857142857 -0.5567306167185675; 0.0714285714285714 -0.5361109642475095; 0.1071428571428571 -0.5154913117764514; 0.1428571428571428 -0.49487165930539334; 0.1785714285714285 -0.4742520068343353; 0.2142857142857142 -0.4536323543632772; 0.2499999999999999 -0.4330127018922192; 0.0 -0.49487165930539334; 0.0357142857142857 -0.4742520068343353; 0.0714285714285714 -0.4536323543632772; 0.1071428571428571 -0.4330127018922192; 0.1428571428571428 -0.4123930494211611; 0.1785714285714285 -0.3917733969501031; 0.2142857142857142 -0.371153744479045; 0.0 -0.4123930494211612; 0.0357142857142857 -0.39177339695010305; 0.0714285714285714 -0.37115374447904503; 0.1071428571428571 -0.3505340920079869; 0.1428571428571428 -0.3299144395369289; 0.1785714285714285 -0.3092947870658709; 0.0 -0.3299144395369289; 0.0357142857142857 -0.3092947870658708; 0.0714285714285714 -0.28867513459481275; 0.1071428571428571 -0.26805548212375474; 0.1428571428571428 -0.24743582965269667; 0.0 -0.24743582965269667; 0.0357142857142857 -0.2268161771816386; 0.0714285714285714 -0.20619652471058056; 0.1071428571428571 -0.1855768722395225; 0.0 -0.16495721976846445; 0.0357142857142857 -0.14433756729740638; 0.0714285714285714 -0.12371791482634834; 0.0 -0.08247860988423222; 0.0357142857142857 -0.06185895741317417; 0.0 0.0]
-mesh = spatial.Delaunay(pts)
-get_cvpts(mesh,m2ibz)
+using Pebsi.QuadraticIntegration: get_cvpts
+using PyCall; spatial = pyimport("scipy.spatial")
+using QHull
+ibz = chull(Matrix([0. 0. 1. 1.; 0. 1. 0. 1.]'))
+pts = [0. 0. 0. 0.5 0.5 0.5 1.0 1.0 1.0; 0. 0.5 1. 0. 0.5 1. 0. 0.5 1.]
+mesh = spatial.Delaunay(Matrix(pts'))
+get_cvpts(mesh,ibz)
 # output
-21-element Vector{Int64}:
-  5
-  6
-  7
-  8
-  9
- 10
- 11
- 12
- 13
- 19
- 20
- 25
- 26
- 30
- 31
- 34
- 35
- 37
- 38
- 39
- 40
+8-element Vector{Int64}:
+ 1
+ 2
+ 3
+ 4
+ 6
+ 7
+ 8
+ 9
 ```
 """
 function get_cvpts(mesh::PyObject,ibz::Chull;atol::Real=def_atol)::AbstractVector{<:Int}
@@ -485,21 +538,6 @@ function get_cvpts(mesh::PyObject,ibz::Chull;atol::Real=def_atol)::AbstractVecto
 
     cv_pointsᵢ[1:n]
 end
-# function get_cvpts(mesh::PyObject,ibz::Chull;atol::Real=def_atol)::AbstractVector{<:Int}
-    
-#     ibz_linesegs = [Matrix(ibz.points[i,:]') for i=ibz.simplices]
-#     cv_pointsᵢ = [0 for i=1:size(mesh.points,1)]
-#     n = 0
-#     for i=1:size(mesh.points,1)
-#         if any([isapprox(lineseg₋pt_dist(mesh.points[i,:],line_seg),0,atol=atol) 
-#             for line_seg=ibz_linesegs])
-#             n += 1
-#             cv_pointsᵢ[n] = i
-#         end
-#     end
-
-#     cv_pointsᵢ[1:n]
-# end
 
 @doc """
     get_extmesh(ibz,mesh,pointgroup,recip_latvecs,near_neigh=1;rtol,atol)
@@ -529,19 +567,35 @@ Calculate a triangulation of points within and just outside the IBZ.
 
 # Examples
 ```jldoctest
-using PyCall
-spatial = pyimport("scipy.spatial")
-import Pebsi.EPMs: m2ibz,m2pointgroup,m2recip_latvecs
-pts = [-0.4940169358562923 -0.9141379262169073; -0.4940169358562923 0.24056261216234398; 0.6606836025229589 -0.9141379262169073; 0.6606836025229589 0.24056261216234398; 0.0 -0.5773502691896256; 0.0357142857142857 -0.5567306167185675; 0.0714285714285714 -0.5361109642475095; 0.1071428571428571 -0.5154913117764514; 0.1428571428571428 -0.49487165930539334; 0.1785714285714285 -0.4742520068343353; 0.2142857142857142 -0.4536323543632772; 0.2499999999999999 -0.4330127018922192; 0.0 -0.49487165930539334; 0.0357142857142857 -0.4742520068343353; 0.0714285714285714 -0.4536323543632772; 0.1071428571428571 -0.4330127018922192; 0.1428571428571428 -0.4123930494211611; 0.1785714285714285 -0.3917733969501031; 0.2142857142857142 -0.371153744479045; 0.0 -0.4123930494211612; 0.0357142857142857 -0.39177339695010305; 0.0714285714285714 -0.37115374447904503; 0.1071428571428571 -0.3505340920079869; 0.1428571428571428 -0.3299144395369289; 0.1785714285714285 -0.3092947870658709; 0.0 -0.3299144395369289; 0.0357142857142857 -0.3092947870658708; 0.0714285714285714 -0.28867513459481275; 0.1071428571428571 -0.26805548212375474; 0.1428571428571428 -0.24743582965269667; 0.0 -0.24743582965269667; 0.0357142857142857 -0.2268161771816386; 0.0714285714285714 -0.20619652471058056; 0.1071428571428571 -0.1855768722395225; 0.0 -0.16495721976846445; 0.0357142857142857 -0.14433756729740638; 0.0714285714285714 -0.12371791482634834; 0.0 -0.08247860988423222; 0.0357142857142857 -0.06185895741317417; 0.0 0.0]
-mesh = spatial.Delaunay(pts)
-get_extmesh(m2ibz,mesh,m2pointgroup,m2recip_latvecs)
+using Pebsi.EPMs: m21
+using Pebsi.Mesh: ibz_init₋mesh, get_extmesh
+mesh = ibz_init₋mesh(m21.ibz,1)
+mesh,extmesh,sym_unique = get_extmesh(m21.ibz,mesh,m21.pointgroup,m21.recip_latvecs)
+sym_unique
 # output
-PyObject (<scipy.spatial.qhull.Delaunay object at 0x1802f7820>, array([ 0,  0,  0,  0,  5,  6,  7,  8,  9, 10, 11, 12, 13, 14, 15, 16, 17,
-       18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34,
-       35, 36, 37, 38, 39, 40, 13, 13,  6,  6,  7,  7, 15, 15, 14, 14, 16,
-       10, 17, 17, 11, 18, 18, 18, 19, 24, 21, 27, 22, 29, 33, 33, 35, 32,
-       32, 37, 36, 36, 38, 38, 38, 38, 38, 39, 39, 39, 39, 39],
-      dtype=int64))
+22-element Vector{Int64}:
+ 0
+ 0
+ 0
+ 0
+ 5
+ 6
+ 7
+ 7
+ 7
+ 6
+ 6
+ 6
+ 6
+ 6
+ 6
+ 6
+ 5
+ 5
+ 5
+ 5
+ 5
+ 5
 ```
 """
 function get_extmesh(ibz::Chull,mesh::PyObject,pointgroup::Vector{Matrix{Float64}},
@@ -591,56 +645,30 @@ function get_extmesh(ibz::Chull,mesh::PyObject,pointgroup::Vector{Matrix{Float64
     (mesh,ext_mesh,sym₋unique)
 end
 
-# function get_extmesh(ibz::Chull,mesh::PyObject,pointgroup::Vector{Matrix{Float64}},
-#     recip_latvecs::AbstractMatrix{<:Real},near_neigh::Int=1;
-#     rtol::Real=sqrt(eps(maximum(abs.(mesh.points)))),atol::Real=def_atol)
-
-#     dim = size(recip_latvecs,1)
-#     spatial = pyimport("scipy.spatial")
-#     sym₋unique,mesh = get_sym₋unique!(mesh,pointgroup)
-#     cv_pointsᵢ = get_cvpts(mesh,ibz)
-#     neighborsᵢ = reduce(vcat,[get_neighbors(i,mesh,near_neigh) for i=cv_pointsᵢ]) |> unique
-#     numpts = size(mesh.points,1)
-#     # Calculate the maximum distance between neighboring points
-#     bound_limit = def_max_neighbor_tol*maximum(
-#         reduce(vcat,[[norm(mesh.points[i,:] - mesh.points[j,:]) 
-#                     for j=get_neighbors(i,mesh,near_neigh)] for i=cv_pointsᵢ]))
-     
-#     ibz_linesegs = [Matrix(ibz.points[i,:]') for i=ibz.simplices]
-
-#     if dim == 2
-#         bztrans = [[[i,j] for i=-1:1,j=-1:1]...]
-#     else
-#         bztrans = [[[i,j,k] for i=-1:1,j=-1:1,k=-1:1]...]
-#     end
-
-#     # Rotate the neighbors of the points on the boundary. Keep the points if they are within
-#     # a distance of `bound_limit` of any of the interior boundaries.
-#     neighbors = zeros(Float64,dim,length(neighborsᵢ)*length(pointgroup)*length(bztrans))
-#     sym₋unique = [sym₋unique; zeros(Int,size(neighbors,2))]
-#     n = 0
-#     for i=neighborsᵢ,op=pointgroup,trans=bztrans
-#         pt = op*mesh.points[i,:] + recip_latvecs*trans
-#         if any([lineseg₋pt_dist(pt,line_seg,false) < bound_limit for line_seg=ibz_linesegs]) &&
-#             !any(mapslices(x->isapprox(x,pt,atol=atol,rtol=rtol),[mesh.points' neighbors[:,1:n]],dims=1))
-#             n += 1
-#             neighbors[:,n] = pt
-#             sym₋unique[numpts + n] = sym₋unique[i]
-#         end
-#     end
-#     neighbors = neighbors[:,1:n]
-#     sym₋unique = sym₋unique[1:numpts + n]
-#     ext_mesh = spatial.Delaunay(unique_points([mesh.points; neighbors']',
-#         rtol=rtol,atol=atol)')   
-#     (mesh,ext_mesh,sym₋unique)
-# end
-
 """
-    trimesh(triangle,ndivs)
+    trimesh(ndivs)
 
 Split a triangle uniformly into smaller triangles and sample each subtriangle at its center.
+
+# Arguments
+- `ndivs::Integer`: the number of divisions along one side of the triangle.
+
+# Returns
+- `mesh::Matrix{<:Real}`: the points in the mesh in barycentric coordinates in
+    columns of a matrix.
+
+# Examples
+```jldoctest
+using Pebsi.Mesh: trimesh
+trimesh(3)
+# output
+3×4 Matrix{Float64}:
+ 0.666667  0.333333  0.166667  0.166667
+ 0.166667  0.333333  0.666667  0.166667
+ 0.166667  0.333333  0.166667  0.666667
+```
 """
-function trimesh(ndivs)
+function trimesh(ndivs::Integer)::Matrix{<:Real}
     dim = 2
     bpts = sample_simplex(dim,ndivs) 
     mesh = zeros(3,ndivs*ndivs)
