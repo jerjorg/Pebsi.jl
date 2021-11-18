@@ -1,10 +1,9 @@
 module Polynomials
 
 using ..Defaults: def_bez_weight_tol, def_atol
-using ..Geometry: sample_simplex,barytocart,carttobary
+using ..Geometry: barytocart, carttobary
 using Base.Iterators: product
-using LinearAlgebra: dot,det,norm
-using Statistics: mean
+using LinearAlgebra: dot
 
 export bernstein_basis, getpoly_coeffs, eval_poly, getbez_pts₋wts, 
     eval_bezcurve, conicsection, eval_1Dquad_basis, get_1Dquad_coeffs, 
@@ -16,24 +15,22 @@ export bernstein_basis, getpoly_coeffs, eval_poly, getbez_pts₋wts,
 Evaluate the Bernstein polynomials at a point of a given degree and for a given dimension.
 
 # Arguments
-- `bpt::AbstractArray`: a point in Barycentric coordinates
+- `bpt::AbstractVector`: a point in barycentric coordinates
 - `dim::Integer`: the number of dimensions.
 - `deg::Integer`: the degree of the polynomials
 
 # Returns
-- `::AbstractArray`: the Bernstein polynomials of a given degree and dimension
-    evaluated at the given point in Barycentric coordinates.
+- `::AbstractVector`: the Bernstein polynomials of a given degree and dimension
+    evaluated at the given point in barycentric coordinates.
 
 # Examples
 ```jldoctest
-import Pebsi.Polynomials: bernstein_basis
-import PyCall: pyimport
-sympy=pyimport("sympy")
-import SymPy: symbols
+using Pebsi.Polynomials: bernstein_basis
+using SymPy: symbols, Sym
 s,t,u=symbols("s,t,u")
 bernstein_basis([s,t,u],2,2)
 # output
-6-element Vector{SymPy.Sym}:
+6-element Vector{Sym}:
  1.0*s^2
  2.0⋅s⋅t
  1.0*t^2
@@ -42,8 +39,8 @@ bernstein_basis([s,t,u],2,2)
  1.0*u^2
 ```
 """
-function bernstein_basis(bpt::AbstractArray,dim::Integer,
-    deg::Integer)::AbstractArray
+function bernstein_basis(bpt::AbstractVector, dim::Integer, 
+    deg::Integer)::AbstractVector
     indices = [p for p=collect(product([0:deg for i=0:dim]...)) if 
         sum(p) == deg]
     [factorial(deg)/prod(factorial.(index))*prod(bpt.^index) for index=indices]
@@ -52,7 +49,32 @@ end
 """
     bernstein_basis(bpts,dim,deg)
 
-Evaluate the Bernstein basis functions at each point in an array (points are columns).
+Evaluate the Bernstein basis functions at many points.
+
+# Arguments
+- `bpts::AbstractMatrix{<:Real}`: a matrix whose columns are points in 
+    barycentric coordinates.
+- `dim::Integer`: the number of dimensions.
+- `deg::Integer`: the degree of the polynomials
+
+# Returns
+- `::AbstractMatrix{<:Real}`: matrix of Bernstein basis function evaluations. 
+    The values in each column correspond to the points in `bpts`.
+
+# Examples
+```jldoctest
+using Pebsi.Polynomials: bernstein_basis
+pts = [0 0 0; 0 1 0; 1 0 0]
+bernstein_basis(pts,2,2)
+# output
+6×3 Matrix{Float64}:
+ 0.0  0.0  0.0
+ 0.0  0.0  0.0
+ 0.0  1.0  0.0
+ 0.0  0.0  0.0
+ 0.0  0.0  0.0
+ 1.0  0.0  0.0
+```
 """
 function bernstein_basis(bpts::AbstractMatrix{<:Real},dim::Integer,
     deg::Integer)::AbstractMatrix{<:Real}
@@ -66,9 +88,9 @@ Calculate the coefficients of a polynomial interpolation over a simplex.
 
 # Arguments
 - `values::AbstractVector{<:Real}`: the value of the approximated function at
-    samples within the simplex.
+    sample points within the simplex.
 - `simplex_bpts::AbstractMatrix{<:Real}`: the sample points in the simplex in 
-    barycentric coordinates as columns of an array.
+    barycentric coordinates as columns of a matrix.
 - `dim::Integer`: the number of dimensions.
 - `deg::Integer`: the degree of the polynomial.
 
@@ -80,8 +102,7 @@ Calculate the coefficients of a polynomial interpolation over a simplex.
 import Pebsi.Polynomials: getpoly_coeffs
 simplex_bpts = [1.0 0.5 0.0 0.5 0.0 0.0; 0.0 0.5 1.0 0.0 0.5 0.0; 0.0 0.0 0.0 0.5 0.5 1.0]
 values = [0.4, 0.5, 0.3, -0.4, -0.1, -0.2]
-dim = 2
-deg = 2
+dim = 2; deg = 2
 getpoly_coeffs(values,simplex_bpts,dim,deg)
 # output
 6-element Vector{Float64}:
@@ -105,21 +126,20 @@ end
 Evaluate a polynomial at a point.
 
 # Arguments
-- `barypt::AbstractVector{<:Real}`: a point in Barycentric coordinates.
-- `coeffs::AbstractVector{<:Real}`: the coefficients of the polynomial approximation
+- `barypt::AbstractVector{<:Real}`: a point in barycentric coordinates.
+- `coeffs::AbstractVector{<:Real}`: the coefficients of the polynomial approximation.
 - `dim::Integer`: the number of dimensions.
 - `deg::Integer`: the degree of the polynomial.
 
 # Returns
-` `::Any`: the value of the polynomial approximation an `barypt`.
+- `::Any`: the polynomial approximation evaluated at `barypt`.
 
 # Examples
 ```jldoctest
 using Pebsi.Polynomials: eval_poly
 barypt = [1,0,0]
 coeffs = [0.4, 0.65, 0.3, -0.9, -0.25, -0.2]
-dim = 2
-deg = 2
+dim = 2; deg = 2
 eval_poly(barypt,coeffs,dim,deg)
 # output
 0.4
@@ -133,24 +153,33 @@ end
 @doc """
     eval_poly(barypts,coeffs,dim,deg)
 
-Evaluate a polynomial for each point in an array (points are columns).
+Evaluate a polynomial at more than one point.
+
+# Arguments
+- `barypts::AbstractMatrix{<:Real}`: points in barycentric coordinates in the 
+    columns of a matrix.
+- `coeffs::AbstractVector{<:Real}`: the coefficients of the polynomial.
+- `dim::Integer`: the number of dimensions.
+- `deg::Integer`: the degree of the polynomial.
+
+# Returns
+- `::AbstractVector{<:Real}`: the polynomial evaluated at each point in `barypts`.
 
 # Examples
 ```jldoctest
 using Pebsi.Polynomials: eval_poly
 simplex_bpts = [1.0 0.5 0.0 0.5 0.0 0.0; 0.0 0.5 1.0 0.0 0.5 0.0; 0.0 0.0 0.0 0.5 0.5 1.0]
-coeffs = [0.4, 0.5, 0.4, -0.2, -0.1, -0.3]
-dim = 2
-deg = 2
+coeffs = [0, 0, 0, 0, 0, 0]
+dim = 2; deg = 2
 eval_poly(simplex_bpts,coeffs,dim,deg)
 # output
 6-element Vector{Float64}:
-  0.4
-  0.44999999999999996
-  0.4
- -0.075
- -0.024999999999999994
- -0.3
+ 0.0
+ 0.0
+ 0.0
+ 0.0
+ 0.0
+ 0.0
 ```
 """
 function eval_poly(barypts::AbstractMatrix{<:Real},
@@ -159,7 +188,6 @@ function eval_poly(barypts::AbstractMatrix{<:Real},
     mapslices(x->eval_poly(x,coeffs,dim,deg),barypts,dims=1)[:]
 end
 
-
 @doc """
     getbez_pts₋wts(bezpts,p₀,p₂)
 
@@ -167,17 +195,18 @@ Calculate the Bezier points and weights of a level curve of a Quadratic surface 
 
 # Arguments
 - `bezpts::AbstractVector{<:Real}`: the Bezier points of the quadratic surface.
-- `p₀::AbstractVector{<:Real}`: a point a level curve of the quadratic surface passes
+- `p₀::AbstractVector{<:Real}`: a point the level curve of the quadratic surface passes
     through. The level curve is taken at an isovalue of zero.
-- `p₂::AbstractVector{<:Real}`: a point a level curve of the quadratic surface passes
-    through. The level curve is taken at an isovalue of zero.
+- `p₂::AbstractVector{<:Real}`: another point the level curve of the quadratic 
+    surface passes through.
+- `atol::Real=def_bez_weight_tol`: a tolerance parameter for floating point comparisons. 
 
 # Returns
 - `::::Array{Array{<:Real,N} where N,1}`: the Bezier points and weights in a 1D array.
 
 # Examples
 ```jldoctest
-using  Pebsi.Polynomials: getbez_pts₋wts
+using Pebsi.Polynomials: getbez_pts₋wts
 bezpts = [-1.0 0.0 1.0 -0.5 0.5 0.0; 0.0 0.0 0.0 0.5 0.5 1.0; 0.0 1.0 0.0 1.0 -1.0 0.0]
 p₀ = [1,0]
 p₂ = [0,1]
@@ -188,9 +217,9 @@ bptswts = getbez_pts₋wts(bezpts,p₀,p₂)
  [1.0, 1.5, 1.0]
 ```
 """
-function getbez_pts₋wts(bezpts::AbstractMatrix{<:Real},
-        p₀::AbstractVector{<:Real},
-        p₂::AbstractVector{<:Real}; atol::Real=def_bez_weight_tol)
+function getbez_pts₋wts(bezpts::AbstractMatrix{<:Real}, p₀::AbstractVector{<:Real},
+    p₂::AbstractVector{<:Real}; 
+    atol::Real=def_bez_weight_tol)
 
     triangle = bezpts[1:2,[1,3,6]]
     coeffs = bezpts[3,:]
@@ -280,7 +309,26 @@ end
 @doc """
     eval_bezcurve(t,bezpts,bezwts)
 
-Evaluate a rational Bezier curve at each point in an array.
+Evaluate a rational Bezier curve at more than one point.
+
+# Arguments
+- `t::AbstractVector{<:Real}`: values of the parametric variable.
+
+# Returns
+- `::AbstractMatrix{<:Real}`: points on the Bezier curve in columns of a matrix.
+
+# Examples
+```jldoctest
+import Pebsi.Polynomials: eval_bezcurve
+t = [0., 0.5, 1.0]
+bezpts = [0.0 0.0 1.0; 1.0 1/3 0.0]
+bezwts = [1.0, 1.5, 1.0]
+eval_bezcurve(t,bezpts,bezwts)
+# output
+2×3 Matrix{Float64}:
+ 0.0  0.2  1.0
+ 1.0  0.4  0.0
+```
 """
 function eval_bezcurve(t::AbstractVector{<:Real},
     bezpts::AbstractMatrix{<:Real},
@@ -294,8 +342,8 @@ end
 Classify the conic section of a level curve of a quadratic surface.
 
 # Arguments
-- `coeffs::AbstractVector{<:Real}`: the coefficients of the quadratic polynomial.
-- `atol::Real=def_bez_weight_tol`: absolute tolerance.
+- `coeffs::AbstractVector{<:Real}`: the coefficients of the quadratic surface.
+- `atol::Real=def_bez_weight_tol`: an absolute tolerance.
 
 # Returns
 - `::String`: the type of the conic section.
@@ -339,40 +387,122 @@ function conicsection(coeffs::AbstractVector{<:Real};
     end
 end
 
-eval_1Dquad_basis(t) = [(1 - t)^2, 2*(1 - t)*t, t^2]
+@doc """
+    eval_1Dquad_basis(t)
+
+Evaluate the Bernstein basis functions for a quadratic in 1D.
+
+# Arguments
+- `t::Real`: the quadratic variable
+
+# Returns
+- `::AbstractVector{<:Real}`: the quadratic basis functions evaluated at `t`.
+
+# Examples
+```jldoctest
+using Pebsi.Polynomials: eval_1Dquad_basis
+eval_1Dquad_basis(0.5)
+# output
+3-element Vector{Float64}:
+ 0.25
+ 0.5
+ 0.25
+```
+"""
+eval_1Dquad_basis(t::Real)::AbstractVector{<:Real} = [(1 - t)^2, 2*(1 - t)*t, t^2]
+
 # basis_mat = inv(reduce(hcat,[eval_1Dquad_basis(t) for t=[0,1/2,1]])')
+@doc """ A matrix of basis-function evaluations for a 1D quadratic at values of 
+`t` of 0, 0.5, and 1."""
 basis_mat = [1 0 0; -0.5 2 -0.5; 0 0 1]
-get_1Dquad_coeffs(values) = basis_mat*values
-evalpoly1D(t,coeffs)=dot(coeffs,eval_1Dquad_basis(t))
+
+@doc """
+    get_1Dquad_coeffs(values)
+
+Calculate the coefficients of a quadratic polynomial in 1D
+
+# Arguments
+- `values::AbstractVector{<:Real}`: the values of the function being approximated
+    when the variable `t` is 0, 0.5, and 1.
+
+# Returns
+- `AbstractVector{<:Real}`: the coefficients of the quadratic polynomial.
+
+# Examples
+```jldoctest
+using Pebsi.Polynomials: get_1Dquad_coeffs
+vals = [0.1,-0.5,-0.2]
+get_1Dquad_coeffs(vals)
+# output
+3-element Vector{Float64}:
+  0.1
+ -0.9500000000000001
+ -0.2
+```
+"""
+get_1Dquad_coeffs(values::AbstractVector{<:Real})::AbstractVector{<:Real} = basis_mat*values
+
+@doc """
+    evalpoly1D(t,coeffs)
+
+Evaluate a quadratic polynomial.
+
+# Arguments
+- `t::Real`: the quadratic variable
+- `coeffs::AbstractVector{<:Real}`: the coefficients of the quadratic 
+
+# Returns
+- `::Real`: the polynomial evaluated at `t`.
+
+# Examples
+```jldoctest
+using Pebsi.Polynomials: evalpoly1D
+coeffs = [0.1,-0.95,-0.2]
+evalpoly1D(0,coeffs)
+# output
+0.1
+```
+"""
+evalpoly1D(t::Real,coeffs::AbstractVector{<:Real})::Real=dot(coeffs,eval_1Dquad_basis(t))
 
 @doc """
     solve_quadratic(a,b,c;atol)
 
-Find the solutions to a quadratic equation.
+Find the solutions to the quadratic equation `a*x² + b*x + c = 0`.
 
 # Arguments
+- `a::Real`: the coefficient of the quadratic term.
+- `b::Real`: the coefficient of the liner term.
+- `c::Real`: the coefficient of the constant term.
+- `atol::Real=def_atol`: a tolerance for comparisons to zero.
 
 # Returns
+- `sols::AbstractVector{<:Real}`: the solutions of the quadratic equation.
 
 # Examples
-```
-
-
+```jldoctest
+using Pebsi.Polynomials: solve_quadratic
+coeffs = [-1,0,1]
+solve_quadratic(coeffs...)
+# output
+2-element Vector{Float64}:
+ -1.0
+  1.0
 ```
 """
-function solve_quadratic(a,b,c;atol=def_atol)
+function solve_quadratic(a::Real,b::Real,c::Real;atol::Real=def_atol)::Vector{Real}
+
+    sols = Vector{Real}(undef,0)
     # Preliminary check for no intersections.
-    # @show a,b,c
     if !isapprox(a,0,atol=atol)
         maxval = -(b^2/(4*a)) + c
         if !isapprox(maxval,0,atol=atol)
             if (maxval > 0 && a > 0) || (maxval < 0 && a < 0)
-                return []
+                return sols
             end
         end
     end
 
-    sols = []
     if isapprox(a,0,atol=atol)
         if isapprox(b,0,atol=atol)
             if isapprox(c,0,atol=atol)
@@ -418,7 +548,7 @@ function solve_quadratic(a,b,c;atol=def_atol)
             end
         end
     end
-    sols
+    Vector{Real}(sols)
 end
 
 end # module

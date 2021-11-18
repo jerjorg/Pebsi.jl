@@ -86,7 +86,7 @@ end
 Convert a point from barycentric to Cartesian coordinates.
 
 # Arguments
-- `barypt::AbstractVector{<:Real}`: a point in Barycentric coordinates.
+- `barypt::AbstractVector{<:Real}`: a point in barycentric coordinates.
 - `simplex::AbstractMatrix{<:Real}`: the vertices of a simplex as columns of
     an array in Cartesian coordinates.
 
@@ -232,7 +232,7 @@ end
 Check if a point lie within a simplex (including the boundary).
 
 # Arguments
-- `bpt::AbstractMatrix{<:Real}`: a point in Barycentric coordinates.
+- `bpt::AbstractMatrix{<:Real}`: a point in barycentric coordinates.
 - `atol::Real=1e-9`: an absolute tolerance.
 
 # Returns
@@ -256,7 +256,7 @@ end
 @doc """
     insimplex(bpts,atol)
 
-Check if an array of points in Barycentric coordinates lie within a simplex.
+Check if an array of points in barycentric coordinates lie within a simplex.
 
 # Arguments
 - `bpts::AbstractMatrix{<:Real}`: an arry of points in barycentric coordinates

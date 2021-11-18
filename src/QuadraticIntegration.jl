@@ -4,20 +4,18 @@ using SymmetryReduceBZ.Utilities: unique_points, shoelace, remove_duplicates, ge
 using SymmetryReduceBZ.Symmetry: calc_spacegroup
 
 using ..Polynomials: eval_poly,getpoly_coeffs,getbez_pts₋wts,eval_bezcurve,
-    conicsection, eval_1Dquad_basis, evalpoly1D, get_1Dquad_coeffs,
-    solve_quadratic
-using ..EPMs: eval_epm, RytoeV, epm₋model, epm₋model2D
-using ..Mesh: get_neighbors,notbox_simplices,get_cvpts,ibz_init₋mesh, 
+    conicsection, evalpoly1D, get_1Dquad_coeffs, solve_quadratic
+using ..EPMs: eval_epm, epm₋model, epm₋model2D
+using ..Mesh: get_neighbors, notbox_simplices, get_cvpts, ibz_init₋mesh, 
     get_extmesh, choose_neighbors, choose_neighbors3D, trimesh
-using ..Geometry: order_vertices!,simplex_size,insimplex,barytocart,carttobary,
-    sample_simplex,lineseg₋pt_dist, mapto_xyplane, ptface_mindist
+using ..Geometry: order_vertices!, simplex_size, insimplex, barytocart,
+    carttobary, sample_simplex, lineseg₋pt_dist, mapto_xyplane, ptface_mindist
 using ..Defaults
 
-using QHull: chull,Chull
-using LinearAlgebra: cross,det,norm,dot,I,diagm,pinv
+using QHull: chull, Chull
+using LinearAlgebra: cross, norm, dot, I, diagm, pinv
 using Statistics: mean
 using Base.Iterators: flatten
-using SparseArrays: findnz
 using PyCall: PyObject, pyimport
 using Distributed: pmap
 using FastGaussQuadrature: gausslegendre
@@ -36,36 +34,41 @@ export bandstructure, init_bandstructure, quadval_vertex, corner_indices,
 A container for all variables related to the band structure.
 
 # Arguments
-- `init_msize::Int`: the initial size of the mesh over the IBZ. The number of 
-    points is approximately proportional to init_msize^2/2.
-- `num_near_neigh::Int`: the number of nearest neighbors to consider to include when
-    calculating interval coefficients.
+- `init_msize::Integer`: the initial size of the mesh over the IBZ. The number
+    of points is approximately proportional to init_msize^2/2.
+- `num_near_neigh::Integer`: the number of nearest neighbors to consider when 
+    calculating interval coefficients. For example, a value of 1 will include 
+    neighbors that are a distance of 1 away or are connected by an edge with the
+    corners of the simplex.
+- `num_neighbors::Integer`: the minimum number of neighbors to include in the 
+    calculation of interval coefficients. 
 - `fermiarea_eps::Real`: a tolerance used during the bisection algorithm that 
     determines how close the midpoints of the Fermi area interval is to the true
     Fermi area.
 - `target_accuracy::Real`: the accuracy desired for the band energy at the end 
     of the computation.
-- `fermilevel_method::Int`: the method for computing the Fermi level.
-    1- bisection, 2-Chandrupatla.
-- `refine_method::Int`: the method of refinement. 1-refine the tile with the most
-    error. 2-refine the tiles with too much error given the sizes of the tiles.
-- `sample_method::Int`: the method of sampling a tile with too much error. 1-add
-    a single point at the center of the triangle. 2-add points the midpoints of 
-    all three edges.
-- `neighbor_method::Int`: the method for selecting neighboring points in the 
+- `fermilevel_method::Integer`: the root-finding method for computing the Fermi 
+    level. 1- bisection, 2-Chandrupatla.
+- `refine_method::Integer`: the method of refinement. 1-refine the tile with the
+    most error. 2-refine the tiles with too much error while taking into account 
+    the sizes of the simplices.
+- `sample_method::Integer`: the method of sampling a tile with too much error.
+    1-add a single point at the center of the triangle. 2-add points at the 
+    midpoints of all edges.
+- `neighbor_method::Integer`: the method for selecting neighboring points in the 
     calculion of interval coefficients.
 - `rtol::Real`: a relative tolerance for floating point comparisons.
 - `atol::Real`: an absolute tolerance for floating point comparisons.
 - `mesh::PyObject`: a Delaunay triangulation of points over the IBZ.
-- `simplicesᵢ::Vector{Vector{Int}}`: the indices of points at the corners of the 
+- `simplicesᵢ::Vector{Vector{Integer}}`: the indices of points at the corners of the 
     tile for all tiles in the triangulation.
 - `ext_mesh::PyObject`: a Delaunay triangulation of points within and around the 
     IBZ. The number of points outside is determined by `num_near_neigh`.
-- `sym₋unique::AbstractVector{<:Int}`: the indices of symmetrically unique points
+- `sym₋unique::AbstractVector{<:Integer}`: the indices of symmetrically unique points
     in the mesh.
 - `eigenvals::AbstractMatrix{<:Real}`: the eigenvalues at each of the points unique
     by symmetry.
-- `fatten`:: a variable that scales the size of the interval coefficients.
+- `fatten::Real` a variable that scales the size of the interval coefficients.
 - `mesh_intcoeffs::Vector{Vector{Matrix{Float64}}}`:the interval Bezier 
     coefficients for all tiles and sheets.
 - `mesh_bezcoeffs::Vector{Vector{Vector{Float64}}}`: the least-squares Bezier
@@ -75,30 +78,38 @@ A container for all variables related to the band structure.
 - `bandenergy_interval::AbstractVector{<:Real}`: the band energy interval.
 - `fermilevel::Real`: the true Fermi level.
 - `bandenergy::Real`: the true band energy.
-- `partially_occupied::Vector{Vector{Int64}}`: the sheets that are partially
+- `sigma_bandenergy::Vector{<:Real}`: the sigma band energy (the energy of the 
+    approximate sheets that are completely below the approximate Fermi level) 
+    for each simplex in the mesh.
+- `partial_bandenergy::Vector{<:Real}`: the partial band energy (the energy of 
+    the approximate sheets that are below and above the approximate Fermi level)
+    for each simplex in the mesh.
+- `partially_occupied::Vector{Vector{Int64}}`: the sheets that are partially 
     occupied in each tile.
-- `bandenergy_errors::Vector{<:Real}`: the band energy errors for each tile
+- `bandenergy_errors::Vector{<:Real}`: estimates of the band energy errors in 
+    each tile in the mesh.
+- `bandenergy_sigma_errors::Vector{<:Real}`: band energy errors from sigma sheets.
+- `bandenergy_partial_errors::Vector{<:Real}`: band energy errors from partial
+    sheets.
+- `fermiarea_errors::AbstractVector{<:Real}`: the Fermi area errors for each tile 
     in the triangulation.
-- `fermiarea_errors::Vector{<:Real}`: the Fermi area errors for each tile in the
-    triangulation.
-
 """
 mutable struct bandstructure
-    init_msize::Int
-    num_near_neigh::Int
-    num_neighbors::Int
+    init_msize::Integer
+    num_near_neigh::Integer
+    num_neighbors::Integer
     fermiarea_eps::Real
     target_accuracy::Real
-    fermilevel_method::Int
-    refine_method::Int
-    sample_method::Int
-    neighbor_method::Int
+    fermilevel_method::Integer
+    refine_method::Integer
+    sample_method::Integer
+    neighbor_method::Integer
     rtol::Real
     atol::Real
     mesh::PyObject
-    simplicesᵢ::Vector{Vector{Int}}
+    simplicesᵢ::Vector{Vector{Integer}}
     ext_mesh::PyObject
-    sym₋unique::AbstractVector{<:Int}
+    sym₋unique::AbstractVector{<:Integer}
     eigenvals::AbstractMatrix{<:Real}
     fatten::Real
     mesh_intcoeffs::Vector{Vector{Matrix{Float64}}}
@@ -125,52 +136,33 @@ Initialize a band structure container.
 
 # Arguments
 - `epm::Union{epm₋model,epm₋model2D}`: an empirical pseudopotential. 
-- `init_msize::Int`: the initial size of the mesh over the IBZ. The number of 
-    points is approximately proportional to init_msize^2/2.
-- `num_near_neigh::Int`: the number of nearest neighbors to consider to include when
-    calculating interval coefficients.
-- `fermiarea_eps::Real`: a tolerance used during the bisection algorithm that 
-    determines how close the midpoints of the Fermi area interval is to the true
-    Fermi area.
-- `target_accuracy::Real`: the accuracy desired for the band energy at the end 
-    of the computation.
-- `fermilevel_method::Int`: the method for computing the Fermi level.
-    1- bisection, 2-Chandrupatla.
-- `refine_method::Int`: the method of refinement. 1-refine the tile with the most
-    error. 2-refine the tiles with too much error given the sizes of the tiles.
-    3-refine the tiles with too much error given the sizes of the tiles and 
-    split tiles with less error only once (add a sample point at the center of 
-    the tile instead at each edge midpoint).
-- `sample_method::Int`: the method of sampling a tile with too much error. 1-add
-    a single point at the center of the triangle. 2-add point the midpoints of 
-    all three edges.
-- `neighbor_method::Int`: the method of selecting neighboring points for the 
-    calculation of interval coefficients.
-- `rtol::Real`: a relative tolerance for floating point comparisons.
-- `atol::Real`: an absolute tolerance for floating point comparisons.
+
+See the documentation for `bandstructure` for a description of remaining arguments.
 
 # Returns
-- `::bandstructure`: a container containing useful information about the 
-    band structure representation.
+- `::bandstructure`: a container for information on the band structure approximation.
 
 # Examples
-```
+```jldoctest
 import Pebsi.EPMs: m11
-import Pebsi.QuadraticIntegration: init_bandstructure
-init_bandstructure(m11)
+import Pebsi.QuadraticIntegration: init_bandstructure,bandstructure
+ebs = init_bandstructure(m11)
+typeof(ebs)
+# output
+bandstructure
 ```
 """
 function init_bandstructure(
     epm::Union{epm₋model,epm₋model2D,epm₋model};
-    init_msize::Int=def_init_msize,
-    num_near_neigh::Int=def_num_near_neigh,
-    num_neighbors::Union{Nothing,Int}=nothing,
+    init_msize::Integer=def_init_msize,
+    num_near_neigh::Integer=def_num_near_neigh,
+    num_neighbors::Union{Nothing,Integer}=nothing,
     fermiarea_eps::Real=def_fermiarea_eps,
     target_accuracy::Real=def_target_accuracy,
-    fermilevel_method::Int=def_fermilevel_method,
-    refine_method::Int=def_refine_method,
-    sample_method::Int=def_sample_method,
-    neighbor_method::Int=def_neighbor_method,
+    fermilevel_method::Integer=def_fermilevel_method,
+    refine_method::Integer=def_refine_method,
+    sample_method::Integer=def_sample_method,
+    neighbor_method::Integer=def_neighbor_method,
     fatten::Real=def_fatten,
     rtol::Real=def_rtol,
     atol::Real=def_atol)
@@ -186,7 +178,6 @@ function init_bandstructure(
     simplicesᵢ = notbox_simplices(mesh)
  
     uniqueᵢ = sort(unique(sym₋unique))[2:end]
-    # eigenvals = zeros(Float64,epm.sheets,size(mesh.points,1))
     estart = if dim == 2 4 else 8 end
     eigenvals = zeros(Float64,epm.sheets,estart+length(uniqueᵢ))
     for i=uniqueᵢ
@@ -204,10 +195,8 @@ function init_bandstructure(
     bandenergy_sigma_errors = zeros(length(simplicesᵢ))
     bandenergy_partial_errors = zeros(length(simplicesᵢ))
     fermiarea_errors = zeros(length(simplicesᵢ))
-     
     sigma_bandenergy = zeros(length(simplicesᵢ))
-    partial_bandenergy = zeros(length(simplicesᵢ))
-     
+    partial_bandenergy = zeros(length(simplicesᵢ)) 
     fermiarea_interval=[0,0]
     fermilevel_interval=[0,0]
     bandenergy_interval=[0,0]
@@ -249,47 +238,24 @@ function init_bandstructure(
         fermiarea_errors)
 end   
 
-# @doc """
-#     simpson(interval_len,vals)
-
-# Calculate the integral of a univariate function with the composite Simpson's method
-
-# # Arguments
-# - `interval_len::Real`: the length of the inteval the functios is integrated over.
-# - `vals::AbstractVector{<:Real}`: the value of the function on a uniform, closed 
-#     grid over the interval.
-
-# # Returns
-# - `::Real`: the approximate integral of the function over the iterval.
-
-# # Examples
-# ```jldoctest
-# import Pebsi.QuadraticIntegration: simpson
-# num_intervals = 20
-# f(x) = x^5 - x^4 - 2*x^3
-# vals = map(x->f(x),collect(0:1/(2*num_intervals):1))
-# interval_len = 1
-# answer = (-8/15)
-# abs(simpson(interval_len,vals) - answer)
-# # output
-# 7.812500002479794e-8
-# ```
-# """
-# function simpson(interval_len::Real,vals::AbstractVector{<:Real})::Real
-#     num_intervals = Int((length(vals) - 1)/2)
-#     simp_wts = ones(Int,2*num_intervals+1)
-#     simp_wts[2:2:end-1] .= 4
-#     simp_wts[3:2:end-2] .= 2 
-#     interval_len/(6*num_intervals)*dot(simp_wts,vals)
-# end
-
 @doc """
     quadval_vertex(bezcoeffs)
 
-Calculate the value of a quadratic curve at its vertex.
+Calculate the value of a 1D quadratic curve at its vertex.
 
 # Arguments
 - `bezcoeffs::AbstractVector{<:Real}`: the quadratic polynomial coefficients.
+
+# Returns
+- `::Real`: the maximum or minimum value of the quadratic polynomial.
+
+# Examples
+```jldoctest
+coeffs = [-1, 2, -1]
+quadval_vertex(coeffs)
+# output
+0.5
+```
 """
 function quadval_vertex(bezcoeffs::AbstractVector{<:Real})::Real
     (a,b,c) = bezcoeffs
@@ -297,31 +263,30 @@ function quadval_vertex(bezcoeffs::AbstractVector{<:Real})::Real
 end
 
 @doc """
-The locations of quadratic Bezier points at the corners of the triangle in
-counterclockwise order.
+The locations of the quadratic Bezier points at the corners of the triangle in
+counterclockwise order for 2D quadratic Bezier points.
 """
 corner_indices = [1,3,6]
 
 @doc """
 The locations of quadratic Bezier points along each edge of the triangle in
-counterclockwise order.
+counterclockwise order for 2D quadratic Bezier points.
 """
 edge_indices=[[1,2,3],[3,5,6],[6,4,1]]
 
 @doc """
     simplex_intersects(bezpts,atol)
 
-Calculate the location where a level curve of a quadratic surface at z=0 intersects a triangle.
+Find the locations where a level curve of a quadratic surface intersects a triangle.
 
 # Arguments
-- `bezpts::AbstractMatrix{<:Real}`: the Bezier points of the quadratic, Bezier
-    surface.
-- `atol::Real=1e-9`: absolute tolerance.
+- `bezpts::AbstractMatrix{<:Real}`: the Bezier points of the quadratic Bezier surface.
+- `atol::Real=def_atol`: an absolute tolerance.
 
 # Returns
-- `intersects::Array`: the intersections organized by edge in a 1D array. Each 
-    element of the array is a 2D array where the columns are the Cartesian
-    coordinates of intersections.
+- `intersects::Array`: the intersections organized by edge in a vector. Each element
+    of the vector is a matrix where the columns are the Cartesian coordinates of
+    theintersections.
 
 # Examples
 ```jldoctest
@@ -340,7 +305,6 @@ function simplex_intersects(bezpts::AbstractMatrix{<:Real};
     intersects = Array{Array,1}([[],[],[]])
     for i=1:3
         edge_bezpts = bezpts[:,edge_indices[i]]
-        # @show edge_bezpts
         edge_ints = bezcurve_intersects(edge_bezpts[end,:];atol=atol)
         if edge_ints != []
             intersects[i] = reduce(hcat,[edge_bezpts[1:end-1,1] .+ 
@@ -356,16 +320,17 @@ function simplex_intersects(bezpts::AbstractMatrix{<:Real};
 end
 
 @doc """
-    saddlepoint(coeffs)
+    saddlepoint(coeffs;atol)
 
 Calculate the saddle point of a quadratic Bezier surface.
 
 # Arguments
 - `coeffs::AbstractVector{<:Real}`: the coefficients of the quadratic polynomial.
-- `atol::Real=1e-9`: absolute tolerance.
+- `atol::Real=def_atol`: an absolute tolerance.
 
 # Returns
-- `::AbstractVector{<:Real}`: the coordinates of the saddle point in Barycentric coordinates.
+- `::AbstractVector{<:Real}`: the coordinates of the saddle point in barycentric
+    coordinates.
 
 # Examples
 ```jldoctest
@@ -398,12 +363,20 @@ end
 
 Split a Bezier surface once into sub-Bezier surfaces with the Delaunay method.
 
+A triangular mesh is created using a Delaunay tesselation of points at the corners 
+of the triangle, the midpoints of the edges, the intersections of the level curves
+of the quadratic with the triangle, and the double point of the quadratic surface
+if it lies within the triangle. Bezier coefficients for these simplices are calculated.
+The goal is to split the quadratic surface into subsurfaces that have no more than
+two intersections of the level curves with the edges of the triangle.
+
 # Arguments
 - `bezpts::AbstractMatrix{<:Real}`: the Bezier points of the quadratic surface.
-- `atol::Real=1e-9`: absolute tolerance.
+- `atol::Real=def_atol`: an absolute tolerance.
 
 # Returns
-- `sub_bezpts::AbstractArray`: the Bezier points of the sub-surfaces.
+- `sub_bezpts::AbstractArray`: the Bezier points of the sub-surfaces. The sub-surfaces
+    reproduce the original Bezier surface.
 
 # Examples
 ```jldoctest
@@ -415,18 +388,16 @@ length(sbezpts)
 6
 ```
 """
-function split_bezsurf₁(bezpts::AbstractMatrix{<:Real},
-    allpts::AbstractArray=[]; atol::Real=def_atol)::AbstractArray
+function split_bezsurf₁(bezpts::AbstractMatrix{<:Real}; atol::Real=def_atol)::AbstractArray
     spatial = pyimport("scipy.spatial")
-    dim = 2
-    deg = 2
+    dim = 2; deg = 2; 
+    allpts::AbstractArray=[]
     triangle = bezpts[1:end-1,corner_indices]
     if simplex_size(triangle) < def_min_simplex_size
         return [bezpts]
     end
-
-    coeffs = bezpts[end,:]
-    pts = bezpts[1:end-1,:]
+     
+    coeffs = bezpts[end,:]; pts = bezpts[1:end-1,:]
     simplex_bpts = sample_simplex(dim,deg)
     intersects = simplex_intersects(bezpts,atol=atol)
     spt = saddlepoint(coeffs)
@@ -479,10 +450,11 @@ Split a Bezier surface into sub-Bezier surfaces with the Delaunay method.
 
 # Arguments
 - `bezpts::AbstractMatrix{<:Real}`: the Bezier points of the quadratic surface.
-- `atol::Real=1e-9`: absolute tolerance.
+- `atol::Real=def_atol`: an absolute tolerance.
 
 # Returns
-- `sub_bezpts::AbstractArray`: the Bezier points of the sub-surfaces.
+- `sub_bezpts::AbstractArray`: the Bezier points of the sub-surfaces. The sub-surfaces
+    reproduce the original surface.
 
 # Examples
 ```jldoctest
@@ -493,6 +465,7 @@ split_bezsurf(bezpts)
 1-element Vector{Matrix{Float64}}:
  [0.0 0.5 … 1.0 1.0; 0.0 0.0 … 0.5 1.0; 1.1 1.2 … 1.5 1.6]
 ```
+*See `split_bezsurf₁` for a more detailed description.
 """
 function split_bezsurf(bezpts::AbstractMatrix{<:Real};atol=def_atol)::AbstractArray
     
@@ -522,10 +495,18 @@ end
 @doc """
     analytic_area(w::Real)
 
-Calculate the area within a triangle and a canonical, rational, Bezier curve.
+Calculate the area within a triangle and a canonical, rational Bezier curve.
+
+The canonical triangle has corners at [-1,0], [1,0], and [0,1]. The weights of the
+rational Bezier curve at corners [-1,0] and [1,0] are 1, so the only free parameter
+is the weight of the middle Bezier point at [0,1]. See the notebook 
+`analytic-expressions-derivation.nb` for a derivation of the analytic expression
+and the Taylor expansion of the approximation.
 
 # Arguments
-- `w::Real`: the weight of the middle Bezier point of a rational, quadratic, Bezier curve.
+- `w::Real`: the weight of the middle Bezier point of a rational, quadratic Bezier
+    curve.
+
 # Returns
 - `::Real`: the area within the triangle and Bezier curve.
 
@@ -558,12 +539,12 @@ end
 Calculate the volume within a canonical triangle and Bezier curve of a quadratic surface.
 
 # Arguments
-- `coeffs::AbstractVector{<:Real}`: the coefficients of the quadratica surface.
-- `w::Real`: the weight of the middle Bezier point of a rational, quadratic, Bezier curve.
-- `atol::Real=1e-9`: an absolute tolerance for finite precision tolerances.
+- `coeffs::AbstractVector{<:Real}`: the coefficients of the quadratic surface.
+- `w::Real`: the weight of the middle Bezier point of a rational, quadratic Bezier curve.
 
 # Returns
-- `::Real`: the area within the triangle and Bezier curve.
+- `::Real`: the volume of the quadratic surface within the region bounded by the 
+    triangle and the rational Bezier curve.
 
 # Examples
 ```jldoctest
@@ -593,7 +574,6 @@ function analytic_volume(coeffs::AbstractVector{<:Real},w::Real)::Real
         b = sqrt(Complex(-1+w))
         sign(w)real((w*(a*b*w*(-32*c₁+33*c₂-32*c₃+46*c₄+33*c₅-2*(-26*c₀+18*c₁+13*c₂+18*c₃+12*c₄+13*c₅)*w^2+
             8*d*w^4)+6*(5*c₂+6*c₄+5*c₅+4*(c₀-5*(c₁+c₃)+c₄)*w^2+16*c₀*w^4)*atan(b/a)))/(6*8*a*b*(-1+w^2)^3))
-
     end
 end
 
@@ -604,12 +584,12 @@ Calculate the coefficients of a quadratic sub-surface of a quadratic triangle.
 
 # Arguments
 - `bezpts::AbstractMatrix{<:Real}`: the Bezier points of the quadratic triangle.
-- `subtriangle::AbstractMatrix{<:Real}`: a subtriangle give by the points at
-    its corners as columns of an array.
+- `subtriangle::AbstractMatrix{<:Real}`: the points at the corners of a subtriangle
+    as columns of an array.
 
 # Returns
-- `::AbstractVector{<:Real}`: the coefficients of the quadratic triangle over a
-    sub-surface of a quadratic triangle.
+- `::AbstractVector{<:Real}`: the Bezier coefficients that give a subsurface of 
+    a quadratic surface. The subsurface has a domain of `subtriangle`.
 
 # Examples
 ```jldoctest
@@ -636,19 +616,19 @@ function sub₋coeffs(bezpts::AbstractMatrix{<:Real},
 end
 
 @doc """
-    two₋intersects_area₋volume(bezpts,quantity;atol=1e-9)
+    two₋intersects_area₋volume(bezpts,quantity;atol)
 
-Calculate the area or volume within a quadratic curve and triangle and Quadratic surface.
+Calculate the area or volume within a quadratic curve and triangle.
 
 # Arguments
 - `bezpts::AbstractMatrix{<:Real}`: the Bezier points of a quadratic surface.
 - `quantity::String`: the quantity to compute ("area" or "volume").
-- `atol::Real`: an absolute tolerance.
+- `atol::Real=def_atol`: an absolute tolerance.
 
 # Returns
-- `areaₒᵣvolume::Real`: the area within the curve and triangle or the volume below the surface
-    within the curve and triangle. The area is on the side of the curve where the surface is 
-    less than zero.
+- `areaₒᵣvolume::Real`: the area within the curve and triangle or the volume below
+    the surface within the curve and triangle. The area is on the side of the curve
+    where the surface is less than zero.
 
 # Examples
 ```jldoctest
@@ -819,12 +799,13 @@ end
 @doc """
     quad_area₋volume(bezpts,quantity;atol)
 
-Calculate the area of the shadow of a quadric or the volume beneath the quadratic.
+Calculate the area of the shadow or the volume beneath a quadratic.
 
 # Arguments
-- `bezpts::AbstractMatrix{<:Real}`: the Bezier points of the quadratic surface.
+- `bezpts::AbstractMatrix{<:Real}`: the Bezier points of the quadratic surface in
+    columns of a matrix.
 - `quantity::String`: the quantity to calculate ("area" or "volume").
-- `atol::Real=1e-9`: an absolute tolerance for floating point comparisons.
+- `atol::Real=def_atol`: an absolute tolerance for floating point comparisons.
 
 # Returns
 - `::Real`: the area of the shadow of a quadratic polynomial within a triangle
@@ -853,28 +834,35 @@ function quad_area₋volume(bezpts::AbstractMatrix{<:Real},
 end
 
 face_ind = [[1,2,3],[3,4,1],[4,1,2],[2,3,4]]
+
 @doc """
-    get_intercoeffs(index,mesh,ext_mesh,sym₋unique,eigenvals,simplicesᵢ,fatten)
+    get_intercoeffs(index,mesh,ext_mesh,sym₋unique,eigenvals,simplicesᵢ,fatten,
+        num_near_neigh; sigma, epm, neighbor_method, num_neighbors)
 
 Calculate the interval Bezier points for all sheets.
 
 # Arguments
-- `index::Int`: the index of the simplex in `simplicesᵢ`.
+- `index::Integer`: the index of the simplex in `simplicesᵢ`.
 - `mesh::PyObject`: a triangulation of the irreducible Brillouin zone.
-- `ext_mesh::PyObject`: a triangulation of the region within and around
-    the IBZ.
+- `ext_mesh::PyObject`: a triangulation of the region within and around the IBZ.
 - `sym₋unique::AbstractVector{<:Real}`: the index of the eigenvalues for each point
     in the `mesh`.
 - `eigenvals::AbstractMatrix{<:Real}`: a matrix of eigenvalues for the symmetrically
     distinc points as columns of a matrix.
-- `simplicesᵢ::Vector`: the simplices of `mesh` that do not include the box points.
-- `fatten::Real`: scale the interval coefficients by this amount.
-- `num_near_neigh::Int`: the number of neighbors included.
-- `sigma::Int`: the number of sheets summed and then interpolated, if any.
+- `simplicesᵢ::AbstractVector`: the simplices of `mesh` that do not include the box points.
+- `fatten::Real=def_fatten`: scale the interval coefficients by this amount.
+- `num_near_neigh::Integer=def_num_near_neigh`: how many nearest neighbors to include.
+- `sigma::Integer=0`: the number of sheets summed and then interpolated, if any.
+- `epm::Union{Nothing,epm₋model2D,epm₋model}=nothing`: an empirical pseudopotential.
+- `neighbor_method::Integer=def_neighbor_method`: the method for calculating neighbors
+    to include in the calculation.
+- `num_neighbors::Union{Nothing,Integer}=nothing`: the minimum number of neighbors
+    included in the calculation of interval coefficients.
 
 # Returns
-- `inter_bezpts::Vector{Matrix{Float64}}`: the interval Bezier points
-    for each sheet.
+- `inter_bezpts::Vector{Matrix{Float64}}`: the interval Bezier points for each sheet.
+- `bezcoeffs::Vector{Vector{Float64}}`: the Bezier coefficients from the least-squares
+    fit for each sheet.
 
 # Examples
 ```jldoctest
@@ -899,14 +887,13 @@ length(bezcoeffs)
 7
 ```
 """
-function get_intercoeffs(index::Int, mesh::PyObject, ext_mesh::PyObject,
-        sym₋unique::AbstractVector{<:Real}, eigenvals::AbstractMatrix{<:Real},
-        simplicesᵢ::Vector,
-        fatten::Real=def_fatten,
-        num_near_neigh::Int=def_num_near_neigh; sigma::Real=0,
-        epm::Union{Nothing,epm₋model2D,epm₋model}=nothing,
-        neighbor_method::Int=def_neighbor_method,
-        num_neighbors::Union{Nothing,Integer}=nothing)
+function get_intercoeffs(index::Integer, mesh::PyObject, ext_mesh::PyObject,
+    sym₋unique::AbstractVector{<:Real}, eigenvals::AbstractMatrix{<:Real}, 
+    simplicesᵢ::AbstractVector, fatten::Real=def_fatten, 
+    num_near_neigh::Integer=def_num_near_neigh; sigma::Real=0, 
+    epm::Union{Nothing,epm₋model2D,epm₋model}=nothing,
+    neighbor_method::Integer=def_neighbor_method, 
+    num_neighbors::Union{Nothing,Integer}=nothing)
      
     simplexᵢ = simplicesᵢ[index]
     simplex = Matrix(mesh.points[simplexᵢ,:]')
@@ -1081,12 +1068,38 @@ function get_intercoeffs(index::Int, mesh::PyObject, ext_mesh::PyObject,
 end
 
 @doc """
-    Calculate the Fermi level of a representation of the band structure.
+    Calculate the Fermi level for a representation of the band structure.
 
+# Arguments
+- `epm::Union{epm₋model,epm₋model2D}`: an empirical pseudopotential 
+- `ebs::bandstructure`: a `bandstructure` data structure.
+- `num_slices::Int=10`: the number of slices for integration in 3D.
+- `window::Union{Nothing,Vector{<:Real}}=ebs.fermilevel_interval`: an energy window
+    that bounds the Fermi level.
+- `ctype="mean"`: determines the coefficients that are used to compute the Fermi level.
+   Options include: "mean"- use the coefficients obtained from the least-squares fit,
+   "min"- use the lower coefficients of the interval coefficients and "max"- use 
+   the upper coefficients of the interval coefficients.
+- `fermi_area::Real=epm.fermiarea/length(epm.pointgroup)`: the sum of the areas of
+    the shadows of the sheets.
+
+# Returns
+- `E::Real`: the Fermi level for the quadratic approximation of the band structure.
+
+# Examples
+```jldoctest
+using Pebsi.EPMs: m21
+using Pebsi.QuadraticIntegration: init_bandstructure, calc_fl
+epm = m21
+ebs = init_bandstructure(epm);
+calc_fl(epm,ebs)
+# output
+0.06335261485115436
+```
 """
 function calc_fl(epm::Union{epm₋model,epm₋model2D},ebs::bandstructure; 
     num_slices::Int = 10, window::Union{Nothing,Vector{<:Real}}=ebs.fermilevel_interval, 
-        ctype="mean", fermi_area::Real=epm.fermiarea/length(epm.pointgroup))
+        ctype="mean", fermi_area::Real=epm.fermiarea/length(epm.pointgroup))::Real
 
     if ctype == "mean"
         cfun = mean 
@@ -1223,15 +1236,28 @@ Calculate the Fermi level and band energy for a given rep. of the band struct.
 
 # Arguments
 - `epm::Union{epm₋model2D,epm₋model}`: an empirical pseudopotential.
-- `ebs::bandstructure`: the band structure container 
+- `ebs::bandstructure`: the band structure container.
+- `num_slices::Integer=10`: the number of slices when integrating in 3D. 
 
 # Returns
-- `ebs::bandstructure`: update values within container for the band energy error,
+- `ebs::bandstructure`: updated values within container for the band energy error,
     Fermi area error, Fermi level interval, Fermi area interval, band energy
     interval, and the partially occupied sheets.
+
+# Examples
+```jldoctest
+using Pebsi.EPMs: m31
+using Pebsi.QuadraticIntegration: init_bandstructure, calc_flbe!
+epm = m31
+ebs = init_bandstructure(epm);
+calc_flbe!(epm,ebs)
+ebs.bandenergy
+# output
+0.013600374450169372
+```
 """
 function calc_flbe!(epm::Union{epm₋model2D,epm₋model},ebs::bandstructure;
-    num_slices=10)
+    num_slices::Integer=10)::bandstructure
      
     dim = size(epm.recip_latvecs,1)
     # Sample points within the triangle for a quadratic in barycentric coordinates.
@@ -1472,7 +1498,28 @@ end
     refine_mesh!(epm,ebs)
 
 Perform one iteration of adaptive refinement. See the composite type
-`bandstructure` for refinement options. 
+`bandstructure` for refinement options.
+
+# Arguments
+- `epm::Union{epm₋model2D,epm₋model}`: an empirical pseudopotential.
+- `ebs::bandstructure`: a quadratic approximation of the band structure.
+
+# Returns
+- `ebs::bandstructure`: updated interval coefficients, Bezier coefficients, mesh, 
+    extended mesh, Fermi level, band energy, ... for the quadratic approximation.
+
+# Examples
+```jldoctest
+using Pebsi.EPMs: m31
+using Pebsi.QuadraticIntegration: init_bandstructure, calc_flbe!, refine_mesh!
+epm = m31
+ebs = init_bandstructure(epm);
+calc_flbe!(epm,ebs)
+refine_mesh!(epm,ebs)
+abs(ebs.bandenergy - epm.bandenergy) < 1e-2
+#
+true
+```
 """
 function refine_mesh!(epm::Union{epm₋model2D,epm₋model},ebs::bandstructure)
      
@@ -1688,6 +1735,29 @@ end
     get_tolerances(epm,ebs)
 
 Calculate the Fermi level and Fermi area tolerances.
+
+# Arguments
+- `epm::Union{epm₋model2D,epm₋model}`: an empirical pseudopotential.
+- `ebs::bandstructure`: a quadratic approximation of the band structure.
+
+# Returns
+- `db::Real`: the derivative of the band energy with respect to the Fermi level.
+- `da::Real`: the derivative of the Fermi area with respect to the Fermi level.
+- `dltol::Real`: the Fermi level tolerance.
+- `datol::Real`: the Fermi area tolerance.
+
+# Examples
+```jldoctest
+using Pebsi.EPMs: m41
+using Pebsi.QuadraticIntegration: init_bandstructure, calc_flbe!, get_tolerances
+epm = m41
+ebs = init_bandstructure(epm);
+calc_flbe!(epm,ebs)
+tol = get_tolerances(epm,ebs)
+length(tol)
+# output
+4
+```
 """
 function get_tolerances(epm,ebs)
 
@@ -1711,7 +1781,7 @@ function get_tolerances(epm,ebs)
         be = sum([quad_area₋volume([simplex_pts[tri]; ebs.mesh_bezcoeffs[tri][sheet]' .- fl], "volume") for tri=1:length(ebs.simplicesᵢ) for sheet=1:epm.sheets])
         fa = npg*sum([quad_area₋volume([simplex_pts[tri]; ebs.mesh_bezcoeffs[tri][sheet]' .- fl], "area") for tri=1:length(ebs.simplicesᵢ) for sheet=1:epm.sheets])
         # be = 2*npg*(be + fl*epm.fermiarea/npg)
-        # Remove translation of band energy because numbers close to zero throw off the derivative
+        # Removed translation of band energy because numbers close to zero throw off the derivative
         be = 2*npg*be
         push!(bens,be); push!(fas,fa)
     end
@@ -1728,10 +1798,29 @@ function get_tolerances(epm,ebs)
 end
 
 @doc """
-    quadratic_method!(epm,ebs,init_msize,num_near_neigh,fermiarea_eps,target_accuracy,
-        fermilevel_method,refine_method,sample_method,rtol,atol,uniform)
+    quadratic_method!(epm,init_msize,num_near_neigh,num_neighbors,fermiarea_eps,
+        target_accuracy,fermilevel_method,refine_method,sample_method,neighbor_method,
+        fatten,rtol,atol,uniform)
 
 Calculate the band energy using uniform or adaptive quadratic integation.
+
+# Arguments
+- `epm::Union{epm₋model2D,epm₋model}`: an empirical pseudopotential
+
+See the documentation for `bandstructure` for descriptions of the optional arguements.
+
+# Returns
+- `ebs::bandstructure`: a quadratic approximation of the band structure.
+
+# Examples
+```jldoctest
+using Pebsi.EPMs: m51
+using Pebsi.QuadraticIntegration: quadratic_method!
+epm = m51
+ebs = quadratic_method!(epm,target_accuracy=1e-2)
+abs(ebs.bandenergy - epm.bandenergy) < 1e-1
+# output
+true
 """
 function quadratic_method!(epm::Union{epm₋model2D,epm₋model};
     init_msize::Int=def_init_msize, num_near_neigh::Int=def_num_near_neigh,
@@ -1745,7 +1834,7 @@ function quadratic_method!(epm::Union{epm₋model2D,epm₋model};
     fatten::Real=def_fatten,
     rtol::Real=def_rtol,
     atol::Real=def_atol,
-    uniform::Bool=def_uniform)
+    uniform::Bool=def_uniform)::bandstructure
 
     dim = size(epm.recip_latvecs,1)
     if num_neighbors == nothing
@@ -1754,7 +1843,8 @@ function quadratic_method!(epm::Union{epm₋model2D,epm₋model};
     
     ebs = init_bandstructure(epm,init_msize=init_msize, num_near_neigh=num_near_neigh,
         num_neighbors=num_neighbors,fermiarea_eps=fermiarea_eps, 
-        target_accuracy=target_accuracy, fermilevel_method=fermilevel_method, refine_method=refine_method, sample_method=sample_method, 
+        target_accuracy=target_accuracy, fermilevel_method=fermilevel_method, 
+        refine_method=refine_method, sample_method=sample_method, 
         neighbor_method=neighbor_method, fatten=fatten, rtol=rtol, atol=atol)
     calc_flbe!(epm,ebs)
 
@@ -1808,10 +1898,38 @@ end
 
 """
     truebe(ebs,epm,ndivs)
-
+    
 Calculate (roughly) the true band energy error for each quadratic triangle.
+
+# Arguments
+- `ebs::epm₋model2D`: an empirical pseudopotential
+- `epm::bandstructure`: a quadratic approximation of the band structure
+- `ndivs::Integer`: the number of divisions of triangles when computing the band
+    energy component within each triangle using the rectangular method with a triangular
+    base.
+- `num_cores::Integer=1`: the number of cores to use when computing in parallel.
+- `triangles`: a list of triangles over which to compute the "true" band energy. If
+    nothing is provided, compute over all triangles in the approximation.
+
+# Returns
+- `sigma_be::Vector{Real}`: the true sigma band energy over each triangle.
+- `part_be::Vector{Real}`: the true partial band energy over each triangle.
+
+# Examples
+```jldoctest 
+using Pebsi.EPMs: m51
+using Pebsi.QuadraticIntegration: quadratic_method!, init_bandstructure, calc_flbe!, truebe
+epm = m51
+ebs = init_bandstructure(epm)
+ebs = calc_flbe!(epm,ebs)
+sigma_be,part_be = truebe(epm,ebs,10)
+abs(sum(sigma_be) + sum(part_be) - epm.bandenergy) < 0.2
+# output
+true
+```
 """
-function truebe(ebs,epm,ndivs;num_cores=1,triangles=nothing)
+function truebe(epm::epm₋model2D,ebs::bandstructure,ndivs::Integer;
+    num_cores::Integer=1,triangles::Union{Nothing,Integer}=nothing)
     dim = 2
     deg = 2
     num_tri = length(ebs.simplicesᵢ)
@@ -1886,8 +2004,7 @@ Determine where a quadratic curve is equal to zero.
 
 # Arguments
 - `bezcoeffs::AbstractVector{<:Real}`: the coefficients of the quadratic
-- `rtol::Real`: a relative tolerance for floating point comparisons.
-- `atol::Real`: an absolute tolerance for floating point comparisons.
+- `atol::Real=def_atol`: an absolute tolerance for floating point comparisons.
 
 # Returns
 - `solutions::AbstractVector`: the locations between [0,1) where the quadratic
@@ -1920,10 +2037,10 @@ Calculate the interval(s) of a quadratic where it is less than 0 between (0,1).
 
 # Arguments
 - `bezcoeffs::AbstractVector{<:Real}`: the coefficients of the quadratic.
-- `atol::Real`: an absolute tolerance for floating point comparisons.
+- `atol::Real=def_atol`: an absolute tolerance for floating point comparisons.
 
 # Returns
-- `reg::AbstractVector`: the region where the quadratic is less than 0.
+- `reg::AbstractVector`: the region(s) where the quadratic is less than 0.
 
 # Examples
 ```jldoctest
@@ -1970,7 +2087,7 @@ end
 @doc """
     analytic_area1D(coeffs,limits)
 
-Calculate the area of a quadratic where it is less than zero between (0,1).
+Calculate the area of a quadratic where it is less than zero between [0,1].
 
 # Arguments
 - `coeffs::AbstractVector{<:Real}`: the coefficients of the quadratic.
@@ -2016,11 +2133,11 @@ end
 @doc """
     simpson(y,int_len)
 
-Integrate the area below a list of values within an interval.
+Integrate the area below a curve with Simpson's method.
 
 # Arguments
-- `y::AbstractVector{<:Real}`: a list of values of the function being integrated.
-- `int_len::Real`: the length of the interval over which the funcion is integrated.
+- `y::AbstractVector{<:Real}`: a list of values of the curve being integrated.
+- `int_len::Real`: the length of the interval over which the curve is integrated.
 
 # Examples
 ```jldoctest
@@ -2036,65 +2153,6 @@ function simpson(y::AbstractVector{<:Real},int_len::Real)::Real
     n = length(y)-1
     n % 2 == 0 || error("The number of intervals must be odd for Simpson's method.")
     int_len/(3n) * sum(y[1:2:n] + 4*y[2:2:n] + y[3:2:n+1])
-end
-
-function simpson2D(coeffs,triangle,n,q=0;values=false)::Real
-    
-    lengths = [norm(triangle[:,mod1(i,3)] - triangle[:,mod1(i+1,3)]) for i=1:3]
-    corner_midpoint_lens = [norm([mean(triangle[:,[mod1(i,3),mod1(i+1,3)]],dims=2)...] - triangle[:,mod1(i+2,3)]) for i=1:3]
-    
-    edge_ind = findmax(lengths)[2]
-    if edge_ind == 1
-       order = [2,3,1]  
-    elseif edge_ind == 2
-        order = [1,2,3]
-    else
-        order = [3,1,2]
-    end
-
-    m = if iseven(n) n + 1 else n end
-    dt = 1/(m-1)
-    it = range(0,1,step=dt)
-    integral_vals = zeros(length(it))
-    for (i,t) in enumerate(it)
-        bpt = [t,(1-t)/2,(1-t)/2][order]
-        e1bpt = [t,0,1-t][order]
-        e2bpt = [t,1-t,0][order]
-
-        bpts = [e1bpt bpt e2bpt]
-        pts = barytocart(bpts,triangle)
-        vals = eval_poly(bpts,coeffs,2,2)
-        bezcoeffs = get_1Dquad_coeffs(vals)
-        domain = getdomain(bezcoeffs)
-
-        if q == 0
-            if domain == []
-                continue
-            elseif length(domain) == 2
-                integral_vals[i] = (domain[2] - domain[1])*norm(pts[:,1] - pts[:,end])
-            elseif length(domain) == 4
-                integral_vals[i] = (domain[2] - domain[1] + domain[4] - domain[3])*norm(pts[:,1] - pts[:,end])
-            else
-                error("Error computing the integration domain in 1D.")
-            end
-        elseif q == 1
-            if domain == []
-                continue
-            else
-                integral_vals[i] = analytic_area1D(bezcoeffs,domain)*norm(pts[:,1] - pts[:,end])
-            end
-        else
-            error("Invalid value for `q`.")
-        end
-    end
-    
-    if values
-        return integral_vals
-    end
-
-    edge = triangle[:,[edge_ind,mod1(edge_ind+1,3)]]
-    opp_corner = triangle[:,mod1(edge_ind+2,3)]
-    simpson(integral_vals,linept_dist(edge,opp_corner))
 end
 
 @doc """
@@ -2143,7 +2201,33 @@ vert_order2 = [1,4,2,3]
 vert_order3 = [1,3,4,2]
 vert_order4 = [1,2,3,4]
 
-function tetface_areas(tet)
+@doc """
+    tetface_areas(tet)
+
+Calculate the area of the faces of a tetrahedron
+
+# Arguments
+- `tet::AbstractMatrix{<:Real}`: the points at the corners of the tetrahedron as
+    the columns of a matrix.
+
+# Returns
+- `areas::Vector{<:Real}`: the areas of the faces of the tetrahedron. The order
+    of the faces is determined by `face_ind`.
+
+# Examples
+```jldoctest
+using Pebsi.QuadraticIntegration: tetface_areas
+tet = [0 1 0 0; 0 0 1 0; 0 0 0 1]
+tetface_areas(tet)
+# output
+4-element Vector{Float64}:
+ 0.8660254037844386
+ 0.5
+ 0.5
+ 0.5
+```
+"""
+function tetface_areas(tet::AbstractMatrix{<:Real})::Vector{<:Real}
     areas = zeros(4)
     for (i,j)=enumerate(face_ind)
         areas[i] = norm(cross(tet[:,j[2]] - tet[:,j[1]], tet[:,j[3]] - tet[:,j[1]]))/2
@@ -2157,20 +2241,37 @@ end
 Calculate the volume or hypervolume beneath a quadratic within a tetrahedron.
 
 # Arguments
-- `coeffs`: the coefficients of the quadratic polynomial over the tetrahedron.
-- `tetrahedron`: the Cartesian coordinates of the point at the corner of the 
-    tetrahedron.
-- `num_slices`: the number of slices of teterahedron parallel to one of the 
-    faces of the tetrahedron.
-- `quantity`: whether to calculate the "area" or "volume" of each slice.
-- `values`: if true, return the areas or volumes of each of the slices.
+- `coeffs::AbstractVector{<:Real}`: the coefficients of the quadratic polynomial 
+    over the tetrahedron.
+- `tetrahedron::AbstractMatrix{<:Real}`: the Cartesian coordinates of the point at the corner of the tetrahedron.
+- `num_slices::Integer`: the number of slices of teterahedron parallel to one of the faces 
+    of the tetrahedron.
+- `quantity::String`: whether to calculate the "area" or "volume" of each slice.
+- `values::Bool`: if true, return the areas or volumes of each of the slices.
+- `gauss::Bool=true`: using Gaussian quadrature points if true.
+- `atol::Real=def_atol`: an absolute tolerance.
+- `split::Bool=true`: if true, split the integration interval where the slices are
+    tangent to the quadratic surface.
+- `corner::Union{Nothing,Integer}`: if provided, sliced approach the provided corner. 
 
 # Returns
-- The areas or volumes of slices of the tetrahedron or the volume or hypervolume
-    of a polynomial within the tetrahedron.
+- `::Real`: The areas or volumes of slices of the tetrahedron or the volume or hypervolume
+    of a polynomial within the tetrahedron. May instead be the values of curve being 
+    integrated if `values` is true.
+
+# Examples
+```jldoctest
+using Pebsi.QuadraticIntegration: simpson3D
+tet = [0 1 0 0; 0 0 1 0; 0 0 0 1]
+coeffs = [-1/10, -1/10, 9/10, -1/10, -1/10, 9/10, -1/10, -1/10, -1/10, 9/10]
+simpson3D(coeffs,tet,10,"area") ≈ 0.01528831567698499
+# output
+true
+```
 """
-function simpson3D(coeffs,tetrahedron,num_slices,quantity;values=false,gauss=true,
-    atol=def_atol,split=true,corner=nothing)
+function simpson3D(coeffs::AbstractVector{<:Real}, tetrahedron::AbstractMatrix{<:Real},
+    num_slices::Integer, quantity::String; values::Bool=false, gauss::Bool=true,
+    atol::Real=def_atol,split::Bool=true,corner::Union{Nothing,Integer}=nothing)::Real
     dim = 3; deg = 2
 
     # All the coefficients are well below zero.
@@ -2274,7 +2375,36 @@ function simpson3D(coeffs,tetrahedron,num_slices,quantity;values=false,gauss=tru
     end
 end
 
-function quadslice_tanpt(coeffs; atol=def_atol,rtol=def_rtol)
+"""
+    quadslice_tanpt(coeffs,atol,rtol)
+
+Calculate the points where a quadratic surface in tangent to a slice of a tetrahedron.
+
+# Arguments
+- `coeffs::AbstractVector{<:Real}`: the coefficients of the quadratic.
+- `atol::Real=def_atol`: an absolute tolerance.
+- `rtol::Real=def_rtol`: a relative tolerance.
+
+# Returns
+- `bpts::Matrix{Real}`: the points where slices of a tetrahedron parallel to a face
+    of the tetrahedron are tangent to the quadratic. The points are in Barycentric
+    coordinates.
+
+# Examples
+```jldoctest
+using Pebsi.QuadraticIntegration: quadslice_tanpt
+coeffs = [-1/10., -1/10, 9/10, -1/10, -1/10, 9/10, -1/10, -1/10, -1/10, 9/10]
+quadslice_tanpt(coeffs)
+# output
+4×2 Matrix{Float64}:
+  1.31623   0.683772
+  0.0       0.0
+  0.0       0.0
+ -0.316228  0.316228
+```
+"""
+function quadslice_tanpt(coeffs::AbstractVector{<:Real}; atol::Real=def_atol,
+    rtol::Real=def_rtol)
      
     # s^2, 2 s t, t^2, 2 s u, 2 t u, u^2, 2 s v, 2 t v, 2 u v, v^2
     (c2000,c1100,c0200,c1010,c0110,c0020,c1001,c0101,c0011,c0002) = coeffs

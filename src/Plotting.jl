@@ -6,8 +6,8 @@ using Statistics: mean
 using ..QuadraticIntegration: bandstructure
 using ..EPMs: epm₋model2D, epm₋model, eval_epm
 using ..RectangularMethod: sample_unitcell
-using ..Polynomials: eval_poly, sample_simplex, eval_bezcurve
-using ..Geometry: carttobary, barytocart, simplex_size
+using ..Polynomials: eval_poly, eval_bezcurve
+using ..Geometry: carttobary, barytocart, simplex_size, sample_simplex
 using ..Mesh: notbox_simplices
 
 using SymmetryReduceBZ.Utilities: sortpts2D, sample_sphere
@@ -376,6 +376,7 @@ Plot a rational quadratic Bezier curve and its Bezier points
     array in Cartesian coordinates.
 - `bezwtsᵣ::AbstractVector{<:Real}`: the weights of the control points.
 - `ax::Union{PyObject,Nothing}=nothing`: the figure's axes.
+- `zorder::integer=0`: the layer number of the plot.
 
 # Returns
 - `ax::PyObject`: the axes of the figure.
@@ -386,6 +387,8 @@ using Pebsi.Plotting: bezcurve_plot
 bezpts = [0.0 0.0 1.0; 1.0 1/3 0.0]
 bezwts = [1.0, 1.5, 1.0]
 ax = bezcurve_plot(bezpts,bezwts)
+# output
+PyObject <AxesSubplot:>
 ```
 """
 function bezcurve_plot(bezptsᵣ::AbstractMatrix{<:Real},
@@ -405,43 +408,66 @@ end
 Make a plot of a polygon.
 
 # Arguments
-- `pts::Matrix{<:Real}`: cartesian coordinates of a convex polygon as columns of an array.
+- `pts::AbstractMatrix{<:Real}`: Cartesian coordinates of a convex polygon as 
+    columns of a matrix.
 - `ax::PyObject`: an axes object from matplotlib.
-- `facecolor::String="blue"`: the color of the area within the convex hull.
-- `alpha::Real=0.3`: the transparency of the convex hull.
-- `linewidth::Real=3`: the width of the edges.
+- `sort::Bool`: if true, sort the corners of the polygon in counterclockwise order.
+- `facecolor::String="blue"`: the color of the area within the polygon.
+- `alpha::Real=1.0`: the transparency of the polygon.
+- `linewidth::Real=0.5`: the width of the edges.
 - `edgecolor::String="black"`: the color of the edges.
+- `zorder::Integer=0`: the layer number of the plot.
+- `label::String="_nolegend_"`: a label for a plot legend.
 
 # Returns
-- `ax::PyObject`: updated `ax` that includes a plot of the convex polygon.
+- `ax::PyObject`: updated axes object that includes a plot of the convex polygon.
+
+# Examples
+```jldoctest
+using Pebsi.Plotting: polygonplot
+polygon = [0 1 1 0; 0 0 1 1]
+polygonplot(polygon)
+# output
+PyObject <AxesSubplot:>
 ```
 """
-function polygonplot(pts::Matrix{<:Real},
-    ax::Union{PyObject,Nothing}=nothing; sort=false, facecolor="None",
-    alpha::Real=1.0, linewidth::Real=0.5, edgecolor="black",
-    zorder::Int=0,label::String="_nolegend_")::PyObject
-
+function polygonplot(pts::AbstractMatrix{<:Real},
+    ax::Union{PyObject,Nothing}=nothing; sort::Bool=false,
+    facecolor::String="None", alpha::Real=1.0, linewidth::Real=0.5, 
+    edgecolor::String="black", zorder::Integer=0,
+    label::String="_nolegend_")::PyObject
     if sort
         perm = sortpts2D(pts)
         pts = pts[:,perm]
     end
     if ax == nothing 
-        println("not ok")
         fig,ax = subplots()
     end
-
-    # ax.add_patch(plt.Polygon(Array(pts'),edgecolor=edgecolor,facecolor=facecolor,
-    #     alpha=alpha,linewidth=linewidth))
     ax.fill(pts[1,:],pts[2,:],edgecolor=edgecolor,facecolor=facecolor,
         alpha=alpha,linewidth=linewidth,zorder=zorder,label=label)
     ax
 end
 
-function polygonplot(polygons::Vector{Matrix{T}} where T<:Real,
-    ax::Union{PyObject,Nothing}=nothing;sort=false, facecolor="None",
-    alpha::Real=1.0, linewidth::Real=0.5, edgecolor="black", zorder::Int=0)
-    if ax == nothing fig,ax = subplots() end
+@doc """
+    polygonplot(polygons,ax;sort,facecolor,alpha,linewidth,edgecolor,zorder)
 
+Plot many 2D polygons in one plot.
+
+# Examples
+``` jldoctest
+using Pebsi.Plotting: polygonplot
+polygon = [[0 1 1; 0 0 1], [0 1 0; 0 1 1]]
+polygonplot(polygon)
+# output
+PyObject <AxesSubplot:>
+```
+"""
+function polygonplot(polygons::Vector{Matrix{T}} where T<:Real,
+    ax::Union{PyObject,Nothing}=nothing; sort::Bool=false, 
+    facecolor::String="None", alpha::Real=1.0, linewidth::Real=0.5, 
+    edgecolor::String="black", zorder::Integer=0)::PyObject
+ 
+    if ax == nothing fig,ax = subplots() end
     for poly in polygons
         ax = polygonplot(poly,ax;sort=sort,facecolor=facecolor,alpha=alpha,
             linewidth=linewidth,edgecolor=edgecolor,zorder=zorder)
@@ -450,52 +476,48 @@ function polygonplot(polygons::Vector{Matrix{T}} where T<:Real,
 end
 
 @doc """
-    plot_bandstructure(name,basis,rules,expansion_size,sheets,kpoint_dist,
-        convention,coordinates)
+    plot_bandstructure(name,basis,atomtypes, atompos,rules,ax;expansion_size,
+        sheets,kpoint_dist,convention,coordinates,func)
+
 Plot the band structure of an empirical pseudopotential.
+
 # Arguments
 - `name`::String: the name of metal.
 - `basis::AbstractMatrix{<:Real}`: the lattice vectors of the crystal
-    as columns of a 3x3 array.
-- `atomtypes::Vector{<:Integer}`: an integer atom label for all atoms
-- `atompos::Matrix{<:Integer}`: the positions of the atoms in columns of a 
-    matrix.
-- `rules::Dict{Float64,Float64}`: a dictionary whose keys are distances between
-    reciprocal lattice points rounded to two decimals places and whose values
-    are the empirical pseudopotential form factors.
+    as columns of a 3x3 matrix.
+- `atomtypes::AbstractVector{<:Integer}`: an integer atom label for all atoms
+- `atompos::AbstractMatrix{<:Integer}`: the positions of the atoms in columns of
+    a matrix.
+- `rules`: a vector of pairs whose first elements are distances between
+    reciprocal lattice points rounded to two decimals places and whose second
+    elements are the empirical pseudopotential form factors.
 - `ax::Union{PyObject,Nothing}`: an axes object from PyPlot on which to plot the
     band structure.
 - `expansion_size::Integer`: the desired number of terms in the Fourier
     expansion.
-- `sheets::Int`: the sheets included in the electronic
-    band structure plot.
+- `sheets::Integer`: the sheets included in the band structure plot.
 - `kpoint_dist::Real`: the distance between k-points in the band plot.
 - `convention::String="angular"`: the convention for going from real to
     reciprocal space. Options include "angular" and "ordinary".
 - `coordinates::String="Cartesian"`: the coordinates of the k-points in
     the band structure plot. Options include "Cartesian" and "lattice".
+
 # Returns
-- (`fig::PyPlot.Figure`,`ax::PyCall.PyObject`): the band structure plot
-    as a `PyPlot.Figure`.
+- ax::PyObject`: an axes object from `matplotlib`.
+
 # Examples
 ```jldoctest
-import Pebsi.EPMs: eval_epm,plot_bandstructure
-name="Al"
-Al_latvecs=[0.0 3.8262 3.8262; 3.8262 0.0 3.8262; 3.8262 3.8262 0.0]
-Al_rules=Dict(2.84 => 0.0562,1.42 => 0.0179)
-cutoff=100
-sheets=10
-kpoint_dist=0.001
-plot_bandstructure(name,Al_latvecs,Al_rules,cutoff,sheets,kpoint_dist)
-# returns
-(PyPlot.Figure(PyObject <Figure size 1280x960 with 1 Axes>),
-PyObject <AxesSubplot:title={'center':'Al band structure plot'},
-xlabel='High symmetry points', ylabel='Total energy (Ry)'>)
+import Pebsi.EPMs: Al_epm
+using Pebsi.Plotting: plot_bandstructure
+plot_bandstructure(Al_epm.name, Al_epm.recip_latvecs, Al_epm.atom_types, 
+    Al_epm.atom_pos, Al_epm.rules)
+# output
+PyObject <AxesSubplot:title={'center':'Al band structure plot'}, xlabel='High symmetry points', ylabel='Total energy (Ry)'>
 """
 function plot_bandstructure(name::String, basis::AbstractMatrix{<:Real},
-    atomtypes::Vector{<:Integer}, atompos::Matrix{<:Real},
+    atomtypes::AbstractVector{<:Integer}, atompos::AbstractMatrix{<:Real},
     rules, ax::Union{PyObject,Nothing}=nothing; 
-    expansion_size::Integer=1000, sheets::Int=10, kpoint_dist::Real=0.01, 
+    expansion_size::Integer=1000, sheets::Integer=10, kpoint_dist::Real=0.1, 
     convention::String="angular", coordinates::String="Cartesian",
     func::Union{Nothing,Function}=nothing)
 
@@ -582,9 +604,18 @@ Plot the band structure of an empirical pseudopotential.
 
 # Returns
 - `ax::PyCall.PyObject`: the band structure plot.
+
+# Examples
+```jldoctest
+import Pebsi.EPMs: Al_epm
+using Pebsi.Plotting: plot_bandstructure
+plot_bandstructure(Al_epm)
+# output
+PyObject <AxesSubplot:title={'center':'Al band structure plot'}, xlabel='High symmetry points', ylabel='Total energy (Ry)'>
+```
 """
 function plot_bandstructure(epm::Union{epm₋model2D,epm₋model},
-    ax::Union{PyObject,Nothing}=nothing; kpoint_dist::Real=0.01,
+    ax::Union{PyObject,Nothing}=nothing; kpoint_dist::Real=0.1,
     expansion_size::Integer=1000, sheets::Integer=epm.sheets)
     plot_bandstructure(epm.name, epm.real_latvecs, epm.atom_types, epm.atom_pos,
         epm.rules, ax; expansion_size=expansion_size, sheets=sheets, 
