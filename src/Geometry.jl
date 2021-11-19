@@ -62,7 +62,7 @@ Get the sample points of a simplex for a polynomial approximation.
 
 # Examples
 ```jldoctest
-import Pebsi.Polynomials: sample_simplex
+import Pebsi.Geometry: sample_simplex
 dim = 2
 deg = 1
 sample_simplex(dim,deg)
@@ -124,13 +124,13 @@ Convert points from barycentric to Cartesian coordinates.
 # Examples
 ```jldoctest
 using Pebsi.Geometry: barytocart
-pts = [0 0; 0 1; 1 0; 0 0]
+pts = [0 0; 0 1; 1 0]
 triangle = [0 1 1; 0 0 1]
 barytocart(pts,triangle)
 # output
-2×2 Matrix{Float64}:
- 0.5  1.0
- 0.0  0.0
+2×2 Matrix{Int64}:
+ 1  1
+ 1  0
 ```
 """
 function barytocart(barypts::AbstractMatrix{<:Real},

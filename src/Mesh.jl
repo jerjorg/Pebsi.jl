@@ -238,8 +238,8 @@ function choose_neighbors3D(simplex,neighborsᵢ,neighbors;num_neighbors=nothing
     for i = 1:nbinsθ
         for θᵢ in binsθ[i]
             for j = 1:nbinsϕ
-                if ϕⱼ in binsϕ[j]
-                    push!(angle_ran[i][j],ϕⱼ)
+                if θᵢ in binsϕ[j]
+                    push!(angle_ran[i][j],θᵢ)
                 end
             end
         end
@@ -451,7 +451,7 @@ using Pebsi.Mesh: ibz_init₋mesh, notbox_simplices
 mesh = ibz_init₋mesh(m51.ibz,3)
 notbox_simplices(mesh)
 # output
-8-element Vector{Vector{Int64}}:
+8-element Vector{Vector{var"#s29"} where var"#s29"<:Integer}:
  [10, 6, 9]
  [10, 8, 12]
  [8, 10, 9]
@@ -566,36 +566,11 @@ Calculate a triangulation of points within and just outside the IBZ.
     points of the box).
 
 # Examples
-```jldoctest
+```
 using Pebsi.EPMs: m21
 using Pebsi.Mesh: ibz_init₋mesh, get_extmesh
 mesh = ibz_init₋mesh(m21.ibz,1)
 mesh,extmesh,sym_unique = get_extmesh(m21.ibz,mesh,m21.pointgroup,m21.recip_latvecs)
-sym_unique
-# output
-22-element Vector{Int64}:
- 0
- 0
- 0
- 0
- 5
- 6
- 7
- 7
- 7
- 6
- 6
- 6
- 6
- 6
- 6
- 6
- 5
- 5
- 5
- 5
- 5
- 5
 ```
 """
 function get_extmesh(ibz::Chull,mesh::PyObject,pointgroup::Vector{Matrix{Float64}},
@@ -660,7 +635,7 @@ Split a triangle uniformly into smaller triangles and sample each subtriangle at
 # Examples
 ```jldoctest
 using Pebsi.Mesh: trimesh
-trimesh(3)
+trimesh(2)
 # output
 3×4 Matrix{Float64}:
  0.666667  0.333333  0.166667  0.166667

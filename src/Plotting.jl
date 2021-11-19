@@ -37,25 +37,21 @@ Plot the points in a mesh in 2D or 3D.
 - `ax::PyObject`: an axes object from `PyPlot`.
 
 # Examples
-```jldoctest
+```
 using PyPlot: subplots
 using Pebsi.Plotting: meshplot
 fig,ax = subplots()
 mesh = [0 1 1 0; 0 0 1 1]
 ax = meshplot(mesh,ax)
-# output
-PyObject <AxesSubplot:>
 ```
 
-```jldoctest
+```
 using PyPlot: figure, subplot
 using Pebsi.Plotting: meshplot
 fig = figure()
 ax = subplot(projection="3d")
 mesh = [0 1 1 0 0 1 1 0; 0 0 1 1 0 0 1 1; 0 0 0 0 1 1 1 1]
 ax = meshplot(mesh,ax)
-# output
-PyObject <Axes3DSubplot:>
 ```
 """
 function meshplot(meshpts::AbstractMatrix{<:Real},
@@ -113,15 +109,14 @@ Plot the triangles in a triangular mesh.
 - `ax::PyObject`: an axes object from `PyPlot`.
 
 # Examples
-```jldoctest
+```
+using PyPlot: subplots
 using Pebsi.Mesh: ibz_init₋mesh
 using Pebsi.EPMs: m11
 using Pebsi.Plotting: meshplot
 mesh = ibz_init₋mesh(m11.ibz,3)
 fig,ax = subplots()
 ax = meshplot(mesh,ax)
-# output
-PyObject <AxesSubplot:>
 ```
 """
 function meshplot(mesh::PyObject,ax::Union{PyObject,Nothing}=nothing;
@@ -160,15 +155,13 @@ Plot the level curves of a polynomial surface.
 - `ax::PyObject`: the plot axes object.
 
 # Examples
-```jldoctest
+```
 using PyPlot: subplots
 using Pebsi.Plotting: contourplot
 fig,ax = subplots()
 bezpts = [0. 0.5 1. 0.5 1. 1.; 0. 0. 0. 0.5 0.5 1.; -1 0.1 -0.2 1.2 1.1 -0.2]
 ax = contourplot(bezpts,ax,padded=false,filled=true,ndiv=200,linewidths=2,
     colors=["red","black"],zorder=2,alpha=0.5)
-# output
-PyObject <AxesSubplot:>
 ```
 """
 function contourplot(bezpts::AbstractMatrix{<:Real},
@@ -236,18 +229,6 @@ Plot the triangles shaded by error and approx. Fermi curve of an approx. of the 
 
 # Returns
 - `ax::PyObject`: a `PyPlot` axes object. 
-
-# Examples
-```jldoctest
-using Pebsi.EPMs: m11
-using Pebsi.QuadraticIntegration: init_bandstructure, calc_flbe!
-using Pebsi.Plotting: contourplot
-epm = m11
-ebs = init_bandstructure(epm)
-calc_flbe!(epm,ebs)
-ax = contourplot(ebs)
-# output
-PyObject <AxesSubplot:>
 ```
 """
 function contourplot(ebs::bandstructure, ax::Union{PyObject,Nothing}=nothing;
@@ -322,7 +303,7 @@ function contourplot(ebs::bandstructure, ax::Union{PyObject,Nothing}=nothing;
     ax
 end
 
-"""
+@doc """
     bezplot(bezpts)
 
 Plot a univariate quadratic Bezier curve and its Bezier points.
@@ -337,14 +318,12 @@ Plot a univariate quadratic Bezier curve and its Bezier points.
 - `ax::PyObject`: an axes object
 
 # Examples
-```jldoctest
+```
 using PyPlot: subplots
 using Pebsi.Plotting: bezplot
 fig,ax = subplots()
 bezpts = [0. 0.5 1.; -0.2 1.3 -0.5]
 ax = bezplot(bezpts,ax)
-# output
-PyObject <AxesSubplot:>
 ```
 """
 function bezplot(bezpts::AbstractMatrix{<:Real},
@@ -366,7 +345,7 @@ function bezplot(bezpts::AbstractMatrix{<:Real},
     ax
 end
 
-"""
+@doc """
     bezcurve_plot(bezptsᵣ,bezwtsᵣ,ax)
 
 Plot a rational quadratic Bezier curve and its Bezier points
@@ -423,12 +402,10 @@ Make a plot of a polygon.
 - `ax::PyObject`: updated axes object that includes a plot of the convex polygon.
 
 # Examples
-```jldoctest
+```
 using Pebsi.Plotting: polygonplot
 polygon = [0 1 1 0; 0 0 1 1]
 polygonplot(polygon)
-# output
-PyObject <AxesSubplot:>
 ```
 """
 function polygonplot(pts::AbstractMatrix{<:Real},
@@ -454,12 +431,10 @@ end
 Plot many 2D polygons in one plot.
 
 # Examples
-``` jldoctest
+```
 using Pebsi.Plotting: polygonplot
 polygon = [[0 1 1; 0 0 1], [0 1 0; 0 1 1]]
 polygonplot(polygon)
-# output
-PyObject <AxesSubplot:>
 ```
 """
 function polygonplot(polygons::Vector{Matrix{T}} where T<:Real,
@@ -506,13 +481,11 @@ Plot the band structure of an empirical pseudopotential.
 - ax::PyObject`: an axes object from `matplotlib`.
 
 # Examples
-```jldoctest
+```
 import Pebsi.EPMs: Al_epm
 using Pebsi.Plotting: plot_bandstructure
 plot_bandstructure(Al_epm.name, Al_epm.recip_latvecs, Al_epm.atom_types, 
     Al_epm.atom_pos, Al_epm.rules)
-# output
-PyObject <AxesSubplot:title={'center':'Al band structure plot'}, xlabel='High symmetry points', ylabel='Total energy (Ry)'>
 """
 function plot_bandstructure(name::String, basis::AbstractMatrix{<:Real},
     atomtypes::AbstractVector{<:Integer}, atompos::AbstractMatrix{<:Real},
@@ -606,12 +579,10 @@ Plot the band structure of an empirical pseudopotential.
 - `ax::PyCall.PyObject`: the band structure plot.
 
 # Examples
-```jldoctest
+```
 import Pebsi.EPMs: Al_epm
 using Pebsi.Plotting: plot_bandstructure
 plot_bandstructure(Al_epm)
-# output
-PyObject <AxesSubplot:title={'center':'Al band structure plot'}, xlabel='High symmetry points', ylabel='Total energy (Ry)'>
 ```
 """
 function plot_bandstructure(epm::Union{epm₋model2D,epm₋model},

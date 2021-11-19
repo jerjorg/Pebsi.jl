@@ -251,6 +251,7 @@ Calculate the value of a 1D quadratic curve at its vertex.
 
 # Examples
 ```jldoctest
+using Pebsi.QuadraticIntegration: quadval_vertex
 coeffs = [-1, 2, -1]
 quadval_vertex(coeffs)
 # output
@@ -1510,14 +1511,15 @@ Perform one iteration of adaptive refinement. See the composite type
 
 # Examples
 ```jldoctest
+using Suppressor
 using Pebsi.EPMs: m31
 using Pebsi.QuadraticIntegration: init_bandstructure, calc_flbe!, refine_mesh!
 epm = m31
 ebs = init_bandstructure(epm);
-calc_flbe!(epm,ebs)
-refine_mesh!(epm,ebs)
+@suppress calc_flbe!(epm,ebs)
+@suppress refine_mesh!(epm,ebs)
 abs(ebs.bandenergy - epm.bandenergy) < 1e-2
-#
+# output
 true
 ```
 """
@@ -1916,16 +1918,13 @@ Calculate (roughly) the true band energy error for each quadratic triangle.
 - `part_be::Vector{Real}`: the true partial band energy over each triangle.
 
 # Examples
-```jldoctest 
+```
 using Pebsi.EPMs: m51
 using Pebsi.QuadraticIntegration: quadratic_method!, init_bandstructure, calc_flbe!, truebe
 epm = m51
 ebs = init_bandstructure(epm)
 ebs = calc_flbe!(epm,ebs)
 sigma_be,part_be = truebe(epm,ebs,10)
-abs(sum(sigma_be) + sum(part_be) - epm.bandenergy) < 0.2
-# output
-true
 ```
 """
 function truebe(epm::epm₋model2D,ebs::bandstructure,ndivs::Integer;
@@ -2016,7 +2015,7 @@ using Pebsi.QuadraticIntegration: bezcurve_intersects
 coeffs = [0,1,-1]
 bezcurve_intersects(coeffs)
 # output
-2-element Vector{Float64}:
+2-element Vector{Real}:
  0.0
  0.6666666666666666
 ```
@@ -2050,7 +2049,7 @@ getdomain(coeffs)
 # output
 2-element Vector{Any}:
  0.6666666666666666
- 1.0
+ 1
 ```
 """
 function getdomain(bezcoeffs::AbstractVector{<:Real};

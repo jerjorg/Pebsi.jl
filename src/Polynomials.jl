@@ -485,7 +485,7 @@ using Pebsi.Polynomials: solve_quadratic
 coeffs = [-1,0,1]
 solve_quadratic(coeffs...)
 # output
-2-element Vector{Float64}:
+2-element Vector{Real}:
  -1.0
   1.0
 ```

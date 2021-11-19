@@ -1,18 +1,16 @@
 module RectangularMethod
 
-export sample_unitcell, rectangular_method, symreduce_grid, convert_mixedradix,
-    kpoint_index, calculate_orbits
-
-using SymmetryReduceBZ.Symmetry: mapto_unitcell, make_primitive,
-    calc_spacegroup, mapto_bz
-using SymmetryReduceBZ.Lattices: get_recip_latvecs
+using SymmetryReduceBZ.Symmetry: mapto_unitcell, mapto_bz
 using Base.Iterators: product
 using LinearAlgebra: det, diag, dot, inv
 using AbstractAlgebra: ZZ, matrix, snf_with_transform, hnf_with_transform, hnf
 using Distributed: pmap
 
-using ..EPMs: eval_epm,RytoeV,eVtoRy,epm₋model,epm₋model2D,sym_offset
-using ..Defaults: def_atol,def_rtol
+using ..EPMs: eval_epm, RytoeV, epm₋model, epm₋model2D, sym_offset
+using ..Defaults: def_atol
+
+export sample_unitcell, rectangular_method, symreduce_grid, convert_mixedradix,
+    kpoint_index, calculate_orbits
 
 @doc """
     sample_unitcell(latvecs,N,grid_offset,rtol,atol)
@@ -21,19 +19,18 @@ Create a generalized regular grid over the unit cell.
 
 # Arguments
 - `latvecs::AbstractMatrix{<:Real}`: the reciprocal lattice vectors as columns
-    of a square array.
-- `N::AbstractArray{<:Integer,2}`: an integer, square array that relates the
+    of a square matrix.
+- `N::AbstractMatrix{<:Integer}`: an integer, square matrix that relates the
     reciprocal lattice vectors `R` to the grid generating vectors `K`: `R=KN`.
 - `grid_offset::AbstractVector{<:Real}=zeros(size(N,1))`: the offset of the grid
     in grid coordinates (fractions of the grid generating vectors).
 - `rtol::Real=sqrt(eps(float(maximum(latvecs))))`: a relative tolerance for
     floating point comparisons. This is used for mapping points into the
     provided unit cell.
-- `atol::Real=1e-9`: an absolute tolerance for floating point comparisons.
+- `atol::Real=def_atol`: an absolute tolerance for floating point comparisons.
 
 # Returns
-- `::Array{Float64,2}`: the points in the generalized, regular grid as
-    columns of a 2D array.
+- `::Matrix{Float64}`: the points in the generalized regular grid as columns of a 2D array.
 
 # Examples
 ```jldoctest
@@ -49,7 +46,7 @@ sample_unitcell(recip_latvecs,N,grid_offset)
 ```
 """
 function sample_unitcell(latvecs::AbstractMatrix{<:Real},
-    N::AbstractArray{<:Integer,2},
+    N::AbstractMatrix{<:Integer},
     grid_offset::AbstractVector{<:Real}=zeros(size(N,1));
     rtol::Real=sqrt(eps(float(maximum(latvecs)))),
     atol::Real=def_atol)::AbstractMatrix{Float64}
@@ -78,16 +75,19 @@ end
 @doc """
     rectangular_method(epm,N,num_cores=1;partial=true,rtol,atol)
 
+Calculate the fermi level and band energy of an EPM with the rectangular method.
+
 # Arguments
 - `epm::Union{epm₋model2D,epm₋model}`: an empirical pseudopotential.
-- `N::AbstractArray{<:Integer,2}`: an integer, square array that relates the
-    reciprocal lattice vectors `R` to the grid generating vectors `K`: `R=KN`.
+- `N::Union{Integer,AbstractMatrix{<:Integer}}`: an integer, square array that relates
+    the reciprocal lattice vectors `R` to the grid generating vectors `K`: `R=KN`.
+    If a integer is provided, the matrix is a diagonal matrix, and each element along
+    the diagonal are the integer.
 - `num_cores::Integer`: the number of cores used when calculating the band energy
     in parallel.
 - `rtol::Real=sqrt(eps(float(maximum(real_latvecs))))` a relative tolerance for
     floating point comparisons.
 - `atol::Real=def_atol`: an absolute tolerance for floating point comparisons.
-
 
 # Returns
 - `num_unique::Integer`: the number of symmetrically unique points in the grid.
@@ -107,8 +107,7 @@ function rectangular_method(epm::Union{epm₋model2D,epm₋model},
     N::Union{Integer,AbstractMatrix{<:Integer}},num_cores::Integer=1;
     partial::Bool=true,
     rtol::Real=sqrt(eps(float(maximum(epm.recip_latvecs)))), 
-    atol::Real=def_atol,func=nothing)::Tuple{Int64,Float64,Float64}
-
+    atol::Real=def_atol,func=nothing)::Tuple{Integer,Real,Real}
     grid_offset = sym_offset[epm.rlat_type]
     if typeof(N) <: Integer
         if size(epm.recip_latvecs,1) == 3
@@ -120,7 +119,7 @@ function rectangular_method(epm::Union{epm₋model2D,epm₋model},
 
     (kpoint_weights,unique_kpoints,orbits) = symreduce_grid(epm.recip_latvecs,N,
         grid_offset,epm.pointgroup,rtol=rtol,atol=atol)
-
+    
     inv_latvecs = inv(epm.recip_latvecs)
     unique_kpoints = mapto_bz(unique_kpoints, epm.recip_latvecs, inv_latvecs,
         epm.coordinates)
@@ -193,6 +192,42 @@ end
         grid_offset,energy_factor;rtol,atol)
 
 Calculate the Fermi level and band energy with the rectangular method without symmetry.
+
+# Arguments
+- `recip_latvecs::AbstractMatrix{<:Real}`: the reciprocal lattice vectors.
+- `rules`: pairs where the first values are distances between lattice points and
+    the second values are the pseudopotential form factors.
+- `electrons::Integer`:  the number of electrons.
+- `cutoff::Real`: the Fourier expansion cutoff.
+- `sheets::Int`: the number of sheets to include.
+- `N::AbstractMatrix{<:Real}`: a square matrix relating the lattice vectors to the 
+    grid generating vectors.
+- `grid_offset::AbstractVector{<:Real}=[0,0]`: the offset of the grid in terms of the
+    grid generating vectors. 
+- `energy_factor::Real=RytoeV`: an energy conversion factor.
+- `rtol::Real=sqrt(eps(float(maximum(recip_latvecs))))`: a relative tolerance.
+- `atol::Real=def_atol`: an absolute tolerance.
+- `func::Union{Nothing,Function}=nothing`: a k-point independent band structure model. 
+
+# Returns
+- `num_kpoints::Int64`: the number of symmetrically-unique *k*-points.
+- `::Float64`:the Fermi level.
+- `::Float64`: the band energy.
+
+# Examples
+```jldoctest
+using Pebsi.EPMs: m11
+using Pebsi.RectangularMethod: rectangular_method;
+sheets = 7
+N = [10 0; 0 10]
+grid_offset = [0.5,0.5]
+energy_conv = 1
+(npts,fl,be) = rectangular_method(m11.recip_latvecs, m11.rules, m11.electrons, m11.cutoff, sheets,
+    N, grid_offset, energy_conv)
+abs(be - m11.bandenergy) < 1e-2
+# output
+true
+```
 """
 function rectangular_method(recip_latvecs::AbstractMatrix{<:Real},
     rules, electrons::Integer, cutoff::Real,
@@ -228,8 +263,6 @@ function rectangular_method(recip_latvecs::AbstractMatrix{<:Real},
 
     sort!(eigenvalues)
     occupied_states = 1:ceil(Int,electrons*num_kpoints/2)
-
-
     rectangle_size = abs(det(recip_latvecs))/num_kpoints
     fermi_level = eigenvalues[occupied_states[end]]
     band_energy = rectangle_size*sum(eigenvalues[occupied_states])
@@ -248,12 +281,12 @@ Calculate the symmetrically unique points and their weights in a GR grid.
 
 # Arguments
 - `recip_latvecs::AbstractMatrix{<:Real}`:
-- `N::AbstractArray{Integer,2}`: the integer matrix that relates the reciprocal
+- `N::AbstractMatrix{<:Integer}`: the integer matrix that relates the reciprocal
     lattice vectors (R) to the grid generating vectors (K): `K = R*N`.
 - `grid_offset::AbstractVector{<:Real}`: the offset of the grid in grid
     coordinates or fractions of the grid generating vectors (K). The offset in
     Cartesian coordinates is `K*gridoffset`.
-- `pointgroup::AbstractArray`: the operators in the point group in matrix
+- `pointgroup::AbstractVector`: the operators in the point group in matrix
     representation. They operate on points in Cartesian coordinates.
 - `rtol::Real=sqrt(eps(float(maximum(recip_latvecs))))`: relative tolerance for
     floating point comparisons. This is needed when mapping points into the
@@ -262,11 +295,11 @@ Calculate the symmetrically unique points and their weights in a GR grid.
     used for mapping points to the first unit cell.
 
 # Returns
-- `kpoint_weights::Array{Int64,1}`: a list weights or sizes of orbits for the
+- `kpoint_weights::Vector{<:Integer}`: a list weights or sizes of orbits for the
     symmetrically distinct points in the grid.
-- `unique_kpoints::Array{Float64,2}`: the representative points for each orbit
+- `unique_kpoints::Matrix{<:Real}`: the representative points for each orbit
     as columns of a 2D array in Cartesian coordinates.
-- `orbits::Array{Array{Float64,2},1}`(optional): a list of points in each orbit.
+- `orbits::Vector{Matrix{<:Real}}`(optional): a list of points in each orbit.
 
 # Examples
 ```jldoctest
@@ -283,13 +316,11 @@ symreduce_grid(recip_latvecs,N,grid_offset,pointgroup)
 ```
 """
 function symreduce_grid(recip_latvecs::AbstractMatrix{<:Real},
-    N::AbstractArray{<:Integer,2}, grid_offset::AbstractVector{<:Real},
-    pointgroup::AbstractArray;
-    rtol::Real=sqrt(eps(float(maximum(recip_latvecs)))),
+    N::AbstractMatrix{<:Integer}, grid_offset::AbstractVector{<:Real},
+    pointgroup::AbstractVector; rtol::Real=sqrt(eps(float(maximum(recip_latvecs)))),
     atol::Real=def_atol)
 
     dim = length(grid_offset)
-
     origin = zeros(Int,dim)
     inv_rlatvecs = inv(recip_latvecs)
     N = matrix(ZZ,N)
@@ -301,6 +332,7 @@ function symreduce_grid(recip_latvecs::AbstractMatrix{<:Real},
     d = diag(D)
     K = inv(H)*recip_latvecs
     invK = inv_rlatvecs*H
+
     offset = mapto_unitcell(K*grid_offset,recip_latvecs,inv(recip_latvecs),
         "Cartesian",rtol=rtol,atol=atol)
     grid = sample_unitcell(recip_latvecs,N,grid_offset,rtol=rtol,atol=atol)
@@ -372,9 +404,9 @@ end
 Convert a mixed-radix number to an integer.
 
 # Arguments
-- `dial::AbstractArray{<:Integer,1}`: the mixed radix number as integers
+- `dial::AbstractVector{<:Integer}`: the mixed radix number as integers
     in a 1D array.
-- `dial_sizes::AbstractArray{<:Integer,1}`: the maximum value of each dial
+- `dial_sizes::AbstractVector{<:Integer}`: the maximum value of each dial
     as integers in a 1D array.
 
 # Returns
@@ -391,8 +423,8 @@ convert_mixedradix(dials,dial_sizes)
 8
 ```
 """
-function convert_mixedradix(dial::AbstractArray{<:Integer,1},
-        dial_sizes::AbstractArray{<:Integer,1})::Integer
+function convert_mixedradix(dial::AbstractVector{<:Integer}, 
+    dial_sizes::AbstractVector{<:Integer})::Integer
     val = 1 + dial[1]
     for (i,x)=enumerate(dial[2:end])
         val += x*prod(dial_sizes[1:i])
@@ -461,7 +493,7 @@ Calculate the points of the grid in each orbit the hard way.
 # Arguments
 - `grid::AbstractMatrix{<:Real}`: the points in the grid as columns of an
     array in Cartesian coordinates.
-- `pointgroup::AbstractArrray`: the operators in the point group in nested
+- `pointgroup::AbstractVector`: the operators in the point group in nested
     array. They operator on points in Cartesian coordinates.
 - `latvecs::AbstractMatrix{<:Real}`: the lattice vectors as columns of an
     array.
