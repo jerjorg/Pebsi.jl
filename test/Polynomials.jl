@@ -1,6 +1,6 @@
 using Test
 
-using Pebsi.Polynomials: sample_simplex, bernstein_basis, getpoly_coeffs, eval_poly
+using Pebsi.Polynomials: bernstein_basis, getpoly_coeffs, eval_poly
 using Pebsi.Geometry: barytocart
 using PyCall: pyimport
 sympy=pyimport("sympy")

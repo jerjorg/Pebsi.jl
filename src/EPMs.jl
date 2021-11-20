@@ -1,4 +1,4 @@
-@doc """Empirical pseudopotential models for testing band energy calculation methods.
+ """Empirical pseudopotential models for testing band energy calculation methods.
 Models based on pseudopotential derivation explained in the textbook Solid
 State Physics by Grosso and Parravicini.
 
@@ -705,7 +705,10 @@ mf = epm₋model2D(energy_conv, sheets, atom_types, atom_pos, coordinates, conve
     free2Dbandenergy)
 
 @doc """
-    epm₋model()
+    epm₋model(energy_conv, sym_offset, atom_types, atom_pos, coordinates, convention,
+        sheets, name, lat_type, lat_constants, lat_angles, real_latvecs, rlat_type, 
+        recip_latvecs, pointgroup, frac_trans, bz, ibz, dist_ff, rules, electrons, 
+        cutoff, fermiarea, fermilevel, fl_error, bandenergy, be_error)
 
 A container for all the information about the empirical pseudopotential models.
 
@@ -890,6 +893,28 @@ free_epm = epm₋model(energy_conv, freesym_offset, atom_types, atom_pos, coordi
     free_bandenergy, 0.0)
 
 @doc """
+    eval_epm(kpoints,rbasis,rules,cutoff,sheets,energy_conversion_factor;rtol,atol,func)
+
+Evaluate an empirical pseudopotential at each point in an array.
+
+# Arguments
+- `kpoints::AbstractMatrix{<:Real}`: an array of k-points as columns of a matrix.
+"""
+function eval_epm(kpoints::AbstractMatrix{<:Real},
+    rbasis::AbstractMatrix{<:Real}, rules, cutoff::Real,
+    sheets::Integer, energy_conversion_factor::Real=RytoeV;
+    rtol::Real=sqrt(eps(float(maximum(rbasis)))), atol::Real=def_atol,
+    func::Union{Nothing,Function}=nothing)::AbstractMatrix{<:Real}
+
+    if !(func == nothing)
+        eval_epm(func,kpoints,sheets)
+    end
+
+    mapslices(x->eval_epm(x,rbasis,rules,cutoff,sheets,energy_conversion_factor;
+        rtol=rtol,atol=atol),kpoints,dims=1)
+end
+
+@doc """
     eval_epm(kpoint,rbasis,rules,cutoff,sheets,energy_conversion_factor;rtol,
         atol,func)
 
@@ -903,13 +928,13 @@ Evaluate an empirical pseudopotential model (EPM) at a k-point.
     between reciprocal lattice points rounded to two decimals places and second
     elements are the empirical pseudopotential form factors.
 - `cutoff::Real`: the Fourier expansion cutoff.
-- `sheets::Int`: the number of eigenenergies returned.
+- `sheets::Integer`: the number of eigenenergies returned.
 - `energy_conversion_factor::Real=RytoeV`: converts the energy eigenvalue units
     from the energy unit for `rules` to an alternative energy unit.
 - `rtol::Real=sqrt(eps(float(maximum(rbasis))))`: a relative tolerance for
     finite precision comparisons. This is used for identifying points within a
     circle or sphere in the Fourier expansion.
-- `atol::Real=1e-9`: an absolute tolerance for finite precision comparisons.
+- `atol::Real=def_atol`: an absolute tolerance for finite precision comparisons.
 - `func::Union{Nothing,Function}=nothing`: a k-point independent EPM.
 
 # Returns
@@ -936,17 +961,18 @@ eval_epm(kpoint, rlatvecs, rules, cutoff, sheets)
  26.800000569752516
  26.80000056975255
  26.800303409287515
- ```
+```
 """
 function eval_epm(kpoint::AbstractVector{<:Real},
     rbasis::AbstractMatrix{<:Real}, rules, cutoff::Real,
-    sheets::Int,energy_conversion_factor::Real=RytoeV;
+    sheets::Integer, energy_conversion_factor::Real=RytoeV;
     rtol::Real=sqrt(eps(float(maximum(rbasis)))),
     atol::Real=def_atol,
     func::Union{Nothing,Function}=nothing)::AbstractVector{<:Real}
 
+    # extra
     if !(func == nothing)
-        return eval_epm(func,kpoint...,sheets)
+        return func(kpoint...,sheets)
     end
 
     if length(kpoint) == 3
@@ -962,7 +988,7 @@ function eval_epm(kpoint::AbstractVector{<:Real},
         error("The cutoff is too small for the requested number of sheets. The"*
             " number of terms in the expansion is $npts.")
     end
-
+    
     ham=zeros(Float64,npts,npts)
     maxff = maximum([x[2] for x=rules])
     maxd = maximum([x[1] for x=rules]) + 1e-3
@@ -971,6 +997,7 @@ function eval_epm(kpoint::AbstractVector{<:Real},
     ind = findall(!iszero, ham)
     ham[ind] = replace(round.(ham[ind],digits=2),rules...)
     ham[ind] = replace(x -> x > maxff ? 0 : x, ham[ind])
+
 
     if length(kpoint) == 2
         for i=1:npts
@@ -984,31 +1011,8 @@ function eval_epm(kpoint::AbstractVector{<:Real},
     eigvals(Symmetric(ham))[1:sheets]*energy_conversion_factor
 end
 
-
 @doc """
-    eval_epm(kpoints,rbasis,rules,cutoff,sheets,energy_conversion_factor;rtol,atol,func)
-
-Evaluate an empirical pseudopotential at each point in an array.
-
-# Arguments
-- `kpoints::AbstractMatrix{<:Real}`: an array of k-points as columns of a matrix.
-"""
-function eval_epm(kpoints::AbstractMatrix{<:Real},
-    rbasis::AbstractMatrix{<:Real}, rules, cutoff::Real,
-    sheets::Int, energy_conversion_factor::Real=RytoeV;
-    rtol::Real=sqrt(eps(float(maximum(rbasis)))), atol::Real=def_atol,
-    func::Union{Nothing,Function}=nothing)::AbstractMatrix{<:Real}
-
-    if !(func == nothing)
-        eval_epm(func,kpoints,sheets)
-    end
-
-    mapslices(x->eval_epm(x,rbasis,rules,cutoff,sheets,energy_conversion_factor;
-        rtol=rtol,atol=atol),kpoints,dims=1)
-end
-
-@doc """
-    eval_epm(kpoint,epm;rtol,atol,func,sheets)
+    eval_epm(kpoint,epm;rtol,atol,func,sheets,func)
 
 Calculate the eigenvalues of an empirical pseudopotential at a *k*-point.
 
@@ -1022,6 +1026,7 @@ Calculate the eigenvalues of an empirical pseudopotential at a *k*-point.
 - `atol::Real=def_atol`: an absolute tolerance for finite-precision comparisons.
 - `sheets::Integer=-1`: the number of sheets for the k-point independent EPM. If
     not provided, the number of sheets specified by the EPM container is used.
+- `func::Union{Nothing,Function}=nothing`: a *k*-point independent function.
 
 # Returns
 - `::AbstractVector{<:Real}`: the eigenvalues at the specified *k*-point for the EPM.
@@ -1043,52 +1048,16 @@ eval_epm([0,0,0],Al_epm)
 function eval_epm(kpoint::AbstractVector{<:Real},
     epm::Union{epm₋model2D,epm₋model};
     rtol::Real=sqrt(eps(float(maximum(epm.recip_latvecs)))),
-    atol::Real=def_atol,sheets::Integer=-1)::AbstractVector{<:Real}
+    atol::Real=def_atol, sheets::Integer=0, 
+    func::Union{Nothing,Function}=nothing)::AbstractVector{<:Real}
 
-    if length(kpoint) == 3
-        rlatpts = sample_sphere(epm.recip_latvecs,epm.cutoff,kpoint;rtol=rtol,
-            atol=atol)
-    elseif length(kpoint) == 2
-        rlatpts = sample_circle(epm.recip_latvecs,epm.cutoff,kpoint;rtol=rtol,
-            atol=atol)
-    else
-        throw(ArgumentError("The k-point may only have 2 or 3 elements."))
-    end
-
-    npts = size(rlatpts,2)
-    if npts < sheets
-        error("The cutoff is too small for the requested number of sheets. The"*
-            " number of terms in the expansion is $npts.")
-    end
-
-    if sheets < 0
-        sheets = epm.sheets
-    end
-
-    ham=zeros(Float64,npts,npts)
-    rules = epm.rules
-    maxff = maximum([x[2] for x=rules])
-    maxd = maximum([x[1] for x=rules]) + 1e-3
-    pairwise!(ham, SqEuclidean(), rlatpts, dims=2)
-    replace!(x -> x > maxd ? 0 : x, ham)
-    ind = findall(!iszero, ham)
-    ham[ind] = replace(round.(ham[ind],digits=2),rules...)
-    ham[ind] = replace(x -> x > maxff ? 0 : x, ham[ind])
-
-    if length(kpoint) == 2
-        for i=1:npts
-            ham[i,i] = (kpoint[1] + rlatpts[1,i])^2 + (kpoint[2] + rlatpts[2,i])^2
-        end
-    else
-        for i=1:npts
-            ham[i,i] = (kpoint[1] + rlatpts[1,i])^2 + (kpoint[2] + rlatpts[2,i])^2 + (kpoint[3] + rlatpts[3,i])^2
-        end
-    end
-    eigvals(Symmetric(ham))[1:sheets]*epm.energy_conv
+    if sheets == 0 sheets = epm.sheets end
+    eval_epm(kpoint, epm.recip_latvecs, epm.rules, epm.cutoff, sheets, epm.energy_conv,
+        rtol=rtol, atol=atol, func=func)
 end
 
 @doc """
-    eval_epm(kpoints,epm,rtol,atol,func,sheets)
+    eval_epm(kpoints,epm,rtol,atol,func,sheets,func)
 
 Evaluate an EPM an many *k*-points.
 
@@ -1097,8 +1066,9 @@ Evaluate an EPM an many *k*-points.
 - `epm::Union{epm₋model2D,epm₋model}`: an EPM model.
 - `rtol::Real=sqrt(eps(float(maximum(epm.recip_latvecs))))`: a relative tolerance.
 - `atol::Real=def_atol`: an absolute tolerance.
-- `sheets::Integer=-1`: the number of sheets for the *k*-point independent EPM.
+- `sheets::Integer=0`: the number of sheets for the *k*-point independent EPM.
     If not provided, the number of sheets specified by the EPM container is used.
+- `func::Union{Nothing,Function}=nothing`: a *k*-point independent function.
 
 # Returns
 - `::AbstractMatrix{<:Real}`: a matrix whose columns are eigenvalues of the EPM 
@@ -1116,9 +1086,11 @@ size(eigvals)
 function eval_epm(kpoints::AbstractMatrix{<:Real},
     epm::Union{epm₋model2D,epm₋model};
     rtol::Real=sqrt(eps(float(maximum(epm.recip_latvecs)))),
-    atol=def_atol,sheets::Integer=-1)::AbstractMatrix{<:Real}
+    atol=def_atol,sheets::Integer=0,
+    func::Union{Nothing,Function}=nothing)::AbstractMatrix{<:Real}
 
-    mapslices(x->eval_epm(x,epm,rtol=rtol,atol=atol,sheets=sheets),
-    kpoints,dims=1)
+    if sheets == 0 sheets = epm.sheets end
+    mapslices(x->eval_epm(x,epm,rtol=rtol,atol=atol,sheets=sheets,func=func),
+        kpoints,dims=1)
 end
-end
+end # module

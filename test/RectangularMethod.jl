@@ -185,7 +185,6 @@ import SymmetryReduceBZ.Utilities: contains
 
         @test abs(fl-tmp[2]) < 1e-3
         @test abs(be - tmp[3]) < 1e-4
-            
     end
 
     n,fl,be = rectangular_method(mf,100)

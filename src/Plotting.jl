@@ -229,7 +229,6 @@ Plot the triangles shaded by error and approx. Fermi curve of an approx. of the 
 
 # Returns
 - `ax::PyObject`: a `PyPlot` axes object. 
-```
 """
 function contourplot(ebs::bandstructure, ax::Union{PyObject,Nothing}=nothing;
     sort::Bool=false, linewidth::Real=0.5, edgecolor::String="black", 
@@ -478,7 +477,7 @@ Plot the band structure of an empirical pseudopotential.
     the band structure plot. Options include "Cartesian" and "lattice".
 
 # Returns
-- ax::PyObject`: an axes object from `matplotlib`.
+- `ax::PyObject`: an axes object from `matplotlib`.
 
 # Examples
 ```
@@ -486,6 +485,7 @@ import Pebsi.EPMs: Al_epm
 using Pebsi.Plotting: plot_bandstructure
 plot_bandstructure(Al_epm.name, Al_epm.recip_latvecs, Al_epm.atom_types, 
     Al_epm.atom_pos, Al_epm.rules)
+```
 """
 function plot_bandstructure(name::String, basis::AbstractMatrix{<:Real},
     atomtypes::AbstractVector{<:Integer}, atompos::AbstractMatrix{<:Real},

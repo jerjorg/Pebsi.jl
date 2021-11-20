@@ -1,7 +1,7 @@
 using Test
 
-using Pebsi.Geometry: order_vertices!, insimplex
-using Pebsi.Polynomials: sample_simplex,barytocart,getpoly_coeffs
+using Pebsi.Geometry: order_vertices!, insimplex, sample_simplex
+using Pebsi.Polynomials: barytocart, getpoly_coeffs
 using Pebsi.QuadraticIntegration
 using Pebsi.QuadraticIntegration: coeff_order1, coeff_order2, coeff_order3, coeff_order4,
     vert_order1, vert_order2, vert_order3, vert_order4, slice_order1, slice_order2, slice_order3,

@@ -108,6 +108,7 @@ function rectangular_method(epm::Union{epm₋model2D,epm₋model},
     partial::Bool=true,
     rtol::Real=sqrt(eps(float(maximum(epm.recip_latvecs)))), 
     atol::Real=def_atol,func=nothing)::Tuple{Integer,Real,Real}
+
     grid_offset = sym_offset[epm.rlat_type]
     if typeof(N) <: Integer
         if size(epm.recip_latvecs,1) == 3
@@ -119,24 +120,16 @@ function rectangular_method(epm::Union{epm₋model2D,epm₋model},
 
     (kpoint_weights,unique_kpoints,orbits) = symreduce_grid(epm.recip_latvecs,N,
         grid_offset,epm.pointgroup,rtol=rtol,atol=atol)
-    
     inv_latvecs = inv(epm.recip_latvecs)
     unique_kpoints = mapto_bz(unique_kpoints, epm.recip_latvecs, inv_latvecs,
         epm.coordinates)
 
     if num_cores == 1
-        if func === nothing
-            eigenvalues = eval_epm(unique_kpoints,epm,rtol=rtol,atol=atol)
-        else
-            eigenvalues = func(unique_kpoints)
-        end
+        eigenvalues = eval_epm(unique_kpoints, epm, rtol=rtol, atol=atol, sheets=epm.sheets, 
+            func=func)
     else
-        if func === nothing
-            eigenvalues = reduce(hcat,pmap(x->eval_epm(x,epm,rtol=rtol,atol=atol,sheets=epm.sheets),
-                [unique_kpoints[:,i] for i=1:size(unique_kpoints,2)]))
-        else
-            eigenvalues = reduce(hcat,pmap(x->func(x),[unique_kpoints[:,i] for i=1:size(unique_kpoints,2)]))
-        end
+        eigenvalues = reduce(hcat,pmap(x->eval_epm(x, epm, rtol=rtol, atol=atol,
+            sheets=epm.sheets, func=func), [unique_kpoints[:,i] for i=1:size(unique_kpoints,2)]))
     end
     
     num_unique = size(unique_kpoints,2)
@@ -244,14 +237,9 @@ function rectangular_method(recip_latvecs::AbstractMatrix{<:Real},
     eigenvalues = zeros(num_states)
 
     for i=1:num_kpoints
-        if func === nothing
         eigenvalues[1+(i-1)*sheets:(sheets*i)] = eval_epm(
-            integration_points[:,i],recip_latvecs,rules,cutoff,sheets,
-            energy_factor,rtol=rtol,atol=atol)
-        else
-            eigenvalues[1+(i-1)*sheets:(sheets*i)] = eval_epm(
-                func,integration_points[:,i],sheets)    
-        end
+            integration_points[:,i], recip_latvecs, rules, cutoff, sheets,
+            energy_factor, rtol=rtol, atol=atol, func=func)
     end
 
     # Account for partially occupied state
@@ -410,8 +398,8 @@ Convert a mixed-radix number to an integer.
     as integers in a 1D array.
 
 # Returns
-    `val::Integer`: the mixed radix-number as an integer, such as the position
-    in a 1D array, for example.
+- `val::Integer`: the mixed radix-number as an integer, such as the position in a 
+    1D array, for example.
 
 # Examples
 ```jldoctest

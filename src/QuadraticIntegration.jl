@@ -1823,6 +1823,7 @@ ebs = quadratic_method!(epm,target_accuracy=1e-2)
 abs(ebs.bandenergy - epm.bandenergy) < 1e-1
 # output
 true
+```
 """
 function quadratic_method!(epm::Union{epm₋model2D,epm₋model};
     init_msize::Int=def_init_msize, num_near_neigh::Int=def_num_near_neigh,
@@ -2170,6 +2171,7 @@ line = [0 1; 0 0]
 pt = [0,2]
 # output
 2.0
+```
 """
 function linept_dist(line,pt)::Real
     unit_vec = [0 -1; 1 0]*(line[:,2] - line[:,1])/norm(line[:,2] - line[:,1])
