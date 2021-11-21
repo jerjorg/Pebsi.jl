@@ -43,6 +43,7 @@ SymmetryReduceBZ = "49a35663-c880-4242-bebb-1ec8c0fa8046"
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 
 [compat]
+Distances = "0.10"
 julia = "1.5"
 
 [extras]
