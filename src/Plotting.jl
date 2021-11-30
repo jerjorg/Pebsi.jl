@@ -294,9 +294,9 @@ function contourplot(ebs::bandstructure, ax::Union{PyObject,Nothing}=nothing;
 
     # Set plot range.
     xrange = [minimum(ebs.mesh.points[5:end,1]), maximum(ebs.mesh.points[5:end,1])]
-    xrange = [xrange[1] - 0.05*diff(xrange)[1], xrange[2] + 0.05*diff(xrange)[1]]
+    xrange = [xrange[1] - 0.1*diff(xrange)[1], xrange[2] + 0.1*diff(xrange)[1]]
     yrange = [minimum(ebs.mesh.points[5:end,2]), maximum(ebs.mesh.points[5:end,2])]
-    yrange = [yrange[1] - 0.05*diff(yrange)[1], yrange[2] + 0.05*diff(yrange)[1]]
+    yrange = [yrange[1] - 0.1*diff(yrange)[1], yrange[2] + 0.1*diff(yrange)[1]]
     ax.set_xlim(xrange)
     ax.set_ylim(yrange)        
     ax
@@ -427,7 +427,7 @@ end
 @doc """
     polygonplot(polygons,ax;sort,facecolor,alpha,linewidth,edgecolor,zorder)
 
-Plot many 2D polygons in one plot.
+Plot many polygons in one plot.
 
 # Examples
 ```

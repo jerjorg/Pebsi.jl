@@ -347,7 +347,8 @@ saddlepoint(coeffs)
 """
 function saddlepoint(coeffs::AbstractVector{<:Real};
     atol::Real=def_atol)::AbstractVector{<:Real}
-    (z₀₀₂, z₁₀₁, z₂₀₀, z₀₁₁, z₁₁₀, z₀₂₀)=coeffs
+    # (z₀₀₂, z₁₀₁, z₂₀₀, z₀₁₁, z₁₁₀, z₀₂₀) = coeffs
+    (z₂₀₀, z₁₁₀, z₀₂₀, z₁₀₁, z₀₁₁, z₀₀₂) = coeffs
     denom = z₀₁₁^2+(z₁₀₁-z₁₁₀)^2+z₀₂₀*(2z₁₀₁-z₂₀₀)-2z₀₁₁*(z₁₀₁+z₁₁₀-z₂₀₀)-z₀₀₂*(z₀₂₀-2z₁₁₀+z₂₀₀)
     
     if isapprox(denom,0,atol=atol)
@@ -392,7 +393,6 @@ length(sbezpts)
 function split_bezsurf₁(bezpts::AbstractMatrix{<:Real}; atol::Real=def_atol)::AbstractArray
     spatial = pyimport("scipy.spatial")
     dim = 2; deg = 2; 
-    allpts::AbstractArray=[]
     triangle = bezpts[1:end-1,corner_indices]
     if simplex_size(triangle) < def_min_simplex_size
         return [bezpts]
@@ -402,19 +402,13 @@ function split_bezsurf₁(bezpts::AbstractMatrix{<:Real}; atol::Real=def_atol)::
     simplex_bpts = sample_simplex(dim,deg)
     intersects = simplex_intersects(bezpts,atol=atol)
     spt = saddlepoint(coeffs)
-    if intersects == [[],[],[]]
-        if insimplex(spt)
-            allpts = [pts barytocart(spt,triangle)]
-        else
-            allpts = pts
-        end
-    else
+    allpts = pts
+    if insimplex(spt) # Using the default absolute tolerance 1e-12
+        allpts = [pts barytocart(spt,triangle)]
+    end
+    if intersects != [[],[],[]]
         allintersects = reduce(hcat,[i for i=intersects if i!=[]])
-        if insimplex(spt) # Using the default absolute tolerance 1e-12
-            allpts = [pts barytocart(spt,triangle) allintersects]
-        else
-            allpts = [pts allintersects]
-        end
+        allpts = [allpts allintersects]
     end
     allpts = unique_points(allpts,atol=atol)
     # Had to add box points to prevent collinear triangles.
@@ -648,11 +642,10 @@ function two₋intersects_area₋volume(bezpts::AbstractMatrix{<:Real},
     triangle = bezpts[1:end-1,corner_indices]
     coeffs = bezpts[end,:]
     intersects = simplex_intersects(bezpts,atol=atol)
-
     # No intersections
     if intersects == [[],[],[]]
         # Case where the sheet is completely above or below 0.    
-        if all(bezpts[end,:] .< 0) && !all(isapprox.(bezpts[end,:],0,atol=atol))
+        if all(coeffs .< 0) && !any(isapprox.(coeffs,0,atol=atol))
             if quantity == "area"
                 areaₒᵣvolume = simplex_size(triangle)
             elseif quantity == "volume"
@@ -662,7 +655,7 @@ function two₋intersects_area₋volume(bezpts::AbstractMatrix{<:Real},
             end
             return areaₒᵣvolume
         end
-        if all(bezpts[end,:] .> 0) && !all(isapprox.(bezpts[end,:],0,atol=atol))
+        if all(coeffs .> 0) && !any(isapprox.(coeffs,0,atol=atol))
             areaₒᵣvolume = 0
             return areaₒᵣvolume
         end
@@ -670,7 +663,7 @@ function two₋intersects_area₋volume(bezpts::AbstractMatrix{<:Real},
 
     bezptsᵣ = []
     if intersects != [[],[],[]]
-        all_intersects = reduce(hcat,[i for i=intersects if i!= []])
+        all_intersects = reduce(hcat,[i for i=intersects if i != []])
         if size(all_intersects,2) != 2
             error("Can only calculate the area or volume when the curve intersects 
                 the triangle at two points or doesn't intersect the triangle.")
@@ -686,15 +679,18 @@ function two₋intersects_area₋volume(bezpts::AbstractMatrix{<:Real},
             if !insimplex(carttobary(ptᵣ,triangle))
                 intersects = [[],[],[]]
             end
+        else
+            # Remove intersections if the mipoint of the Bezier curve is on an edge.
+            on_edge = any(isapprox.([lineseg₋pt_dist(ptᵣ,triangle[:,i],atol=atol) 
+                for i=[[1,2],[2,3],[3,1]]],0,atol=atol))
+            if on_edge intersects = [[],[],[]] end
         end
     end
 
     # If the tangent lines are close to parallel, the middle Bezier point of the
     # curve will be very far away, which introduces numerical errors. We handle
     # this by splitting the surface up and recalculating.
-    # Also, split the surface if the level curve isn't linear and the saddle point 
-    # is within the triangle.
-    cstype = conicsection(bezpts[end,:]) # using the default tolerance of 1e-12
+    cstype = conicsection(coeffs) # using the default tolerance of 1e-12    
     linear = any(cstype .== ["line","rectangular hyperbola","parallel lines"])
     split = false
     if bezptsᵣ != []
@@ -702,18 +698,29 @@ function two₋intersects_area₋volume(bezpts::AbstractMatrix{<:Real},
             split = true
         end
     end
-    if (insimplex(saddlepoint(bezpts[end,:],atol=atol)) && !linear)
+
+    # Split the triangle if the saddle point is within the triangle but not on a
+    # corner and the conic section is linear or degenerate.
+    saddle = saddlepoint(coeffs,atol=atol)
+    if insimplex(saddle) && !any([isapprox(saddle,x,atol=atol) for x=[[1,0,0],[0,1,0],[0,0,1]]])
         split = true
     end
+
     if split
         bezptsᵤ = [split_bezsurf(b,atol=atol) for b=split_bezsurf₁(bezpts)] |> flatten |> collect
         return sum([two₋intersects_area₋volume(b,quantity,atol=atol) for b=bezptsᵤ])
     end
 
-    # No intersections but some of the coefficients are less or greater than 0.
+    # No intersections, no island, and the coefficients are less or greater than 0.
     if intersects == [[],[],[]]
-        if all(bezpts[end,corner_indices] .< 0 .| 
-            isapprox.(bezpts[end,corner_indices],0,atol=atol))
+        v = eval_poly([1/3,1/3,1/3],coeffs,2,2)
+        if v < 0 || isapprox(v,0,atol=atol)
+            below = true
+        else
+            below = false
+        end
+
+        if below
             if quantity == "area"
                 areaₒᵣvolume = simplex_size(triangle)
             elseif quantity == "volume"
@@ -726,7 +733,6 @@ function two₋intersects_area₋volume(bezpts::AbstractMatrix{<:Real},
         end
         return areaₒᵣvolume
     end
-
     edgesᵢ = [i for i=1:3 if intersects[i] != []]
     if length(edgesᵢ) == 1
         # When intersections are on two different edges, we need to include the
@@ -734,27 +740,27 @@ function two₋intersects_area₋volume(bezpts::AbstractMatrix{<:Real},
         # Bezier triangle and the whole triangle. It has no effect when the intersections
         # are on the same edge.
         corner = [1,2,3][edgesᵢ[1]]
-        # Determine which region to keep from the opposite corner.
-        opp_corner = [6,1,3][edgesᵢ[1]]
+
+        # If two intersections on the same edge, use a point that is the average of 
+        # the intersections and the midpoint of the Bezier curve.
+        avept = mean(all_intersects,dims=2) |> vec
+        avept = mean([avept ptᵣ],dims=2) |> vec
     elseif length(edgesᵢ) ==2
         corner = [3,1,2][setdiff([1,2,3],edgesᵢ)[1]]
-        cornersᵢ = sort(unique([isapprox(all_intersects[:,j],triangle[:,i],
-            atol=atol) ? i : 0 for i=1:3,j=1:2]))
-        if cornersᵢ != [0] && length(cornersᵢ) == 3
-            # Case where intersections are at two corners.
-            opp_corner = [1,3,6][(setdiff([1,2,3],cornersᵢ[2:end])[1])]
-        elseif (cornersᵢ != [0] && length(cornersᵢ) == 2) || cornersᵢ == [0]
-            # Case where there the intersection are on adjacent edges of the
-            # the triangle and neither are at corners or one at corner.
-            opp_corner = [1,3,6][(setdiff([1,2,3],edgesᵢ)[1])]
-            corner = [3,1,2][setdiff([1,2,3],edgesᵢ)[1]]
-        else
-            error("The intersections may only intersect at most two corners.")
-        end
+        # If intersections on different edges, use a point that is the average of
+        # the intersections and the corner.
+        avept = mean([ptᵣ triangle[:,corner]],dims=2) |> vec
     else
         error("The curve may only intersect at most two edges.")
     end
-      
+    avept = carttobary(avept,triangle)
+    if (eval_poly(avept,coeffs,2,2) < 0 || 
+        isapprox(eval_poly(avept,coeffs,2,2), 0, atol=atol))
+        below₀ = true
+    else
+        below₀ = false
+    end 
+
     simplex_bpts = sample_simplex(2,2)
     triangleₑ = order_vertices!([all_intersects triangle[:,corner]])
     if quantity == "area"
@@ -779,17 +785,16 @@ function two₋intersects_area₋volume(bezpts::AbstractMatrix{<:Real},
     if length(edgesᵢ) == 2 && inside
         areaₒᵣvolumeᵣ *= -1
     end
-
-    below₀ = bezpts[end,opp_corner] < 0 || isapprox(bezpts[end,opp_corner],0,atol=atol)
+    
     if quantity == "area"
         areaₒᵣvolume =  areaₒᵣvolumeᵣ + simplex_size(triangleₑ)
-        if below₀
+        if !below₀
             areaₒᵣvolume = simplex_size(triangle) - areaₒᵣvolume
         end
     else # quantity == "volume"
         coeffsₑ = sub₋coeffs(bezpts,triangleₑ)
         areaₒᵣvolume = mean(coeffsₑ)*simplex_size(triangleₑ) + areaₒᵣvolumeᵣ
-        if below₀
+        if !below₀
             areaₒᵣvolume = simplex_size(triangle)*mean(coeffs) - areaₒᵣvolume
         end
     end
@@ -828,10 +833,9 @@ function quad_area₋volume(bezpts::AbstractMatrix{<:Real},
     # Modifications to make when working in 3D.
     if size(bezpts,1) == 4
         bezpts = [mapto_xyplane(bezpts[1:3,:]); bezpts[end,:]']
-        triangle = bezpts[1:end-1,corner_indices]
     end
     sum([two₋intersects_area₋volume(b,quantity,atol=atol) for 
-        b=split_bezsurf(bezpts,atol=atol)])    
+        b=split_bezsurf(bezpts,atol=atol)])
 end
 
 face_ind = [[1,2,3],[3,4,1],[4,1,2],[2,3,4]]
@@ -2256,9 +2260,9 @@ Calculate the volume or hypervolume beneath a quadratic within a tetrahedron.
 - `corner::Union{Nothing,Integer}`: if provided, sliced approach the provided corner. 
 
 # Returns
-- `::Real`: The areas or volumes of slices of the tetrahedron or the volume or hypervolume
-    of a polynomial within the tetrahedron. May instead be the values of curve being 
-    integrated if `values` is true.
+- The areas or volumes of slices of the tetrahedron or the volume or hypervolume
+  of a polynomial within the tetrahedron. May instead be the values of curve being 
+  integrated if `values` is true.
 
 # Examples
 ```jldoctest
@@ -2272,9 +2276,9 @@ true
 """
 function simpson3D(coeffs::AbstractVector{<:Real}, tetrahedron::AbstractMatrix{<:Real},
     num_slices::Integer, quantity::String; values::Bool=false, gauss::Bool=true,
-    atol::Real=def_atol,split::Bool=true,corner::Union{Nothing,Integer}=nothing)::Real
+    atol::Real=def_atol,split::Bool=true,corner::Union{Nothing,Integer}=nothing)
     dim = 3; deg = 2
-
+     
     # All the coefficients are well below zero.
     if all((coeffs .< 0) .& isapprox.(coeffs,0,atol=atol))
         if quantity == "area"
@@ -2290,11 +2294,12 @@ function simpson3D(coeffs::AbstractVector{<:Real}, tetrahedron::AbstractMatrix{<
      # Area of faces
     if corner == nothing
         face_areas = tetface_areas(tetrahedron)
+        @show face_areas
         p = findmax(face_areas)[2]
     else
         p = corner
     end
-
+   
     # Calculate the shortest distance from a plane at the opposite face to the
     # opposite corner
     face = tetrahedron[:,face_ind[p]]
@@ -2324,7 +2329,7 @@ function simpson3D(coeffs::AbstractVector{<:Real}, tetrahedron::AbstractMatrix{<
             intervals = [0,1]
         end
     end
-
+     
     interval_lengths = d*diff(intervals)
     interval_divs = [x < 3 ? 3 : mod(x,2) == 0 ? x+1 : x for x=round.(Int,num_slices*interval_lengths)]
     integral = 0; integral_vals = []; its = []
@@ -2338,6 +2343,7 @@ function simpson3D(coeffs::AbstractVector{<:Real}, tetrahedron::AbstractMatrix{<
             it = range(intervals[j],stop=intervals[j+1],length=interval_divs[j])
         end
         intvals = zeros(length(it))
+
         # No need to consider the end points; they are always zero
         for (i,t) in enumerate(it)
             bpts = reduce(hcat,[[(1-t),0,0,t],
