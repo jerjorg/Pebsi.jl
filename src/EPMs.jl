@@ -18,9 +18,9 @@ using QHull: chull, Chull
 using LinearAlgebra: Symmetric, eigvals
 using Distances: SqEuclidean, pairwise!
 
-export epm_names, epm_names2D, eval_epm, epm₋model2D, epm₋model, free, free_fl,
-    free_be, free2D, free_fl2D, free_be2D, epms, epms2D, RytoeV, eVtoRy,
-    free_epm, mf
+# export epm_names, epm_names2D, eval_epm, epm₋model2D, epm₋model, free, free_fl,
+#     free_be, free2D, free_fl2D, free_be2D, epms, epms2D, RytoeV, eVtoRy,
+#     free_epm, mf
 
 Ag_name = "Ag"
 Al_name = "Al"
