@@ -27,7 +27,7 @@ export bandstructure, init_bandstructure, quadval_vertex, corner_indices,
     calc_flbe!, refine_mesh!, get_tolerances, quadratic_method, truebe, 
     bezcurve_intersects, getdomain, analytic_area1D, simpson, simpson2D, 
     linept_dist, tetface_areas, simpson3D, quadslice_tanpt, containment_percentage,
-    calcflbe_exactfit, stop_refinement!
+    stop_refinement!, calc_fabe
 
 @doc """
     bandstructure
@@ -109,6 +109,8 @@ A container for all variables related to the band structure.
     4 - The number of k-points is greater than the desired number of k-points.
 - `target_kpoints::Integer`: the desired number of k-points for the calculation.
     This may be ignored depending on `stop_criterion`.
+- `exactfit::Bool`: the polynomial fit goes through the eigenvalues if true.
+- `polydegree::Integer`: the degree of the polynomial
 """
 mutable struct bandstructure
     init_msize::Integer
@@ -146,6 +148,8 @@ mutable struct bandstructure
     constrained::Bool
     stop_criterion::Integer
     target_kpoints::Integer
+    exactfit::Bool
+    polydegree::Integer
 end
 
 @doc """
@@ -189,33 +193,60 @@ function init_bandstructure(
     constrained::Bool=def_constrained,
     stop_criterion::Integer=def_stop_criterion,
     target_kpoints::Integer=def_target_kpoints,
+    exactfit::Bool=false, 
+    polydegree::Integer=2,
     rtol::Real=def_rtol,
     atol::Real=def_atol)
 
     dim = size(epm.recip_latvecs,1)
-    if num_neighbors == nothing
-        num_neighbors = if dim == 2 def_num_neighbors2D else def_num_neighbors3D end
-    end
-
     mesh = ibz_init₋mesh(epm.ibz,init_msize;rtol=rtol,atol=atol)
-    mesh,ext_mesh,sym₋unique = get_extmesh(epm.ibz,mesh,epm.pointgroup,
-        epm.recip_latvecs,num_near_neigh; rtol=rtol,atol=atol)
-    simplicesᵢ = notbox_simplices(mesh)
- 
-    uniqueᵢ = sort(unique(sym₋unique))[2:end]
-    estart = if dim == 2 4 else 8 end
-    eigenvals = zeros(Float64,epm.sheets,estart+length(uniqueᵢ))
-    for i=uniqueᵢ
-        eigenvals[:,i] = eval_epm(mesh.points[i,:], epm, rtol=rtol, atol=atol)
+    if exactfit
+        ext_mesh = mesh; num_neighbors = 0
+        simplicesᵢ = notbox_simplices(mesh)
+        simplices = [Array(mesh.points[s,:]') for s=simplicesᵢ]
+        bspts = sample_simplex(dim,polydegree)
+        unique_pts=[barytocart(bspts,s) for s=simplices]
+        eigenvals = [eval_epm(p,epm,rtol=rtol,atol=atol) for p=unique_pts]
+        mesh_bezcoeffs = [[getpoly_coeffs(eigenvals[i][j,:],bspts,dim,polydegree) 
+            for j=1:epm.sheets] for i=1:length(simplicesᵢ)]
+        # Lazy, inefficient code. The number of unique points is off by a small amount
+        # if the IBZ has symmetrically equivalent boundaries.
+        unique_pts = unique_points(reduce(hcat,unique_pts))
+        eigenvals = eval_epm(unique_pts,epm,rtol=rtol,atol=atol)
+        if polydegree == 1
+            if dim == 2
+            mesh_bezcoeffs = [[[v[1],(v[1]+v[2])/2,v[2],(v[1]+v[3])/2,(v[2]+v[3])/2,v[3]] for v=c] 
+                for c=mesh_bezcoeffs]
+            else
+                mesh_bezcoeffs = [[[v[1],(v[1]+v[2])/2,v[2],(v[1]+v[3])/2,(v[2]+v[3])/2,
+                    v[3],(v[1]+v[4])/2,(v[2]+v[4])/2,(v[3]+v[4])/2,v[4]] for v=c] 
+                    for c=mesh_bezcoeffs]
+            end
+        end
+        mesh_intcoeffs = [[Matrix([mesh_bezcoeffs[i][j] mesh_bezcoeffs[i][j]]') 
+            for j=1:epm.sheets] for i=1:length(simplices)]
+        sym₋unique = [zeros(Int,2^dim); collect(1:length(simplices)*(2^dim+2))]
+        eigenvals = [zeros(epm.sheets,2^dim) eigenvals]
+    else
+        mesh,ext_mesh,sym₋unique = get_extmesh(epm.ibz,mesh,epm.pointgroup,
+            epm.recip_latvecs,num_near_neigh; rtol=rtol,atol=atol)
+        simplicesᵢ = notbox_simplices(mesh)
+        uniqueᵢ = sort(unique(sym₋unique))[2:end]
+        estart = if dim == 2 4 else 8 end
+        eigenvals = zeros(Float64,epm.sheets,estart+length(uniqueᵢ))
+        for i=uniqueᵢ
+            eigenvals[:,i] = eval_epm(mesh.points[i,:], epm, rtol=rtol, atol=atol)
+        end
+        if num_neighbors == nothing
+            num_neighbors = if dim == 2 def_num_neighbors2D else def_num_neighbors3D end
+        end
+        coeffs = [get_intercoeffs(index,mesh,ext_mesh,sym₋unique,eigenvals,
+            simplicesᵢ,fatten,num_near_neigh,epm=epm,neighbor_method=neighbor_method,
+            num_neighbors=num_neighbors, weighted=weighted, constrained=constrained) 
+            for index=1:length(simplicesᵢ)]
+        mesh_intcoeffs = [coeffs[index][1] for index=1:length(simplicesᵢ)]
+        mesh_bezcoeffs = [coeffs[index][2] for index=1:length(simplicesᵢ)]
     end
-
-    coeffs = [get_intercoeffs(index,mesh,ext_mesh,sym₋unique,eigenvals,
-        simplicesᵢ,fatten,num_near_neigh,epm=epm,neighbor_method=neighbor_method,
-        num_neighbors=num_neighbors, weighted=weighted, constrained=constrained) 
-        for index=1:length(simplicesᵢ)]
-
-    mesh_intcoeffs = [coeffs[index][1] for index=1:length(simplicesᵢ)]
-    mesh_bezcoeffs = [coeffs[index][2] for index=1:length(simplicesᵢ)]
     
     partially_occupied = [zeros(Int,epm.sheets) for _=1:length(simplicesᵢ)]
     bandenergy_errors = zeros(length(simplicesᵢ))
@@ -224,11 +255,12 @@ function init_bandstructure(
     fermiarea_errors = zeros(length(simplicesᵢ))
     sigma_bandenergy = zeros(length(simplicesᵢ))
     partial_bandenergy = zeros(length(simplicesᵢ)) 
-    fermiarea_interval=[0,0]
-    fermilevel_interval=[0,0]
-    bandenergy_interval=[0,0]
-    fermilevel=0
-    bandenergy=0
+    if exactfit
+        fermilevel_interval = [minimum(eigenvals), maximum(eigenvals)]
+    else
+        fermilevel_interval=[0,0]
+    end
+    fermiarea_interval=[0,0]; bandenergy_interval=[0,0]; fermilevel=0; bandenergy=0
         
     bandstructure(
         init_msize,
@@ -267,7 +299,9 @@ function init_bandstructure(
         weighted,
         constrained,
         stop_criterion,
-        target_kpoints)
+        target_kpoints,
+        exactfit,
+        polydegree)
 end   
 
 @doc """
@@ -1116,6 +1150,8 @@ function get_intercoeffs(index::Integer, mesh::PyObject, ext_mesh::PyObject,
 end
 
 @doc """
+    calc_fl(epm,ebs;num_slices,window,ctype,fermi_area,test)
+
     Calculate the Fermi level for a representation of the band structure.
 
 # Arguments
@@ -1147,24 +1183,17 @@ calc_fl(epm,ebs)
 ```
 """
 function calc_fl(epm::Union{epm₋model,epm₋model2D},ebs::bandstructure; 
-    num_slices::Int = 10, window::Union{Nothing,Vector{<:Real}}=ebs.fermilevel_interval, 
-        ctype="mean", fermi_area::Real=epm.fermiarea/length(epm.pointgroup),
+    num_slices::Int=def_num_slices, window::Vector{<:Real}=ebs.fermilevel_interval, 
+        ctype::String="mean", fermi_area::Real=epm.fermiarea/length(epm.pointgroup),
         test::Bool=false)
 
-    if ctype == "mean"
-        cfun = mean 
-    elseif ctype == "min"
-        cfun = minimum 
-    elseif ctype == "max"
-        cfun = maximum
-    else 
+    if !(ctype in ["min","max","mean"])
         error("Invalid ctype.")
-    end
-    
+    end    
     dim = size(epm.recip_latvecs,1)
-    simplex_bpts = sample_simplex(dim,2)
-    simplices = [Matrix(ebs.mesh.points[s,:]') for s=ebs.simplicesᵢ]
-    simplex_pts = [barytocart(simplex_bpts,s) for s=simplices]
+    # simplex_bpts = sample_simplex(dim,2)
+    # simplices = [Matrix(ebs.mesh.points[s,:]') for s=ebs.simplicesᵢ]
+    # simplex_pts = [barytocart(simplex_bpts,s) for s=simplices]
     
     ibz_area = epm.ibz.volume
     maxsheet = round(Int,epm.electrons/2) + 2
@@ -1180,43 +1209,25 @@ function calc_fl(epm::Union{epm₋model,epm₋model2D},ebs::bandstructure;
 
     # Make sure the window contains the approx. Fermi level.
     dE = 2*abs(E₂ - E₁)
-    if dim == 2
-        f₁ = sum([quad_area₋volume([simplex_pts[tri]; [minimum(ebs.mesh_intcoeffs[tri][sheet],dims=1)...]' .- E₁],"area") for tri=1:length(ebs.simplicesᵢ) for sheet=1:epm.sheets]) - fermi_area
-    else
-        f₁ = sum([simpson3D(ebs.mesh_bezcoeffs[i][j] .- E₁,simplices[i],num_slices,"area") for i=1:length(ebs.simplicesᵢ) for j=1:epm.sheets]) - fermi_area
-    end
-
+    f₁ = calc_fabe(ebs, quantity="area", ctype="mean",fl=E₁, num_slices=num_slices) - fermi_area
     iters₁ = 1
     while f₁ > 0
         iters₁ += 1; E₁ -= dE; dE *= 2
         if iters₁ > def_fl_max_iters || dE == 0
             E₁ = minimum(ebs.eigenvals[1,:5:end])
         end
-        if dim == 2
-            f₁ = sum([quad_area₋volume([simplex_pts[tri]; [minimum(ebs.mesh_intcoeffs[tri][sheet],dims=1)...]' .- E₁],"area") for tri=1:length(ebs.simplicesᵢ) for sheet=1:epm.sheets]) - fermi_area
-        else
-            f₁ = sum([simpson3D(ebs.mesh_bezcoeffs[i][j] .- E₁,simplices[i],num_slices,"area") for i=1:length(ebs.simplicesᵢ) for j=1:epm.sheets]) - fermi_area
-        end
+        f₁ = calc_fabe(ebs, quantity="area", ctype="mean", fl=E₁, num_slices=num_slices) - fermi_area
     end
 
     dE = 2*abs(E₂ - E₁)
-    if dim == 2
-        f₂ = sum([quad_area₋volume([simplex_pts[tri]; [maximum(ebs.mesh_intcoeffs[tri][sheet],dims=1)...]' .- E₂],"area") for tri=1:length(ebs.simplicesᵢ) for sheet=1:epm.sheets]) - fermi_area
-    else
-        f₂ = sum([simpson3D(ebs.mesh_bezcoeffs[i][j] .- E₂,simplices[i],num_slices,"area") for i=1:length(ebs.simplicesᵢ) for j=1:epm.sheets]) - fermi_area
-    end
-     
+    f₂ = calc_fabe(ebs, quantity="area", ctype="mean", fl=E₂, num_slices=num_slices) - fermi_area     
     iters₂ = 1
     while f₂ < 0
         iters₂ += 1; E₂ += dE; dE *= 2
         if iters₂ > def_fl_max_iters || dE == 0
             E₂ = maximum(ebs.eigenvals[maxsheet,5:end])
         end
-        if dim == 2
-            f₂ = sum([quad_area₋volume([simplex_pts[tri]; [maximum(ebs.mesh_intcoeffs[tri][sheet],dims=1)...]' .- E₂],"area") for tri=1:length(ebs.simplicesᵢ) for sheet=1:epm.sheets]) - fermi_area
-        else
-            f₂ = sum([simpson3D(ebs.mesh_bezcoeffs[i][j] .- E₂,simplices[i],num_slices,"area") for i=1:length(ebs.simplicesᵢ) for j=1:epm.sheets]) - fermi_area
-        end
+        f₂ = calc_fabe(ebs, quantity="area", ctype="mean", fl=E₂,num_slices=num_slices) - fermi_area
     end
     E = (E₁ + E₂)/2
     f₃,E₃,iters,f,t = 0,0,0,1e9,0
@@ -1227,20 +1238,7 @@ function calc_fl(epm::Union{epm₋model,epm₋model2D},ebs::bandstructure;
             @warn "Failed to converge the Fermi area to within the provided tolerance of $(ebs.fermiarea_eps) after $(def_fl_max_iters) iterations. Fermi area converged within $(f)."
                 break
         end
-
-        if ctype == "mean"
-            if dim == 2
-                f = sum([quad_area₋volume([simplex_pts[tri]; ebs.mesh_bezcoeffs[tri][sheet]' .- E],"area") for tri=1:length(ebs.simplicesᵢ) for sheet=1:epm.sheets]) - fermi_area
-            else
-                f = sum([simpson3D(ebs.mesh_bezcoeffs[i][j] .- E,simplices[i],num_slices,"area") for i=1:length(ebs.simplicesᵢ) for j=1:epm.sheets]) - fermi_area
-            end 
-        else
-            if dim == 2
-                f = sum([quad_area₋volume([simplex_pts[tri]; [cfun(ebs.mesh_intcoeffs[tri][sheet],dims=1)...]' .- E],"area") for tri=1:length(ebs.simplicesᵢ) for sheet=1:epm.sheets]) - fermi_area 
-            else
-                f = sum([simpson3D(vec(cfun(ebs.mesh_intcoeffs[i][j],dims=1)) .- E,simplices[i],num_slices,"area") for i=1:length(ebs.simplicesᵢ) for j=1:epm.sheets]) - fermi_area 
-            end
-        end
+        f = calc_fabe(ebs, quantity="area", ctype=ctype, fl=E, num_slices=num_slices) - fermi_area
 
         if sign(f) != sign(f₁)
             E₃ = E₂
@@ -1318,6 +1316,16 @@ ebs.bandenergy
 function calc_flbe!(epm::Union{epm₋model2D,epm₋model},ebs::bandstructure;
     num_slices::Integer=10, flerrors::Bool=true)::bandstructure
      
+    # The number of point operators
+    npg = length(epm.pointgroup)
+    if ebs.exactfit == true
+        fl = calc_fl(epm, ebs, fermi_area=epm.fermiarea/npg, ctype="mean", num_slices=num_slices)
+        be = calc_fabe(ebs, quantity="volume", ctype="mean", fl=fl, num_slices=num_slices,
+            sum_fabe=true)
+        ebs.fermilevel = fl; ebs.bandenergy = 2*npg*(be + fl*epm.fermiarea/npg)
+        return ebs
+    end
+    
     dim = size(epm.recip_latvecs,1)
     # Sample points within the triangle for a quadratic in barycentric coordinates.
     simplex_bpts = sample_simplex(dim,2) 
@@ -1326,68 +1334,42 @@ function calc_flbe!(epm::Union{epm₋model2D,epm₋model},ebs::bandstructure;
     # The areas of the triangles in the mesh
     simplex_sizes = [simplex_size(s) for s=simplices]
     # The six sample points in each triangle for a quadratic polynomial
-    simplex_pts = [barytocart(simplex_bpts,s) for s=simplices]
-     
-    # The number of point operators
-    npg = length(epm.pointgroup)
-     
+    simplex_pts = [barytocart(simplex_bpts,s) for s=simplices]    
+    # The number of simplices
+    ns = length(ebs.simplicesᵢ)
     # The "true" Fermi level for the given approximation of the band structure
-    fl = calc_fl(epm,ebs,fermi_area=epm.fermiarea/npg,ctype="mean", num_slices=num_slices)
+    fl = calc_fl(epm, ebs, fermi_area=epm.fermiarea/npg, ctype="mean", num_slices=num_slices)
     # The larger Fermi level computed with the upper limit of approximation intervals
-    fl₁ = calc_fl(epm,ebs,fermi_area=epm.fermiarea/npg,ctype = "max", num_slices=num_slices)
+    fl₁ = calc_fl(epm, ebs, fermi_area=epm.fermiarea/npg, ctype="max", num_slices=num_slices)
     # The smaller Fermi level computed with the lower limit of approximation intervals
-    fl₀ = calc_fl(epm,ebs,fermi_area=epm.fermiarea/npg,ctype = "min", num_slices=num_slices)
+    fl₀ = calc_fl(epm, ebs, fermi_area=epm.fermiarea/npg, ctype="min", num_slices=num_slices)
 
     # The "true" Fermi area for each quadratic triangle (triangle and sheet) for the
     # given approximation of the bandstructure
-    if dim == 2
-        mesh_fa = [[quad_area₋volume([simplex_pts[tri]; (ebs.mesh_bezcoeffs[tri][sheet] .- fl)']
-            ,"area") for sheet=1:epm.sheets] for tri=1:length(ebs.simplicesᵢ)]
-    else
-        mesh_fa = [[simpson3D(ebs.mesh_bezcoeffs[i][j] .- fl,simplices[i],num_slices,"area") 
-        for j=1:epm.sheets] for i=1:length(ebs.simplicesᵢ)]
-    end
+    mesh_fa = calc_fabe(ebs, quantity="area", ctype="mean", fl=fl, num_slices=num_slices,
+        sum_fabe=false)
      
     # The smaller Fermi area for each quadratic triangle using the upper limit of the approximation
     # intervals with the lower limit of the Fermi level interval
     if !flerrors
-        if dim == 2
-            mesh_fa₁ = [[quad_area₋volume([simplex_pts[tri]; (ebs.mesh_intcoeffs[tri][sheet][1,:] .- fl)']
-                ,"area") for sheet=1:epm.sheets] for tri=1:length(ebs.simplicesᵢ)]
-            mesh_fa₀ = [[quad_area₋volume([simplex_pts[tri]; (ebs.mesh_intcoeffs[tri][sheet][2,:] .- fl)']
-                ,"area") for sheet=1:epm.sheets] for tri=1:length(ebs.simplicesᵢ)]
-        else
-            mesh_fa₁ = [[simpson3D(ebs.mesh_intcoeffs[i][j][1,:] .- fl,simplices[i],num_slices,"area") 
-            for j=1:epm.sheets] for i=1:length(ebs.simplicesᵢ)]
-            mesh_fa₀ = [[simpson3D(ebs.mesh_intcoeffs[i][j][2,:] .- fl,simplices[i],num_slices,"area") 
-            for j=1:epm.sheets] for i=1:length(ebs.simplicesᵢ)]
-        end
+        mesh_fa₁ = calc_fabe(ebs, quantity="area", ctype="min", fl=fl, num_slices=num_slices,
+            sum_fabe=false)
+        mesh_fa₀ = calc_fabe(ebs, quantity="area", ctype="max", fl=fl, num_slices=num_slices,
+            sum_fabe=false)
     # The larger Fermi area for each quadratic triangle using the lower limit of the approximation
     # intervals with the upper limit of the Fermi level interval
     else
-        if dim === 2
-            mesh_fa₁ = [[quad_area₋volume([simplex_pts[tri]; (ebs.mesh_intcoeffs[tri][sheet][1,:] .- fl₁)']
-                ,"area") for sheet=1:epm.sheets] for tri=1:length(ebs.simplicesᵢ)]
-            mesh_fa₀ = [[quad_area₋volume([simplex_pts[tri]; (ebs.mesh_intcoeffs[tri][sheet][2,:] .- fl₀)']
-                ,"area") for sheet=1:epm.sheets] for tri=1:length(ebs.simplicesᵢ)]
-        else
-            mesh_fa₁ = [[simpson3D(ebs.mesh_intcoeffs[i][j][1,:] .- fl₁,simplices[i],num_slices,"area") 
-                for j=1:epm.sheets] for i=1:length(ebs.simplicesᵢ)]
-            mesh_fa₀ = [[simpson3D(ebs.mesh_intcoeffs[i][j][2,:] .- fl₀,simplices[i],num_slices,"area") 
-                for j=1:epm.sheets] for i=1:length(ebs.simplicesᵢ)]
-        end
+        mesh_fa₁ = calc_fabe(ebs, quantity="area", ctype="min", fl=fl₁, num_slices=num_slices,
+            sum_fabe=false)
+        mesh_fa₀ = calc_fabe(ebs, quantity="area", ctype="max", fl=fl₀, num_slices=num_slices,
+            sum_fabe=false)
     end
 
     # The smaller and larger Fermi areas or the limits of the Fermi area interval
     fa₀,fa₁ = sum(sum(mesh_fa₀)),sum(sum(mesh_fa₁))
     # The "true" band energy for the given approximation of the band structure
-    if dim == 2
-        be = sum([quad_area₋volume([simplex_pts[tri]; ebs.mesh_bezcoeffs[tri][sheet]' .- fl], "volume") 
-        for tri=1:length(ebs.simplicesᵢ) for sheet=1:epm.sheets])
-    else
-        be = sum([simpson3D(ebs.mesh_bezcoeffs[i][j] .- fl,simplices[i],num_slices,"volume") 
-        for j=1:epm.sheets for i=1:length(ebs.simplicesᵢ)]) 
-    end
+    be = calc_fabe(ebs, quantity="volume", ctype="mean", fl=fl, num_slices=num_slices,
+        sum_fabe=true)
 
     # The Fermi area errors for each quadratic triangle (triangle and sheet) for the
     # given band structure approximation
@@ -1406,7 +1388,7 @@ function calc_flbe!(epm::Union{epm₋model2D,epm₋model},ebs::bandstructure;
         else
             1
         end
-    ) for sheet=1:epm.sheets] for tri = 1:length(ebs.simplicesᵢ)]
+    ) for sheet=1:epm.sheets] for tri = 1:ns]
 
     # Determine which triangle and sheets are occupied, partially occupied, or 
     # unoccupied for the "true" approximation of the bandstructure (least squares
@@ -1419,7 +1401,7 @@ function calc_flbe!(epm::Union{epm₋model2D,epm₋model},ebs::bandstructure;
         else
             1
         end
-    ) for sheet=1:epm.sheets] for tri = 1:length(ebs.simplicesᵢ)]
+    ) for sheet=1:epm.sheets] for tri = 1:ns]
     
     # The largest index of sheets that are completely occupied (integer) for each triangle
     sigmas = [findlast(x->x==0,partial_occ[i]) for i=1:length(partial_occ)]
@@ -1438,7 +1420,7 @@ function calc_flbe!(epm::Union{epm₋model2D,epm₋model},ebs::bandstructure;
         else
             get_intercoeffs(i,ebs.mesh,ebs.ext_mesh,ebs.sym₋unique,ebs.eigenvals,ebs.simplicesᵢ,ebs.fatten,ebs.num_near_neigh,sigma=sigmas[i],epm=epm,
             neighbor_method = ebs.neighbor_method)
-        end) for i=1:length(ebs.simplicesᵢ)]
+        end) for i=1:ns]
 
     # Calculate the "sigma" coefficients for the "true" occupations of the sheets. The true sigma 
     # coefficients and intervals and the regular coefficients and intervals are only different if the
@@ -1449,7 +1431,7 @@ function calc_flbe!(epm::Union{epm₋model2D,epm₋model},ebs::bandstructure;
         else
             get_intercoeffs(i,ebs.mesh,ebs.ext_mesh,ebs.sym₋unique,ebs.eigenvals,ebs.simplicesᵢ,ebs.fatten,ebs.num_near_neigh,sigma=true_sigmas[i],epm=epm,
             neighbor_method = ebs.neighbor_method)
-        end) for i=1:length(ebs.simplicesᵢ)]
+        end) for i=1:ns]
     
     # Assign the sigma intervals and coefficients their own variables for both true and regular.
     sigma_intervals = [sigma_intcoeffs[i][1][1] for i=1:length(sigma_intcoeffs)]
@@ -1477,58 +1459,25 @@ function calc_flbe!(epm::Union{epm₋model2D,epm₋model},ebs::bandstructure;
     # The "true" contribution to the band energy from the partially occupied sheets using the
     # least-squares coefficients and the true occupations. The leading term takes into account
     # the integral transform.
-    if dim == 2
-        partial_be = [[fl*mesh_fa[tri][sheet] + quad_area₋volume([simplex_pts[tri]; (ebs.mesh_bezcoeffs[tri][sheet] .- fl)']
-            ,"volume") for sheet=true_partials[tri]] for tri=1:length(ebs.simplicesᵢ)]
-        partial_be = [e == [] ? 0 : sum(e) for e = partial_be]
-    else
-        partial_be = [[fl*mesh_fa[tri][sheet] + simpson3D(ebs.mesh_bezcoeffs[tri][sheet] .- fl,simplices[tri],num_slices,"volume") for sheet=true_partials[tri]] for tri=1:length(ebs.simplicesᵢ)]
-        partial_be = [e == [] ? 0 : sum(e) for e = partial_be]
-    end
-
+    partial_be = fl*mesh_fa + calc_fabe(ebs, quantity="volume", ctype="mean", fl=fl,
+        num_slices=num_slices, sum_fabe=false, sheets=true_partials)
+    partial_be = [sum(pb) for pb=partial_be]
+    
     # The lower limit of the contribution to the band energy from the partially occupied sheets
     # obtained using the regular occupations, the lower limit of the interval coefficients,
     # and the upper limit of the Fermi level interval
     if !flerrors
-        if dim == 2
-            partial_be₀ = [[fl*mesh_fa[tri][sheet] + quad_area₋volume([simplex_pts[tri]; 
-                (ebs.mesh_intcoeffs[tri][sheet][1,:] .- fl)'],"volume") 
-                for sheet=partials[tri]] for tri=1:length(ebs.simplicesᵢ)]
-            partial_be₀ = [e == [] ? 0 : sum(e) for e = partial_be₀]
-
-            partial_be₁ = [[fl*mesh_fa[tri][sheet] + quad_area₋volume([simplex_pts[tri]; 
-                (ebs.mesh_intcoeffs[tri][sheet][2,:] .- fl)'],"volume") 
-                for sheet=partials[tri]] for tri=1:length(ebs.simplicesᵢ)]
-            partial_be₁ = [e == [] ? 0 : sum(e) for e = partial_be₁]
-        else
-            partial_be₀ = [[fl*mesh_fa[tri][sheet] + simpson3D(ebs.mesh_intcoeffs[tri][sheet][1,:] .- fl,
-                simplices[tri],num_slices,"volume") for sheet=partials[tri]] for tri=1:length(ebs.simplicesᵢ)]
-            partial_be₀ = [e == [] ? 0 : sum(e) for e = partial_be₀]
-
-            partial_be₁ = [[fl*mesh_fa[tri][sheet] + simpson3D(ebs.mesh_intcoeffs[tri][sheet][2,:] .- fl,
-                simplices[tri],num_slices,"volume") for sheet=partials[tri]] for tri=1:length(ebs.simplicesᵢ)]
-            partial_be₁ = [e == [] ? 0 : sum(e) for e = partial_be₁]
-        end
+        partial_be₀ = fl*mesh_fa + calc_fabe(ebs, quantity="volume", ctype="min", fl=fl,
+            num_slices=num_slices, sum_fabe=false, sheets=partials)
+        partial_be₁ = fl*mesh_fa + calc_fabe(ebs, quantity="volume", ctype="max", fl=fl,
+            num_slices=num_slices, sum_fabe=false, sheets=partials)
+        partial_be₀ = [sum(pb) for pb=partial_be₀]; partial_be₁ = [sum(pb) for pb=partial_be₁]
     else
-        if dim == 2
-            partial_be₀ = [[fl₀*mesh_fa₀[tri][sheet] + quad_area₋volume([simplex_pts[tri]; 
-                (ebs.mesh_intcoeffs[tri][sheet][2,:] .- fl₀)'],"volume") for sheet=partials[tri]] 
-                for tri=1:length(ebs.simplicesᵢ)]
-            partial_be₀ = [e == [] ? 0 : sum(e) for e = partial_be₀]
-        
-            partial_be₁ = [[fl₁*mesh_fa₁[tri][sheet] + quad_area₋volume([simplex_pts[tri]; 
-                (ebs.mesh_intcoeffs[tri][sheet][1,:] .- fl₁)'],"volume") for sheet=partials[tri]]
-                for tri=1:length(ebs.simplicesᵢ)]
-            partial_be₁ = [e == [] ? 0 : sum(e) for e = partial_be₁]
-        else
-            partial_be₀ = [[fl₀*mesh_fa₀[tri][sheet] + simpson3D(ebs.mesh_intcoeffs[tri][sheet][2,:] .- fl₀,
-                simplices[tri],num_slices,"volume") for sheet=partials[tri]] for tri=1:length(ebs.simplicesᵢ)]
-            partial_be₀ = [e == [] ? 0 : sum(e) for e = partial_be₀]
-
-            partial_be₁ = [[fl₁*mesh_fa₁[tri][sheet] + simpson3D(ebs.mesh_intcoeffs[tri][sheet][1,:] .- fl₁,
-                simplices[tri],num_slices,"volume") for sheet=partials[tri]] for tri=1:length(ebs.simplicesᵢ)]
-            partial_be₁ = [e == [] ? 0 : sum(e) for e = partial_be₁]
-        end
+        partial_be₀ = fl₀*mesh_fa₀ + calc_fabe(ebs, quantity="volume", ctype="max", fl=fl₀,
+            num_slices=num_slices, sum_fabe=false, sheets=partials)
+        partial_be₁ = fl₁*mesh_fa₁ + calc_fabe(ebs, quantity="volume", ctype="min", fl=fl₁,
+            num_slices=num_slices, sum_fabe=false, sheets=partials)
+        partial_be₀ = [sum(pb) for pb=partial_be₀]; partial_be₁ = [sum(pb) for pb=partial_be₁]
     end
 
     # The contributions to the band energy error from the partially occupied quadratic triangles
@@ -1586,21 +1535,20 @@ true
 ```
 """
 function refine_mesh!(epm::Union{epm₋model2D,epm₋model},ebs::bandstructure)
-     
     spatial = pyimport("scipy.spatial")
     simplices = [Matrix(ebs.mesh.points[s,:]') for s=ebs.simplicesᵢ]
     err_cutoff = [simplex_size(s)/epm.ibz.volume for s=simplices]*ebs.target_accuracy
     faerr_cutoff = [simplex_size(s)/epm.ibz.volume for s=simplices]*ebs.fermiarea_eps
      
-    n = def_min_split_triangles
-    # Refine the tile with the most error
+    n = def_min_split
+    # Refine the tiles with the most error
     if ebs.refine_method == 1
         splitpos = sortperm(abs.(ebs.bandenergy_errors),rev=true)
         if length(splitpos) > n splitpos = splitpos[1:n] end
 
     # Refine the tiles with too much error (given the tiles' sizes).
     elseif ebs.refine_method == 2
-        splitpos = filter(x -> x>0,[abs(ebs.bandenergy_errors[i]) > err_cutoff[i] ? i : 0 for i=1:length(err_cutoff)])
+        splitpos = filter(x -> x > 0,[abs(ebs.bandenergy_errors[i]) > err_cutoff[i] ? i : 0 for i=1:length(err_cutoff)])
 
     # Refine a fraction of the number of tiles that have too much error.
     elseif ebs.refine_method == 3
@@ -1614,7 +1562,6 @@ function refine_mesh!(epm::Union{epm₋model2D,epm₋model},ebs::bandstructure)
     elseif ebs.refine_method == 4
         bandenergy_err = 2*sum(ebs.fermiarea_errors)*ebs.fermilevel_interval[2]
         splitpos = filter(x -> x>0,[2*ebs.fermiarea_errors[i]*ebs.fermilevel_interval[2] > err_cutoff[i] ? i : 0 for i=1:length(err_cutoff)])
-
         if length(splitpos) == 0 || bandenergy_err < ebs.target_accuracy
             ebs.refine_method = 3
             refine_mesh!(epm,ebs)
@@ -1652,17 +1599,33 @@ function refine_mesh!(epm::Union{epm₋model2D,epm₋model},ebs::bandstructure)
         end
     elseif ebs.refine_method == 7
         order = sortperm(abs.(ebs.bandenergy_errors),rev=true)
-        if length(order) > n
-            splitpos = order[1:round(Int,length(order)*def_frac_refined)]
+        if length(order) > n/def_frac_refined
+            numsplit = round(Int,length(order)*def_frac_refined)
+            splitpos = order[1:numsplit]
+        elseif length(order) > n
+            splitpos = order[1:n]
         else
             splitpos = order
         end        
     else
-        ArgumentError("The refinement method has to be and integer equal to 1,...,7.")
+        ArgumentError("The refinement method has to be an integer 1,...,7.")
     end
-    frac_split = length(splitpos)/length(ebs.bandenergy_errors)
 
-    println("Number of split triangles: ", length(splitpos))
+    # Split fewer simplices if too many k-points are added.
+    if ebs.stop_criterion == 4
+        dim = size(epm.recip_latvecs,1)
+        p = if dim == 2 3 else 6 end
+        nkpts = size(ebs.eigenvals,2) - 2^dim
+        max_added = p*length(splitpos)
+        tot_kpts = nkpts + max_added
+        if ebs.target_kpoints < tot_kpts
+            numremove = round(Integer,(tot_kpts - ebs.target_kpoints)/p)
+            if numremove >= length(splitpos) numremove = length(splitpos) - 1 end
+            splitpos = splitpos[1:end-numremove]
+        end
+    end
+
+    println("Number of split simplices: ", length(splitpos))
     if splitpos == []
         return ebs
     end
@@ -1699,7 +1662,7 @@ function refine_mesh!(epm::Union{epm₋model2D,epm₋model},ebs::bandstructure)
     new_eigvals = eval_epm(new_meshpts,epm,rtol=ebs.rtol,atol=ebs.atol)
     ebs.eigenvals = [ebs.eigenvals new_eigvals]
 
-    @show size(new_meshpts,2)
+    println("Unique points added: $(size(new_meshpts,2))")
 
     # There should technically be an additional step at this point where
     # symmetrically equivalent points are removed from `new_meshpts` (points
@@ -1823,27 +1786,26 @@ length(tol)
 4
 ```
 """
-function get_tolerances(epm,ebs)
-
-    stepsize = (maximum(ebs.eigenvals[:,5:end])-minimum(ebs.eigenvals[:,5:end]))/1e4
-    numsteps = 4
+function get_tolerances(epm,ebs; num_slices=def_num_slices)
+    dim = size(epm.recip_latvecs,1)
+    start = 2^dim + 1
+    stepsize = (maximum(ebs.eigenvals[:,start:end]) - 
+       minimum(ebs.eigenvals[:,start:end]))*def_deriv_step
+    numsteps = 4 # number of band energies/Fermi areas needed to compute derivatives
     es = collect(-numsteps/2*stepsize:stepsize:numsteps/2*stepsize) .+ ebs.fermilevel
-
     # Sample points within the triangle for a quadratic in barycentric coordinates.
-    simplex_bpts = sample_simplex(2,2) 
+    simplex_bpts = sample_simplex(dim,2) 
     # The triangles in the triangular mesh
     simplices = [Matrix(ebs.mesh.points[s,:]') for s=ebs.simplicesᵢ]
     # The six sample points in each triangle for a quadratic polynomial
     simplex_pts = [barytocart(simplex_bpts,s) for s=simplices]
 
-    npg = length(epm.pointgroup)
-    bens = []
-    fas = []
-
-    npg = length(epm.pointgroup)
+    npg = length(epm.pointgroup); bens = []; fas = []
     for fl=es
-        be = sum([quad_area₋volume([simplex_pts[tri]; ebs.mesh_bezcoeffs[tri][sheet]' .- fl], "volume") for tri=1:length(ebs.simplicesᵢ) for sheet=1:epm.sheets])
-        fa = npg*sum([quad_area₋volume([simplex_pts[tri]; ebs.mesh_bezcoeffs[tri][sheet]' .- fl], "area") for tri=1:length(ebs.simplicesᵢ) for sheet=1:epm.sheets])
+        be = calc_fabe(ebs, quantity="volume", ctype="mean", fl=fl, num_slices=num_slices,
+            sum_fabe=true)
+        fa = calc_fabe(ebs, quantity="area", ctype="mean", fl=fl, num_slices=num_slices,
+            sum_fabe=true)
         # be = 2*npg*(be + fl*epm.fermiarea/npg)
         # Removed translation of band energy because numbers close to zero throw off the derivative
         be = 2*npg*be
@@ -1851,13 +1813,8 @@ function get_tolerances(epm,ebs)
     end
     dbs = [(-bens[i+2] + 8*bens[i+1] - 8*bens[i-1] + bens[i-2])/(es[i+2]-es[i-2]) for i=3:length(bens)-2]
     das = [(-fas[i+2] + 8*fas[i+1] - 8*fas[i-1] + fas[i-2])/(es[i+2]-es[i-2]) for i=3:length(fas)-2];
-
-    db = maximum(abs.(das))
-    da = maximum(abs.(dbs))
-
-    dltol = ebs.target_accuracy/db
-    datol = da*dltol
-    
+    db = maximum(abs.(das)); da = maximum(abs.(dbs))
+    dltol = ebs.target_accuracy/db; datol = da*dltol
     db,da,dltol,datol
 end
 
@@ -1895,7 +1852,7 @@ function stop_refinement!(epm::Union{epm₋model,epm₋model2D},ebs::bandstructu
         stop = db/da*diff(ebs.fermiarea_interval)[1]/2 < ebs.target_accuracy
     elseif ebs.stop_criterion == 4 
         nkpts = size(ebs.eigenvals,2) - 2^size(epm.recip_latvecs,1)
-        stop = nkpts > ebs.target_kpoints
+        stop = ((ebs.target_kpoints - nkpts) < def_kpoint_tol*nkpts/100) || (nkpts >  ebs.target_kpoints)
     else
         error("Valid values of stop_criterion are integers 1,...,4")
     end
@@ -1972,25 +1929,25 @@ function quadratic_method(epm::Union{epm₋model2D,epm₋model};
         ϵᵦ = abs(ebs.bandenergy - epm.bandenergy) 
         ϵₗ = abs(ebs.fermilevel - epm.fermilevel)
         db,da,dltol,datol = get_tolerances(epm,ebs)
-        println("Number of triangles: ", length(ebs.simplicesᵢ)) 
-        println("True errors")
-        println("ϵᵦ: ", round(ϵᵦ,sigdigits=sd))
-        println("ϵₗ: ", round(ϵₗ,sigdigits=sd))
+        println("Number of simplices: ", length(ebs.simplicesᵢ)) 
+        # println("True errors")
+        # println("ϵᵦ: ", round(ϵᵦ,sigdigits=sd))
+        # println("ϵₗ: ", round(ϵₗ,sigdigits=sd))
 
-        println("Estimated band energy error")
-        println("δB/ϵᵦ: ", round(diffbe/ϵᵦ,sigdigits=sd))
-        println("ΔB/ϵᵦ: ", round(sum(ebs.bandenergy_errors)/ϵᵦ,sigdigits=sd))
-        println("dB/dL*ΔLₜ/ϵᵦ: ", round(db*diff(ebs.fermilevel_interval)[1]/2/ϵᵦ,sigdigits=sd))
-        println("dB/dA*ΔAₜ/ϵᵦ: ", round(db/da*diff(ebs.fermiarea_interval)[1]/2/ϵᵦ,sigdigits=sd))
+        # println("Estimated band energy error")
+        # println("δB/ϵᵦ: ", round(diffbe/ϵᵦ,sigdigits=sd))
+        # println("ΔB/ϵᵦ: ", round(sum(ebs.bandenergy_errors)/ϵᵦ,sigdigits=sd))
+        # println("dB/dL*ΔLₜ/ϵᵦ: ", round(db*diff(ebs.fermilevel_interval)[1]/2/ϵᵦ,sigdigits=sd))
+        # println("dB/dA*ΔAₜ/ϵᵦ: ", round(db/da*diff(ebs.fermiarea_interval)[1]/2/ϵᵦ,sigdigits=sd))
         
-        println("Estimated Fermi level error")
-        println("ΔL/ϵₗ: ", round(diff(ebs.fermilevel_interval)[1]/2/ϵₗ,sigdigits=sd))
-        println("Estimated Fermi area errors")
-        println("ΔA: ", round(diff(ebs.fermiarea_interval)[1]/2,sigdigits=sd))
-        println("dA/dL*ΔLₜ: ", round(da*diff(ebs.fermilevel_interval)[1]/2,sigdigits=sd))
+        # println("Estimated Fermi level error")
+        # println("ΔL/ϵₗ: ", round(diff(ebs.fermilevel_interval)[1]/2/ϵₗ,sigdigits=sd))
+        # println("Estimated Fermi area errors")
+        # println("ΔA: ", round(diff(ebs.fermiarea_interval)[1]/2,sigdigits=sd))
+        # println("dA/dL*ΔLₜ: ", round(da*diff(ebs.fermilevel_interval)[1]/2,sigdigits=sd))
         
-        println("Derivatives and tolerances")
-        println("dB/dL dA/dL dB/dA ΔAₜ ΔLₜ = ",round.([db,da,db/da,dltol,datol],sigdigits=sd),"\n")
+        # println("Derivatives and tolerances")
+        # println("dB/dL dA/dL dB/dA ΔAₜ ΔLₜ = ",round.([db,da,db/da,dltol,datol],sigdigits=sd),"\n")
     end
     ebs
 end
@@ -2333,7 +2290,7 @@ function tetface_areas(tet::AbstractMatrix{<:Real})::Vector{<:Real}
 end
 
 @doc """
-    simpson3D(coeffs,tetrahedron,num_slices,quantity;values,split,atol,rtol)
+    simpson3D(coeffs,tetrahedron,quantity;num_slices,values,gauss,split,corner,atol,rtol)
 
 Calculate the volume or hypervolume beneath a quadratic within a tetrahedron.
 
@@ -2361,14 +2318,14 @@ Calculate the volume or hypervolume beneath a quadratic within a tetrahedron.
 using Pebsi.QuadraticIntegration: simpson3D
 tet = [0 1 0 0; 0 0 1 0; 0 0 0 1]
 coeffs = [-1/10, -1/10, 9/10, -1/10, -1/10, 9/10, -1/10, -1/10, -1/10, 9/10]
-simpson3D(coeffs,tet,10,"area") ≈ 0.01528831567698499
+simpson3D(coeffs,tet,"area",num_slices=10) ≈ 0.01528831567698499
 # output
 true
 ```
 """
 function simpson3D(coeffs::AbstractVector{<:Real}, tetrahedron::AbstractMatrix{<:Real},
-    num_slices::Integer, quantity::String; values::Bool=false, gauss::Bool=true,
-    atol::Real=def_atol,split::Bool=true,corner::Union{Nothing,Integer}=nothing)
+    quantity::String; num_slices::Integer=def_num_slices, values::Bool=false, gauss::Bool=true,
+    split::Bool=true, corner::Union{Nothing,Integer}=nothing,atol::Real=def_atol)
     dim = 3; deg = 2
      
     # All the coefficients are well below zero.
@@ -2781,117 +2738,73 @@ function containment_percentage(epm::Union{epm₋model,epm₋model2D},
     percent,relerror
 end
 
+do_nothing(x;dims=0) = x
 
 @doc """
-    calcflbe_exactfit(epm,polydegre,ndivs,fermiarea_eps,fermilevel_method)
+    calc_fabe(ebs,quantity,ctype,fl;num_slices,sum_fabe,sheets)
 
-Calculate the band energy of an epm with a linear quadratic fit of the band structure.
+Calculate the Fermi area or band energy for a candidate Fermi level per patch or the sum.
 
 # Arguments
-- `epm::epm₋model2D`: a 2D empirical pseudopotential 
-- `polydegree::Integer`: the degree of the polynomial, limited to 1 or 2.
-- `ndivs::Integer`: a parameter proportional to the size of the mesh.
-- `fermiarea_eps::Real=def_fermiarea_eps`: convergence tolerance for Fermi area.
-- `fermilevel_method::Integer=def_fermilevel_method`:  the method of calculating the 
-    Fermi level
-- `exact_fl::Bool=false`: if true, the exact Fermi level is used to compute the 
-    band energy
+- `ebs::bandstructure`: a `bandstructure` composite type.
+- `quantity::String`: the quantity calculated ("area" or "volume")
+- `ctype::String`: determines which coefficients to use. Options include "min",
+    "max", and "mean". The least-squares coefficients are used with option "mean".
+- `fl::Real=ebs.fermilevel`: the candidate Fermi level.
+- `num_slices::Integer=def_num_slices`: the number of slices for integration in 3D.
+- `sum_fabe::Bool=true`: if true, sum the Fermi area or band energy of all patches.
+- `sheets::Vector:` the sheets per triangle to consided as a vector of vectors.
 
 # Returns
-- `::Vector{<:Real}`: the number of unique k-points.
-- `E::Real`: the estimated Fermi level
-- `be::Real`: the estimated band energy
+- `fabe::Real`: the Fermi level or band energy
 
 # Examples
 ```
-using Pebsi.EPMs
-epm = m41; degree = 2; ndivs = 10
-calcflbe_exactfit(epm,degree,ndivs)
+using Pebsi.EPMs, Pebsi.QuadraticIntegration
+epm = m11
+ebs = init_bandstructure(epm)
+quantity = "area"
+fl = epm.fermilevel
+ctype = "mean"
+calc_fabe(ebs,quantity,ctype,fl)
 ```
 """
-function calcflbe_exactfit(epm::epm₋model2D, polydegree::Integer, ndivs::Integer;
-    fermiarea_eps::Real=def_fermiarea_eps, fermilevel_method::Integer=def_fermilevel_method,
-    exact_fl::Bool=false)
-    dim = 2
-    mesh = ibz_init₋mesh(epm.ibz,ndivs)
-    simplicesᵢ = notbox_simplices(mesh)
-    simplices = [Array(mesh.points[s,:]') for s=simplicesᵢ]
+function calc_fabe(ebs::bandstructure; quantity::String, ctype::String, fl::Real=ebs.fermilevel,
+    num_slices::Integer=def_num_slices, sum_fabe::Bool=true, sheets::Union{Nothing,Vector}=nothing)
 
-    bspts = sample_simplex(dim,polydegree)
-    spts = [barytocart(bspts,s) for s=simplices]
-    unique_pts = unique_points(reduce(hcat,spts))
-    eigvals = eval_epm(unique_pts,epm)
-    unique_pts = [unique_pts[:,i] for i=1:size(unique_pts,2)]
-
-    sym₋unique = [zeros(Int,size(spts[1],2)) for _=1:size(spts,1)]
-    for (i,s)=enumerate(spts)
-        for j=1:size(s,2)
-            sym₋unique[i][j] = findfirst(x->isapprox(x,s[:,j]),unique_pts)
-        end
+    ns = length(ebs.simplicesᵢ)
+    nsheets = size(ebs.eigenvals,1)
+    if sheets == nothing
+        sheets = [collect(1:nsheets) for i=1:ns]
     end
-
-    if polydegree == 1
-        spts = [barytocart(sample_simplex(dim,2),s) for s=simplices]
-    end
-
-    coeffs = [[getpoly_coeffs(eigvals[j,sym₋unique[i]],bspts,dim,polydegree) for j=1:epm.sheets] for i=1:length(sym₋unique)]        
-    
-    if polydegree == 1
-        coeffs = [[[v[1],(v[1]+v[2])/2,v[2],(v[1]+v[3])/2,(v[2]+v[3])/2,v[3]] for v=c] for c=coeffs]
-    end
-    fermiarea = epm.fermiarea/length(epm.pointgroup)
-    if exact_fl
-        E = epm.fermilevel
+    dim = length(ebs.simplicesᵢ[1]) - 1
+    simplices = [Matrix(ebs.mesh.points[s,:]') for s=ebs.simplicesᵢ]
+    if ctype == "min" || ctype == "max"
+        coeffs = ebs.mesh_intcoeffs
+        cfun = if ctype == "min" minimum else maximum end
     else
-        E₁ = minimum(eigvals)
-        E₂ = maximum(eigvals)
-        E = (E₁ + E₂)/2
-        f₁ = sum([quad_area₋volume([spts[tri]; coeffs[tri][sheet]' .- E₁],"area") for tri=1:length(simplicesᵢ) for sheet=1:epm.sheets]) - fermiarea
-        f₂ = sum([quad_area₋volume([spts[tri]; coeffs[tri][sheet]' .- E₂],"area") for tri=1:length(simplicesᵢ) for sheet=1:epm.sheets]) - fermiarea
+        coeffs = ebs.mesh_bezcoeffs
+        cfun = do_nothing
+    end
 
-        f₃,E₃,iters,f,t = 0,0,0,1e9,0
-        ϵ = def_chandrupatla_tol
-        while abs(f) > fermiarea_eps
-            iters += 1
-            if iters > def_fl_max_iters
-                @warn "Failed to converge the Fermi area to within the provided tolerance of $(ebs.fermiarea_eps) after $(def_fl_max_iters) iterations. Fermi area converged within $(f)."
-                    break
+    fabe = [[0. for sheet=1:nsheets] for tri=1:ns]
+    if dim == 2
+        simplex_bpts = sample_simplex(dim,2)
+        simplex_pts = [barytocart(simplex_bpts,s) for s=simplices]
+        for tri=1:ns
+            for sheet=sheets[tri]
+                fabe[tri][sheet] = quad_area₋volume([simplex_pts[tri]; 
+                    [cfun(coeffs[tri][sheet],dims=1)...]' .- fl],quantity)
             end
-            f = sum([quad_area₋volume([spts[tri]; coeffs[tri][sheet]' .- E],"area") for tri=1:length(simplicesᵢ) for sheet=1:epm.sheets]) - fermiarea;
-            if sign(f) != sign(f₁)
-                E₃ = E₂; f₃ = f₂; E₂ = E₁; f₂ = f₁; E₁ = E; f₁ = f
-            else
-                E₃ = E₁; f₃ = f₁; E₁ = E; f₁ = f
+        end
+    else
+        for tri=1:ns
+            for sheet=sheets[tri]
+                fabe[tri][sheet] = simpson3D(vec(cfun(coeffs[tri][sheet] .- fl, dims=1)),
+                    simplices[tri], quantity, num_slices=num_slices)
             end
-            # Bisection method
-            if fermilevel_method == 1
-                t = 0.5
-            # Chandrupatla method
-            elseif fermilevel_method == 2            
-                ϕ₁ = (f₁ - f₂)/(f₃ - f₂)
-                ξ₁ = (E₁ - E₂)/(E₃ - E₂)
-                if 1 - √(1 - ξ₁) < ϕ₁ && ϕ₁ < √ξ₁
-                    α = (E₃ - E₁)/(E₂ - E₁)
-                    t = (f₁/(f₁ - f₂))*(f₃/(f₃ - f₂)) - α*(f₁/(f₃ - f₁))*(f₂/(f₂ - f₃))
-                else
-                    t = 0.5
-                end
-                if t < ϵ
-                    t = ϵ
-                elseif t > 1-ϵ
-                    t = 1-ϵ
-                end
-            else
-                ArgumentError("The method for calculating the Fermi is either 1 or 2.")
-            end
-            E = E₁ + t*(E₂ - E₁)
         end
     end
-    
-    be = sum([quad_area₋volume([spts[tri]; coeffs[tri][sheet]' .- E],"volume") for tri=1:length(simplicesᵢ) for sheet=1:epm.sheets])
-    be = 2*length(epm.pointgroup)*(be + E*fermiarea)
-    
-    size(eigvals,2),E,be
+    if sum_fabe sum(sum(fabe)) else fabe end
 end
-
 end # module

@@ -12,7 +12,8 @@ using Statistics: mean
 using LinearAlgebra: norm, dot
 
 export get_neighbors, choose_neighbors, choose_neighbors3D, ibz_init₋mesh, 
-    get_sym₋unique!, notbox_simplices, get_cvpts, get_extmesh, trimesh
+    get_sym₋unique!, notbox_simplices, get_cvpts, get_extmesh, trimesh, ntripts,
+    ntetpts
 
 @doc """
     get_neighbors(index,mesh,num₋neighbors=2)
@@ -654,7 +655,7 @@ function trimesh(ndivs::Integer)::Matrix{<:Real}
         for i=1:ndivs+1-j
             counter += 1
             r0,r1 = sum(n:-1:n-j+2),sum(n:-1:n-j+1)
-            # Take the average of the point at the corners of the subtriangle      
+            # Take the average of the points at the corners of the subtriangle      
             mesh[:,counter] = mean(bpts[:,[i+r0,i+r0+1,i+r1]],dims=2)
             if i < ndivs-j+1 && j != ndivs
                 counter += 1
@@ -665,5 +666,11 @@ function trimesh(ndivs::Integer)::Matrix{<:Real}
     end
     mesh
 end
+
+"""Gives the number of points over a triangle for a number of divisions"""
+ntripts(n) = sum(1:n)
+
+"""Gives the number of points over a tetrahedron for a number of divisions"""
+ntetpts(n) = sum([sum(1:i) for i=1:n])
 
 end # Module
