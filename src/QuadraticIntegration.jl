@@ -1189,18 +1189,15 @@ function calc_fl(epm::Union{epm₋model,epm₋model2D},ebs::bandstructure;
 
     if !(ctype in ["min","max","mean"])
         error("Invalid ctype.")
-    end    
-    dim = size(epm.recip_latvecs,1)
-    # simplex_bpts = sample_simplex(dim,2)
-    # simplices = [Matrix(ebs.mesh.points[s,:]') for s=ebs.simplicesᵢ]
-    # simplex_pts = [barytocart(simplex_bpts,s) for s=simplices]
-    
-    ibz_area = epm.ibz.volume
+    end
+
+    dim = size(epm.recip_latvecs,1) 
     maxsheet = round(Int,epm.electrons/2) + 2
+    fermi_area = epm.fermiarea/length(epm.pointgroup)
 
     iters = 0    
     estart = if dim == 2 5 else 9 end # Don't consider points at the corners of the box
-    if window == nothing || window == [0,0]
+    if window == [0,0]
         E₁ = minimum(ebs.eigenvals[1,estart:end])
         E₂ = maximum(ebs.eigenvals[maxsheet,estart:end])
     else
@@ -1212,17 +1209,22 @@ function calc_fl(epm::Union{epm₋model,epm₋model2D},ebs::bandstructure;
     f₁ = calc_fabe(ebs, quantity="area", ctype="mean",fl=E₁, num_slices=num_slices) - fermi_area
     iters₁ = 1
     while f₁ > 0
+        if iters₁ > def_fl_max_iters
+            error("Failed to calculate an upper limit for the Fermi level calculation after $(def_fl_max_iters) iterations.")
+        end
         iters₁ += 1; E₁ -= dE; dE *= 2
         if iters₁ > def_fl_max_iters || dE == 0
             E₁ = minimum(ebs.eigenvals[1,:5:end])
         end
         f₁ = calc_fabe(ebs, quantity="area", ctype="mean", fl=E₁, num_slices=num_slices) - fermi_area
     end
-
     dE = 2*abs(E₂ - E₁)
-    f₂ = calc_fabe(ebs, quantity="area", ctype="mean", fl=E₂, num_slices=num_slices) - fermi_area     
+    f₂ = calc_fabe(ebs, quantity="area", ctype="mean", fl=E₂, num_slices=num_slices) - fermi_area
     iters₂ = 1
     while f₂ < 0
+        if iters₂ > def_fl_max_iters
+            error("Failed to calculate an upper limit for the Fermi level calculation after $(def_fl_max_iters) iterations.")
+        end
         iters₂ += 1; E₂ += dE; dE *= 2
         if iters₂ > def_fl_max_iters || dE == 0
             E₂ = maximum(ebs.eigenvals[maxsheet,5:end])
@@ -1314,7 +1316,7 @@ ebs.bandenergy
 ```
 """
 function calc_flbe!(epm::Union{epm₋model2D,epm₋model},ebs::bandstructure;
-    num_slices::Integer=10, flerrors::Bool=true)::bandstructure
+    num_slices::Integer=def_num_slices, flerrors::Bool=true)::bandstructure
      
     # The number of point operators
     npg = length(epm.pointgroup)
@@ -1343,7 +1345,7 @@ function calc_flbe!(epm::Union{epm₋model2D,epm₋model},ebs::bandstructure;
     fl₁ = calc_fl(epm, ebs, fermi_area=epm.fermiarea/npg, ctype="max", num_slices=num_slices)
     # The smaller Fermi level computed with the lower limit of approximation intervals
     fl₀ = calc_fl(epm, ebs, fermi_area=epm.fermiarea/npg, ctype="min", num_slices=num_slices)
-
+     
     # The "true" Fermi area for each quadratic triangle (triangle and sheet) for the
     # given approximation of the bandstructure
     mesh_fa = calc_fabe(ebs, quantity="area", ctype="mean", fl=fl, num_slices=num_slices,
@@ -1371,7 +1373,7 @@ function calc_flbe!(epm::Union{epm₋model2D,epm₋model},ebs::bandstructure;
     be = calc_fabe(ebs, quantity="volume", ctype="mean", fl=fl, num_slices=num_slices,
         sum_fabe=true)
 
-    # The Fermi area errors for each quadratic triangle (triangle and sheet) for the
+        # The Fermi area errors for each quadratic triangle (triangle and sheet) for the
     # given band structure approximation
     mesh_fa₋errs = mesh_fa₁ .- mesh_fa₀
      
@@ -1575,7 +1577,7 @@ function refine_mesh!(epm::Union{epm₋model2D,epm₋model},ebs::bandstructure)
     elseif ebs.refine_method == 5
         if sum(ebs.fermiarea_errors) < ebs.fermiarea_eps
             println("Switching to band energy refinement.")
-            ebs.refine_method = 7
+            ebs.refine_method = 6
             refine_mesh!(epm,ebs)
             return ebs
         end
@@ -1904,7 +1906,6 @@ function quadratic_method(epm::Union{epm₋model2D,epm₋model};
     if num_neighbors == nothing
         num_neighbors = if dim == 2 def_num_neighbors2D else def_num_neighbors3D end
     end
-
     ebs = init_bandstructure(epm,init_msize=init_msize, num_near_neigh=num_near_neigh,
         num_neighbors=num_neighbors,fermiarea_eps=fermiarea_eps, 
         target_accuracy=target_accuracy, fermilevel_method=fermilevel_method, 
