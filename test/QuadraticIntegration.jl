@@ -878,12 +878,47 @@ end
         coeffs5 = [-8.5, 9.1, 0.2, -1.1, -4.4, 0.0, 2.9, 3.8, 10.4, -3.6]
         allcoeffs = [coeffs1, coeffs2, coeffs3, coeffs4, coeffs5]
          
-        vals = [[simpson3D(coeffs,tet,100,q,split=false,corner=4) for q=["area","volume"]] for coeffs=allcoeffs]
+        vals = [[simpson3D(coeffs,tet,q,num_slices=100,split=false,corner=4) for q=["area","volume"]] for coeffs=allcoeffs]
         test = [abs.(vals[i] .- answers[i]) for i=1:length(vals)]
         @test maximum(maximum(test)) < 5e-6
          
-        vals = [[simpson3D(coeffs,tet,100,q,split=true,corner=3) for q=["area","volume"]] for coeffs=allcoeffs]
+        vals = [[simpson3D(coeffs,tet,q,num_slices=100,split=true,corner=3) for q=["area","volume"]] for coeffs=allcoeffs]
         test = [abs.(vals[i] .- answers[i]) for i=1:length(vals)]
         @test maximum(maximum(test)) < 5e-6
     end
+
+    @testset "length_area1D" begin
+        interval = [-1,2]
+        coeffs = [-1,0.5,1.2] 
+        l1 = length_area1D(coeffs,interval,"area",100001,gauss=true)
+        domain = getdomain(coeffs);
+        domain = [x*(interval[2] - interval[1]) + interval[1] for x=domain]
+        l2 = diff(domain)[1]
+        @test isapprox(l1,l2,atol=1e-4)
+        a1 = length_area1D(coeffs,interval,"volume",100001,gauss=true)
+        a2 = analytic_area1D(coeffs,getdomain(coeffs))*(interval[2] - interval[1])
+        @test isapprox(a1,a2,atol=1e-4)
+    end
+
+    @testset "area_volume2D" begin        
+        triangle = [0 1 0; 0 0 1]
+        sbpts = sample_simplex(2,2)
+        spts = barytocart(sbpts,triangle)
+        coeffs = [-0.1, -0.2, -0.4, 0.4, 0.3, -0.3]
+        bezpts = [spts; coeffs']
+        @test isapprox(abs(area_volume2D(coeffs,triangle,"area",100) - quad_area₋volume(bezpts,"area")),0,atol=1e-4)
+        @test isapprox(abs(area_volume2D(coeffs,triangle,"volume",100) - quad_area₋volume(bezpts,"volume")),0,atol=1e-6)
+    end
+
+    # @testset "volume_hypvol3D" begin
+    #     tetrahedron = [0 1 0 0; 0 0 1 0; 0 0 0 1]
+    #     coeffs = [-0.2,-0.3, 0.2,0.3,0.4,-0.5,-0.6.-0.2,0.1,0.2,0.1]
+    #     v1 = simpson3D(coeffs,tetrahedron,"area")
+    #     v2 = volume_hypvol3D(coeffs,tetrahedron,"area",10)
+    #     @test isapprox(v1,v2,atol=1e-2)
+        
+    #     h1 = simpson3D(coeffs,tetrahedron,"volume")
+    #     h2 = volume_hypvol3D(coeffs,tetrahedron,"volume",10)
+    #     @test isapprox(h1,h2,atol=1e-5)
+    # end
 end

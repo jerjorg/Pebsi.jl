@@ -8,13 +8,13 @@ using ..EPMs: epm₋model2D, epm₋model, eval_epm
 using ..RectangularMethod: sample_unitcell
 using ..Polynomials: eval_poly, eval_bezcurve
 using ..Geometry: carttobary, barytocart, simplex_size, sample_simplex
-using ..Mesh: notbox_simplices
+using ..Mesh: notbox_simplices, ibz_init₋mesh
 
-using SymmetryReduceBZ.Utilities: sortpts2D, sample_sphere
+using SymmetryReduceBZ.Utilities: sortpts2D, sample_sphere, unique_points
 using SymmetryReduceBZ.Lattices: get_recip_latvecs
 
 export meshplot, contourplot, bezplot, bezcurve_plot, polygonplot, 
-    plot_bandstructure
+    plot_bandstructure, fermicurve_plot
 
 prop_cycle = plt.rcParams["axes.prop_cycle"]
 colors = prop_cycle.by_key()["color"]    
@@ -217,7 +217,7 @@ Plot the triangles shaded by error and approx. Fermi curve of an approx. of the 
 # Arguments
 - `ebs::bandstructure`: a container for the band structure approximation.
 - `ax::Union{PyObject,Nothing}=nothing`: an axes object from `PyPlot`.
-- `sort::Bool=false`: if true, sort the vertices of the 
+- `sort::Bool=false`: if true, sort the vertices the triangles.
 - `linewidth::Real=0.5`: widths of edges of triangles  
 - `edgecolor::String="black"`: the colors of triangle edges
 - `filled::Bool=false`: if true, color the regions of the band structure below 0.
@@ -254,7 +254,7 @@ function contourplot(ebs::bandstructure, ax::Union{PyObject,Nothing}=nothing;
     ρ = ndiv/maximum(sizes)
     ndivs = round.(Int,ρ*sizes)
     
-    contour_colors = ["blue","red","blue"]
+    contour_colors = ["cyan","lime","cyan"]
     fls = [ebs.fermilevel_interval[2],ebs.fermilevel,ebs.fermilevel_interval[1]]
     # fls = [ebs.fermilevel,ebs.fermilevel,ebs.fermilevel]
 
@@ -285,7 +285,6 @@ function contourplot(ebs::bandstructure, ax::Union{PyObject,Nothing}=nothing;
     ibz_volume = sum(sizes)
     err_cutoff = [simplex_size(s)/ibz_volume for s=tripts]*ebs.target_accuracy;
     err_ratios = round.(Int,bandenergy_errors ./ err_cutoff)
-    @show minimum(err_ratios)
 
     for (i,t) in enumerate(tripts)
         ax = polygonplot(t,ax,facecolor=cm(tcolors[i]),
@@ -390,10 +389,10 @@ Make a plot of a polygon.
     columns of a matrix.
 - `ax::PyObject`: an axes object from matplotlib.
 - `sort::Bool`: if true, sort the corners of the polygon in counterclockwise order.
-- `facecolor::String="blue"`: the color of the area within the polygon.
+- `facecolor="blue"`: the color of the area within the polygon.
 - `alpha::Real=1.0`: the transparency of the polygon.
 - `linewidth::Real=0.5`: the width of the edges.
-- `edgecolor::String="black"`: the color of the edges.
+- `edgecolor="black"`: the color of the edges.
 - `zorder::Integer=0`: the layer number of the plot.
 - `label::String="_nolegend_"`: a label for a plot legend.
 
@@ -409,8 +408,8 @@ polygonplot(polygon)
 """
 function polygonplot(pts::AbstractMatrix{<:Real},
     ax::Union{PyObject,Nothing}=nothing; sort::Bool=false,
-    facecolor::String="None", alpha::Real=1.0, linewidth::Real=0.5, 
-    edgecolor::String="black", zorder::Integer=0,
+    facecolor="None", alpha::Real=1.0, linewidth::Real=0.5, 
+    edgecolor="black", zorder::Integer=0,
     label::String="_nolegend_")::PyObject
     if sort
         perm = sortpts2D(pts)
@@ -551,7 +550,7 @@ function plot_bandstructure(name::String, basis::AbstractMatrix{<:Real},
 
     if ax == nothing fig,ax=subplots() end
     for i=1:sheets
-        ax.plot(λ,evals[i,:],".",ms=2,c=colors[i])
+        ax.plot(λ,evals[i,:],".",ms=0.5,c=colors[i])
     end
     ax.set_xticklabels(tick_labels)
     ax.set_xticks(λ[sympts_pos])
@@ -604,5 +603,35 @@ labels_dict=Dict("GAMMA"=>"Γ","X"=>"X","U"=>"U","L"=>"L","W"=>"W","X"=>"X","K"=
                  "V_2"=>"V₂","I_2"=>"I₂","I"=>"I","M_2"=>"M₂","Y"=>"Y",
                  "Z"=>"Z","Z_0"=>"Z₀","S"=>"S","S_0"=>"S₀","R"=>"R","G"=>"G",
                  "T"=>"T")
+
+@doc """
+    fermicurve_plot(epm,ax;ntri,ndivs,zorder,linewidths,color)
+
+Plot the Fermi curve of a 2D EPM.
+
+"""
+function fermicurve_plot(epm, ax=nothing; ntri=10, ndivs=20, zorder=2, linewidths=1.2, color="red")
+    dim = 2
+    ibzmesh = ibz_init₋mesh(epm.ibz,ntri)
+    simplicesᵢ = notbox_simplices(ibzmesh)
+    simplices = [Array(ibzmesh.points[s,:]') for s=simplicesᵢ]
+    bpts = sample_simplex(dim,ndivs)
+    pts = unique_points(reduce(hcat,[barytocart(bpts,s) for s = simplices]))
+    vals = eval_epm(pts,epm) .- epm.fermilevel
+    # Identify partially occupied sheets
+    partocc = []
+    for sheet in 1:epm.sheets
+        if any(x->x<=0,vals[sheet,:]) && any(x->x>=0,vals[sheet,:])
+            push!(partocc,sheet)
+        end
+    end
+    if ax == nothing fig,ax = subplots() end
+    ax.axis("off")
+    for (i,sheet)=enumerate(partocc)
+        ax.tricontour(pts[1,:],pts[2,:],vals[sheet,:],[0],[0],colors=color,
+                linewidths=linewidths,zorder=zorder)
+    end
+    ax
+end
 
 end # module

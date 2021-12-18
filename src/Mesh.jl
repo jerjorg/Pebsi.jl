@@ -279,8 +279,8 @@ Create a triangulation of a roughly uniform mesh over the IBZ.
 
 # Arguments
 - `ibz::Chull{<:Real}`: the irreducible Brillouin zone as a convex hull object.
-- `n::Int`: a measure of the number of points. The number of points over the IBZ
-    will be approximately `n^2/2`.
+- `n::Int`: a measure of the number of k-points in the mesh that is the number of 
+    divisions of an edge of the IBZ when the IBZ is a simplex or 
 - `rtol::Real=sqrt(eps(maximum(ibz.points)))`: a relative tolerance for finite
     precision comparisons.
 - `atol::Real=1e-9`: an absolute tolerance for finite precision comparisons.
@@ -288,7 +288,7 @@ Create a triangulation of a roughly uniform mesh over the IBZ.
 # Returns
 - `mesh::PyObject`: a triangulation of a uniform mesh over the IBZ. To avoid
     collinear triangles at the boundary of the IBZ, the IBZ is enclosed in a 
-    square. The first four (eight) points are the corners of the square (cube) 
+    box. The first four (eight) points are the corners of the square (cube) 
     and need to be disregarded in subsequent computations.
 
 # Examples
@@ -319,30 +319,23 @@ function ibz_init₋mesh(ibz::Chull{<:Real},n::Int;
     else
         ArgumentError("Dimension of IBZ must be 2 or 3.")
     end
-        
     mesh = spatial.Delaunay(ibz.points)
-    simplices = [Array(mesh.points[mesh.simplices[i,:].+1,:]') 
-        for i=1:size(mesh.simplices,1)]
-    
-    pt_sizes = [sqrt(simplex_size(s)/ibz.volume*n^2/2) for s=simplices]
-
-    # Make the number of points integer multiples of the smallest point size.
-    m = minimum(pt_sizes)
-    mr = round(Int,m)
-    if mr == 0 mr += 1 end
-    pt_sizes = mr*round.(Int,pt_sizes./m)
+    simplices = [Array(mesh.points[mesh.simplices[i,:].+1,:]') for i=1:size(mesh.simplices,1)]
+    simplex_sizes = [simplex_size(s) for s=simplices]
+    simplex_divs = n*(simplex_sizes ./ minimum(simplex_sizes)).^(1/dim)
+    simplex_divs = [mod(d,n) == 0 ? Int(d) : round(Int,d/n)*n for d=simplex_divs]
     pts = unique_points(reduce(hcat,[barytocart(sample_simplex(
-        dim,pt_sizes[i]),simplices[i]) for i=1:length(pt_sizes)]),atol=atol,rtol=rtol)
+        dim,simplex_divs[i]),simplices[i]) for i=1:length(simplex_divs)]),atol=atol,rtol=rtol)
     mesh = spatial.Delaunay([box_pts'; pts'])
 end
 
 @doc """
-    get_sym₋unique!(mesh,pointgroup;rtol,atol)
+    get_sym₋unique!(points,pointgroup;rtol,atol)
 
 Calculate the symmetrically unique points within the IBZ.
 
 # Arguments
-- `mesh::PyObject`: a triangulation of a mesh over the IBZ.
+- `points::Matrix{<:Real}`: a triangulation of a mesh over the IBZ.
 - `pointgroup::Vector{Matrix{Float64}}`: the point operators of the real-space
     lattice. They operate on points in Cartesian coordinates.
 - `rtol::Real=sqrt(eps(maximum(real_latvecs)))`: a relative tolerance.
@@ -352,7 +345,7 @@ Calculate the symmetrically unique points within the IBZ.
 - `sym₋unique::AbstractVector{<:Int}`: a vector that gives the position of the k-point
     that is equivalent to each k-point (except for the first 4 points or the
     points of the box). The first k-points, after the first 4, are unique.
-- `mesh::PyObject`: a triangulation of a uniform mesh over the IBZ. To avoid
+- `points::PyObject`: The points in the mesh, with the unique points first. To avoid
     collinear triangles at the boundary of the IBZ, the IBZ is enclosed in a 
     square. The first four (eight) points are the corners of the square (cube) 
     and need to be disregarded in subsequent computations.
@@ -362,7 +355,7 @@ Calculate the symmetrically unique points within the IBZ.
 using Pebsi.EPMs: m51
 using Pebsi.Mesh: get_sym₋unique!, ibz_init₋mesh
 mesh = ibz_init₋mesh(m51.ibz,3)
-sym_unique,mesh = get_sym₋unique!(mesh,m51.pointgroup)
+sym_unique,points = get_sym₋unique!(mesh.points',m51.pointgroup)
 sym_unique
 # output
 12-element Vector{Int64}:
@@ -380,14 +373,14 @@ sym_unique
   7
 ```
 """
-function get_sym₋unique!(mesh::PyObject,pointgroup::Vector{Matrix{Float64}};
-    rtol::Real=sqrt(eps(maximum(mesh.points))),atol::Real=def_atol)
-
+function get_sym₋unique!(points::Matrix{<:Real},pointgroup::Vector{Matrix{Float64}};
+    cvpts::Union{Nothing,Vector{<:Integer}}=nothing,
+    rtol::Real=sqrt(eps(maximum(points))),atol::Real=def_atol) 
     spatial = pyimport("scipy.spatial")
     dim = size(pointgroup[1],1)
     if dim == 2 nstart = 5 else nstart = 9 end
     # Calculate the unique points of the uniform IBZ mesh.
-    n = size(mesh.points,1)
+    n = size(points,2)
     sym₋unique = zeros(Int,n)
     move = []
     for i=nstart:n
@@ -398,10 +391,15 @@ function get_sym₋unique!(mesh::PyObject,pointgroup::Vector{Matrix{Float64}};
             push!(move,i)
             continue
         end
+        if cvpts != nothing
+            if !(i in cvpts)
+                continue
+            end
+        end
         for pg=pointgroup
-            test = [mapslices(x->isapprox(x,pg*mesh.points[i,:],atol=atol,
-                rtol=rtol),mesh.points,dims=2)...]
-            pos = findall(x->x==1,test)
+            rotpts = [mapslices(x->isapprox(x,pg*points[:,i],atol=atol,
+                rtol=rtol),points,dims=1)...]
+            pos = findall(x->x==1,rotpts)
             if pos == []
                 continue
             elseif sym₋unique[pos[1]] == 0
@@ -422,14 +420,12 @@ function get_sym₋unique!(mesh::PyObject,pointgroup::Vector{Matrix{Float64}};
                 end
             end
         end
-        sym₋unique = [zeros(Int,4); sym₋unique[setdiff(5:n,move)]; sym₋unique[move]]
+        sym₋unique = [zeros(Int,nstart-1); sym₋unique[setdiff(nstart:n,move)]; sym₋unique[move]]
         if move != []
-            mesh = spatial.Delaunay([
-                mesh.points[1:nstart-1,:];
-                mesh.points[setdiff(nstart:n,move),:]; mesh.points[move,:]])
+            points = [points[:,1:nstart-1] points[:,setdiff(nstart:n,move)] points[:,move]] 
         end
     end
-    sym₋unique,mesh
+    sym₋unique,points
 end
 
 @doc """
@@ -483,12 +479,12 @@ function notbox_simplices(mesh::PyObject)::Vector{Vector{<:Integer}}
 end
 
 @doc """
-    get_cvpts(mesh,ibz,atol)
+    get_cvpts(points,ibz,atol)
 
 Determine which points are on the boundary of the IBZ (or any convex hull).
 
 # Arguments
-- `mesh::PyObject`: a triangulation of a mesh over the IBZ.
+- `points::Matrix{<:Real}`: a matrix of Cartesian points as columns of a matrix.
 - `ibz::Chull`: the irreducible Brillouin zone as a convex hull object.
 - `atol::Real=1e-9`: an absolute tolerance for comparing distances to zero.
 
@@ -504,7 +500,7 @@ using QHull
 ibz = chull(Matrix([0. 0. 1. 1.; 0. 1. 0. 1.]'))
 pts = [0. 0. 0. 0.5 0.5 0.5 1.0 1.0 1.0; 0. 0.5 1. 0. 0.5 1. 0. 0.5 1.]
 mesh = spatial.Delaunay(Matrix(pts'))
-get_cvpts(mesh,ibz)
+get_cvpts(Matrix(mesh.points'),ibz)
 # output
 8-element Vector{Int64}:
  1
@@ -517,8 +513,8 @@ get_cvpts(mesh,ibz)
  9
 ```
 """
-function get_cvpts(mesh::PyObject,ibz::Chull;atol::Real=def_atol)::AbstractVector{<:Int}
-    dim = size(mesh.points,2)
+function get_cvpts(points::Matrix{<:Real},ibz::Chull;atol::Real=def_atol)::AbstractVector{<:Integer}
+    dim = size(points,1)
     if dim == 2
         borders = [Matrix(ibz.points[i,:]') for i=ibz.simplices]
         distfun = lineseg₋pt_dist
@@ -526,17 +522,15 @@ function get_cvpts(mesh::PyObject,ibz::Chull;atol::Real=def_atol)::AbstractVecto
         borders = [Matrix(ibz.points[f,:]') for f=get_uniquefacets(ibz)]
         distfun = ptface_mindist
     end
-
-    cv_pointsᵢ = [0 for i=1:size(mesh.points,1)]
+    cv_pointsᵢ = [0 for i=1:size(points,2)]
     n = 0
-    for i=1:size(mesh.points,1)
-        if any([isapprox(distfun(mesh.points[i,:],border),0,atol=atol) 
+    for i=1:size(points,2)
+        if any([isapprox(distfun(points[:,i],border),0,atol=atol) 
             for border=borders])
             n += 1
             cv_pointsᵢ[n] = i
         end
     end
-
     cv_pointsᵢ[1:n]
 end
 
@@ -580,9 +574,9 @@ function get_extmesh(ibz::Chull,mesh::PyObject,pointgroup::Vector{Matrix{Float64
     
     dim = size(recip_latvecs,1)
     spatial = pyimport("scipy.spatial")
-    sym₋unique,mesh = get_sym₋unique!(mesh,pointgroup)
-    cv_pointsᵢ = get_cvpts(mesh,ibz)
-
+    cv_pointsᵢ = get_cvpts(Matrix(mesh.points'),ibz)
+    sym₋unique,points = get_sym₋unique!(Matrix(mesh.points'), pointgroup, cvpts=cv_pointsᵢ)
+    mesh = spatial.Delaunay(points')
     # Calculate the maximum distance between neighboring points
     bound_limit = def_max_neighbor_tol*maximum(
         reduce(vcat,[[norm(mesh.points[i,:] - mesh.points[j,:]) 
@@ -668,9 +662,52 @@ function trimesh(ndivs::Integer)::Matrix{<:Real}
 end
 
 """Gives the number of points over a triangle for a number of divisions"""
-ntripts(n) = sum(1:n)
+ntripts(n) = sum(1:n+1)
+"""Gives the number of triangles for a number of divisions"""
+ntriangles(n) = n^2
 
 """Gives the number of points over a tetrahedron for a number of divisions"""
-ntetpts(n) = sum([sum(1:i) for i=1:n])
+ntetpts(n) = sum([sum(1:i) for i=1:n+1])
+"""Gives the number of tetrahedra for a number of divisions"""
+ntetrahedra(n) = n^3
 
+@doc """
+    simplex_cornerpts(dim,deg)
+
+Locate the indices of corners of a simplex from the Bezier points.
+
+# Arguments
+- `dim::Integer`: the dimension of the space.
+- `deg::Integer`: the degree of the polynomial.
+
+# Returns
+- `Indices::Vector{<:Integer}`: the indices of the corners points
+
+# Examples
+```jldoctest
+using Pebsi.Mesh
+simplex_cornerpts(3,4)
+# output
+4-element Vector{Int64}:
+  1
+  5
+ 15
+ 35
+```
+"""
+function simplex_cornerpts(dim::Integer,deg::Integer)
+    if dim > 3
+        error("Valid up to three dimensions.")
+    elseif deg < 1
+        error("Valid for polynomial degree of at least 1.")
+    end
+    indices = [1,deg+1]
+    nptfuns = [ntripts,ntetpts]
+    if dim > 1
+        for di=2:dim
+            push!(indices,nptfuns[di-1](deg))
+        end
+    end
+    indices    
+end
 end # Module

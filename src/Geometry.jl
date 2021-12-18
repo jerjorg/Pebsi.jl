@@ -75,9 +75,13 @@ sample_simplex(dim,deg)
 """
 function sample_simplex(dim::Integer,deg::Integer,
     rtol::Real=sqrt(eps(1.0)))::AbstractMatrix{<:Real}
-    reduce(hcat,filter(x->length(x)>0, 
-        [isapprox(sum(p),1,rtol=rtol,atol=def_atol) ? collect(p) : [] 
-        for p=collect(product([0:1/deg:1 for i=0:dim]...))]))
+    if deg == 0
+        [1/(dim+1) for i=1:dim+1][:,:]
+    else
+        reduce(hcat,filter(x->length(x)>0, 
+            [isapprox(sum(p),1,rtol=rtol,atol=def_atol) ? collect(p) : [] 
+            for p=collect(product([0:1/deg:1 for i=0:dim]...))]))
+    end
 end
 
 @doc """
