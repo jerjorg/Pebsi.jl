@@ -37,6 +37,7 @@ def_target_kpoints = 100 # The default number of k-points for stop_criterion = 4
 def_kpoint_tol = 5 # The number of k-points may be within this percentage of the target k-points
 def_deriv_step = 1e-4 # The step size for numerical derivatives
 def_num_slices = 100 # The number of slices for integration in 3D
+def_kpoint_tol = 0.05 # The number of k-points is within this amount of the number requested for IBZ mesh
 
 # Export all
 for n in names(@__MODULE__; all=true)

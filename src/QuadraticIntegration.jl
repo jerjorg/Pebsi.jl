@@ -9,7 +9,7 @@ using ..Polynomials: eval_poly,getpoly_coeffs,getbez_pts₋wts,eval_bezcurve,
 using ..EPMs: eval_epm, epm₋model, epm₋model2D
 using ..Mesh: get_neighbors, notbox_simplices, get_cvpts, ibz_init₋mesh, 
     get_extmesh, choose_neighbors, choose_neighbors3D, trimesh, ntripts, ntetpts,
-    get_sym₋unique!
+    get_sym₋unique!, simplex_cornerpts
 using ..Geometry: order_vertices!, simplex_size, insimplex, barytocart,
     carttobary, sample_simplex, lineseg₋pt_dist, mapto_xyplane, ptface_mindist
 using ..Defaults
@@ -854,7 +854,7 @@ function two₋intersects_area₋volume(bezpts::AbstractMatrix{<:Real},
 end
 
 @doc """
-    quad_area₋volume(bezpts,quantity;atol)
+    quad_area₋volume(bezpts,quantity;num_slices,atol)
 
 Calculate the area of the shadow or the volume beneath a quadratic.
 
@@ -862,6 +862,7 @@ Calculate the area of the shadow or the volume beneath a quadratic.
 - `bezpts::AbstractMatrix{<:Real}`: the Bezier points of the quadratic surface in
     columns of a matrix.
 - `quantity::String`: the quantity to calculate ("area" or "volume").
+- `num_slices::Integer`: a dummy variable to simplify 2D and 3D integration.
 - `atol::Real=def_atol`: an absolute tolerance for floating point comparisons.
 
 # Returns
@@ -879,8 +880,8 @@ true
 ```
 """
 function quad_area₋volume(bezpts::AbstractMatrix{<:Real},
-        quantity::String;atol::Real=def_atol)::Real
-
+        quantity::String; num_slices::Integer=def_num_slices, atol::Real=def_atol)::Real
+     
     # Modifications to make when working in 3D.
     if size(bezpts,1) == 4
         bezpts = [mapto_xyplane(bezpts[1:3,:]); bezpts[end,:]']
@@ -2278,14 +2279,13 @@ function tetface_areas(tet::AbstractMatrix{<:Real})::Vector{<:Real}
 end
 
 @doc """
-    simpson3D(coeffs,tetrahedron,quantity;num_slices,values,gauss,split,corner,atol,rtol)
+    simpson3D(bezpts,quantity;num_slices,values,gauss,split,corner,atol,rtol)
 
 Calculate the volume or hypervolume beneath a quadratic within a tetrahedron.
 
 # Arguments
-- `coeffs::AbstractVector{<:Real}`: the coefficients of the quadratic polynomial 
-    over the tetrahedron.
-- `tetrahedron::AbstractMatrix{<:Real}`: the Cartesian coordinates of the point at the corner of the tetrahedron.
+- `bezpts::Matrix{<:Real}`: the Bezier points of the quadratic polynomial over a 
+    tetrahedron.
 - `num_slices::Integer`: the number of slices of teterahedron parallel to one of the faces 
     of the tetrahedron.
 - `quantity::String`: whether to calculate the "area" or "volume" of each slice.
@@ -2304,17 +2304,19 @@ Calculate the volume or hypervolume beneath a quadratic within a tetrahedron.
 # Examples
 ```jldoctest
 using Pebsi.QuadraticIntegration: simpson3D
-tet = [0 1 0 0; 0 0 1 0; 0 0 0 1]
+spts = [0.0 0.5 1.0 0.0 0.5 0.0 0.0 0.5 0.0 0.0; 0.0 0.0 0.0 0.5 0.5 1.0 0.0 0.0 0.5 0.0; 
+    0.0 0.0 0.0 0.0 0.0 0.0 0.5 0.5 0.5 1.0]
 coeffs = [-1/10, -1/10, 9/10, -1/10, -1/10, 9/10, -1/10, -1/10, -1/10, 9/10]
-simpson3D(coeffs,tet,"area",num_slices=10) ≈ 0.01528831567698499
+bezpts= [spts; coeffs']
+simpson3D(bezpts,"area",num_slices=10) ≈ 0.01528831567698499
 # output
 true
 ```
 """
-function simpson3D(coeffs::AbstractVector{<:Real}, tetrahedron::AbstractMatrix{<:Real},
-    quantity::String; num_slices::Integer=def_num_slices, values::Bool=false, gauss::Bool=true,
-    split::Bool=true, corner::Union{Nothing,Integer}=nothing,atol::Real=def_atol)
-    dim = 3; deg = 2 
+function simpson3D(bezpts::Matrix{<:Real}, quantity::String; num_slices::Integer=def_num_slices,
+    values::Bool=false, gauss::Bool=true, split::Bool=true, corner::Union{Nothing,Integer}=nothing,
+    atol::Real=def_atol)
+    coeffs = bezpts[end,:]
     # All the coefficients are well below zero.
     if all((coeffs .< 0) .& isapprox.(coeffs,0,atol=atol))
         if quantity == "area"
@@ -2326,15 +2328,14 @@ function simpson3D(coeffs::AbstractVector{<:Real}, tetrahedron::AbstractMatrix{<
     elseif all((coeffs .> 0) .& isapprox.(coeffs,0,atol=atol))
        return 0.0 
     end
-
+    dim = 3; deg = 2; cind = simplex_cornerpts(dim,deg); tetrahedron = bezpts[1:end-1,cind]
      # Area of faces
     if corner == nothing
         face_areas = tetface_areas(tetrahedron)
         p = findmax(face_areas)[2]
     else
         p = corner
-    end
-   
+    end 
     # Calculate the shortest distance from a plane at the opposite face to the
     # opposite corner
     face = tetrahedron[:,face_ind[p]]
@@ -2775,22 +2776,20 @@ function calc_fabe(ebs::bandstructure; quantity::String, ctype::String, fl::Real
     end
 
     fabe = [[0. for sheet=1:nsheets] for tri=1:ns]
-    if dim == 2
-        quadfun = if ebs.polydegree > 2 area_volume2D else quad_area₋volume end
-        simplex_bpts = sample_simplex(dim,2)
-        simplex_pts = [barytocart(simplex_bpts,s) for s=simplices]
-        for tri=1:ns
-            for sheet=sheets[tri]
-                fabe[tri][sheet] = quad_area₋volume([simplex_pts[tri]; 
-                    [cfun(coeffs[tri][sheet],dims=1)...]' .- fl],quantity)
-            end
-        end
-    else
-        for tri=1:ns
-            for sheet=sheets[tri]
-                fabe[tri][sheet] = simpson3D(vec(cfun(coeffs[tri][sheet] .- fl, dims=1)),
-                    simplices[tri], quantity, num_slices=num_slices)
-            end
+    quadfun = (
+        if dim == 2
+            if ebs.polydegree > 2 area_volume2D else quad_area₋volume end
+        else
+            if ebs.polydegree > 3 volume_hypvol3D else simpson3D end
+        end)
+
+    d = if ebs.polydegree < 2 2 else ebs.polydegree end       
+    simplex_bpts = sample_simplex(dim,d)
+    simplex_pts = [barytocart(simplex_bpts,s) for s=simplices]
+    for tri=1:ns
+        for sheet=sheets[tri]
+            fabe[tri][sheet] = quadfun([simplex_pts[tri]; [cfun(coeffs[tri][sheet],dims=1)...]' .- fl],
+                quantity, num_slices=num_slices)
         end
     end
     if sum_fabe sum(sum(fabe)) else fabe end
@@ -2801,7 +2800,7 @@ end
 
 Estimate the band energy error by taking the difference between quadratic and linear polynomials.
 """
-function quadlin_esterr(epm,ebs)
+function quadlin_esterr(epm,ebs;num_slices::Integer=def_num_slices)
     dim = size(epm.recip_latvecs,1)
     npg = length(epm.pointgroup)
     sbpt = sample_simplex(dim,2)
@@ -2831,9 +2830,10 @@ function quadlin_esterr(epm,ebs)
                     lin_partial_bandenergy[j][i] = (ebs.fermilevel*fa + quad_area₋volume(bezpts,"volume"))*2*npg
                 else
                     fa = simpson3D(bezpts[end,:], simplices[j],"area")
-                    lin_partial_bandenergy[j][i] = (ebs.fermilevel*fa + simpson3D(bezpts[end,:], simplices[j],"volume"))*2*npg
+                    lin_partial_bandenergy[j][i] = (ebs.fermilevel*fa + simpson3D(bezpts[end,:], simplices[j],"volume",
+                        num_slices=def_num_slices))*2*npg
                 end
-            end
+            end 
         end
     end
     sum(abs.(ebs.sigma_bandenergy - lin_sigma_bandenergy)) + 
@@ -2841,17 +2841,16 @@ function quadlin_esterr(epm,ebs)
 end
 
 @doc """
-    length_area1D(coeffs,interval,quantity,numpts;gauss,values,atol)
+    length_area1D(bezpts,quantity;num_slices,gauss,values,atol)
 
 Calculate the area or length of a polynomial where it is less than zero.
 
 # Arguments
-- `coeffs::Vector{<:Real}`: the coefficients of the polynomial.
-- `interval::Vector{<:Real}`: the domain over which the polynomial is integrated.
+- `bezpts::Matrix{<:Real}`: the bezier points of the univariate polynomial.
 - `quantity::String`: the quantity calculate. "area" gives the length of the domain
     where the polynomial is less than zero, and "volume" gives the area (negative) 
     beneath the polynomial where the polynomial is less than zero.
-- `numpts::Integer`: the number of quadrature points.
+- `num_slices::Integer`: the number of quadrature points.
 - `gauss::Bool=true`: if true, use Gaussian quadrature points.
 - `values::Bool=false`: returns the quadrature points (between 0 and 1) and the 
     values of the polynomial at the quadrature points when true.
@@ -2865,16 +2864,20 @@ Calculate the area or length of a polynomial where it is less than zero.
 ```jldoctest
 using Pebsi.QuadraticIntegration
 coeffs = [1.1,2.2,3.3,4.4]
-interval = [-2,3]
-numpts = 10
+spts = [-6/3,-1/3,4/3,9/3]
+bezpts = [spts'; coeffs']
+num_slices = 10
 quantity = "area"
-length_area1D(coeffs,interval,quantity,numpts)
+length_area1D(bezpts,quantity,num_slices=num_slices)
 # output
 0.0
 ```
 """
-function length_area1D(coeffs::Vector{<:Real}, interval::Vector{<:Real}, quantity::String; 
-    num_slices::Integer=def_num_slices, gauss::Bool=true, values::Bool=false, atol::Real=def_atol)
+function length_area1D(bezpts::Matrix{<:Real}, quantity::String; num_slices::Integer=def_num_slices,
+    gauss::Bool=true, values::Bool=false, atol::Real=def_atol)
+
+    interval = [bezpts[1,1],bezpts[1,end]]
+    coeffs = bezpts[end,:]
     # All the coefficients are well below zero.
     if all((coeffs .< 0) .& isapprox.(coeffs,0,atol=atol))
         if quantity == "area"
@@ -2888,12 +2891,12 @@ function length_area1D(coeffs::Vector{<:Real}, interval::Vector{<:Real}, quantit
     end
     dim = 1; deg = length(coeffs) - 1
     if gauss
-        x,w = gausslegendre(numpts)
+        x,w = gausslegendre(num_slices)
         w = w ./ 2
         it = (x ./ 2) .+ 1/2
     else
-        if iseven(numpts) numpts += 1 end
-        it = range(0,stop=1,length=numpts)
+        if iseven(num_slices) num_slices += 1 end
+        it = range(0,stop=1,length=num_slices)
     end
     bpts = reduce(hcat,[[i,1-i] for i=it])
     vals = eval_poly(bpts,coeffs,dim,deg)
@@ -2916,17 +2919,17 @@ function length_area1D(coeffs::Vector{<:Real}, interval::Vector{<:Real}, quantit
 end
 
 @doc """
-    area_volume2D(coeffs,triangle,quantity,numpts;gauss,values,atol)
+    area_volume2D(bezpts,quantity;num_slices,gauss,values,atol)
 
 Calculate the area or length of a polynomial where it is less than zero.
 
 # Arguments
-- `coeffs::Vector{<:Real}`: the coefficients of the 2D polynomial.
-- `tetrahedron::Vector{<:Real}`: the domain over which the polynomial is integrated.
+- `bezpts::Matrix{<:Real}`: the Bezier points of the bivariate polynomial over a 
+    triangle.
 - `quantity::String`: the quantity calculate. "area" gives the area of the domain
     where the polynomial is less than zero, and "volume" gives the volume (negative) 
     beneath the polynomial where the polynomial is less than zero.
-- `numpts::Integer`: the number of slices. Each slices has this many quadrature points.
+- `num_slices::Integer`: the number of slices. Each slices has this many quadrature points.
 - `gauss::Bool=true`: if true, use Gaussian quadrature points.
 - `values::Bool=false`: returns the quadrature points (between 0 and 1) and the 
     values of the integral of the polynomial at the quadrature points when true.
@@ -2941,16 +2944,17 @@ Calculate the area or length of a polynomial where it is less than zero.
 # Examples
 ```jldoctest
 using Pebsi.QuadraticIntegration
-triangle = [0 1 0; 0 0 1]
+spts = [0.0 0.5 1.0 0.0 0.5 0.0; 0.0 0.0 0.0 0.5 0.5 1.0]
 coeffs = [0.1, 0.2, 0.4, 0.4, 0.3, 0.3]
-area_volume2D(coeffs,triangle,"area")
+bezpts = [spts; coeffs']
+area_volume2D(bezpts,"area")
 # output
 0.0
 ```
 """
-function area_volume2D(coeffs::Vector{<:Real}, triangle::Matrix{<:Real}, quantity::String;
-    num_slices::Integer=def_num_slices, gauss::Bool=true, values::Bool=false, edge_ind::Union{Nothing,Integer}=nothing,
-    atol::Real=def_atol)
+function area_volume2D(bezpts::Matrix{<:Real}, quantity::String; num_slices::Integer=def_num_slices,
+    gauss::Bool=true, values::Bool=false, edge_ind::Union{Nothing,Integer}=nothing, atol::Real=def_atol)
+    coeffs = bezpts[end,:]
     # All the coefficients are well below zero.
     if all((coeffs .< 0) .& isapprox.(coeffs,0,atol=atol))
         if quantity == "area"
@@ -2961,21 +2965,22 @@ function area_volume2D(coeffs::Vector{<:Real}, triangle::Matrix{<:Real}, quantit
     # All the coefficients are well above zero.
     elseif all((coeffs .> 0) .& isapprox.(coeffs,0,atol=atol))
        return 0.0 
-    end 
+    end
     dim = 2; deg = 0; n = 0 
     while n != length(coeffs)
         deg += 1
-        n = length(ntripts(deg))
+        n = ntripts(deg)
     end
+    cind = simplex_cornerpts(dim,deg)
+    triangle = bezpts[1:end-1,cind]
     if gauss
-        x,w = gausslegendre(numpts)
+        x,w = gausslegendre(num_slices)
         w = w ./ 2
         it = (x ./ 2) .+ 1/2
     else
-        if iseven(numpts) numpts += 1 end
-        it = range(0,stop=1,length=numpts)
+        if iseven(num_slices) num_slices += 1 end
+        it = range(0,stop=1,length=num_slices)
     end
-    
     if edge_ind == nothing
         # Move from the edge of the triangle of the largest length to the opposite corner
         lengths = [norm(triangle[:,mod1(i,3)] - triangle[:,mod1(i+1,3)]) for i=1:3]
@@ -2989,8 +2994,8 @@ function area_volume2D(coeffs::Vector{<:Real}, triangle::Matrix{<:Real}, quantit
         order = [1,2,3]
     else
         order = [3,1,2]
-    end    
-    
+    end 
+    ibpts= sample_simplex(1,deg)
     intvals = zeros(length(it))
     for (i,t) in enumerate(it)
         bpt = [t,(1-t)/2,(1-t)/2][order]
@@ -3001,9 +3006,14 @@ function area_volume2D(coeffs::Vector{<:Real}, triangle::Matrix{<:Real}, quantit
         polypts = reduce(hcat,[(1-t)*pts[:,1] + t*pts[:,2] for t=0:1/(deg):1])
         polybpts = carttobary(polypts,triangle)
         vals = eval_poly(polybpts,coeffs,dim,deg)
-        bezcoeffs = get_1Dquad_coeffs(vals)
-        intvals[i] = length_area1D(bezcoeffs, [0,norm(pts[:,1] - pts[:,end])], quantity, 
-            numpts, gauss=gauss, atol=atol)
+        l = norm(pts[:,1] - pts[:,end])
+        if deg < 3
+            bezcoeffs = get_1Dquad_coeffs(vals)
+        else
+            bezcoeffs = getpoly_coeffs(vals,ibpts,1,deg)
+        end
+        intvals[i] = length_area1D([barytocart(ibpts,Matrix([0,l]')); bezcoeffs'], quantity, 
+            num_slices=num_slices, gauss=gauss, atol=atol)
     end
     
     if values
@@ -3020,18 +3030,17 @@ function area_volume2D(coeffs::Vector{<:Real}, triangle::Matrix{<:Real}, quantit
 end
 
 @doc """
-    volume_hypvol3D(coeffs,tetrahedron,quantity,numpts;gauss,values,atol)
+    volume_hypvol3D(bezpts,quantity;num_slices,gauss,values,atol)
 
 Calculate the volume or hyper volume of a polynomial where it is less than zero.
 
 # Arguments
-- `coeffs::Vector{<:Real}`: the coefficients of the 3D polynomial.
-- `tetrahedron::Vector{<:Real}`: the domain over which the polynomial is integrated or the 
-    vertices of a tetrahedron in Cartesian coordinates as columns of a matrix.
+- `bezpts::Matrix{<:Real}`: the Bezier points of the trivariate polynomial over a
+    tetrahedron.
 - `quantity::String`: the quantity calculate. "area" gives the area of the domain
     where the polynomial is less than zero, and "volume" gives the volume (negative) 
     beneath the polynomial where the polynomial is less than zero.
-- `numpts::Integer`: the number of slices. Each slices has this many quadrature points.
+- `num_slices::Integer`: the number of slices. Each slices has this many quadrature points.
 - `gauss::Bool=true`: if true, use Gaussian quadrature points.
 - `values::Bool=false`: returns the quadrature points (between 0 and 1) and the 
     values of the integral of the polynomial at the quadrature points when true.
@@ -3045,19 +3054,20 @@ Calculate the volume or hyper volume of a polynomial where it is less than zero.
 # Examples
 ```jldoctest
 using Pebsi.QuadraticIntegration
+spts = [0.0 0.5 1.0 0.0 0.5 0.0 0.0 0.5 0.0 0.0; 0.0 0.0 0.0 0.5 0.5 1.0 0.0 0.0 0.5 0.0;
+    0.0 0.0 0.0 0.0 0.0 0.0 0.5 0.5 0.5 1.0];
 coeffs = collect(1:10)
-tetrahedron = [0 1 0 0; 0 0 1 0; 0 0 0 1]
-numpts = 10
+bezpts = [spts; coeffs']
 quantity = "area"
-volume_hypvol3D(coeffs,tetrahedron,quantity,numpts)
+volume_hypvol3D(bezpts,quantity)
 # output
 0.0
 ```
 """
-function volume_hypvol3D(coeffs::Vector{<:Real}, tetrahedron::Matrix{<:Real}, quantity::String;
-    numpts::Integer=def_num_slices, gauss::Bool=true, values::Bool=false, 
+function volume_hypvol3D(bezpts::Matrix{<:Real}, quantity::String;
+    num_slices::Integer=def_num_slices, gauss::Bool=true, values::Bool=false, 
     corner::Union{Nothing,Integer}=nothing, atol::Real=def_atol)
-    
+    coeffs = bezpts[end,:]
     # All the coefficients are well below zero.
     if all((coeffs .< 0) .& isapprox.(coeffs,0,atol=atol))
         if quantity == "area"
@@ -3069,18 +3079,20 @@ function volume_hypvol3D(coeffs::Vector{<:Real}, tetrahedron::Matrix{<:Real}, qu
     elseif all((coeffs .> 0) .& isapprox.(coeffs,0,atol=atol))
        return 0.0 
     end
-    dim = 3; deg = 0; n = 0;
+    dim = 3; deg = 0; n = 0
     while n != length(coeffs)
         deg += 1
         n = ntetpts(deg)
-    end    
+    end
+    cind = simplex_cornerpts(dim,deg)
+    tetrahedron = bezpts[1:end-1,cind] 
     if gauss
-        x,w = gausslegendre(numpts)
+        x,w = gausslegendre(num_slices)
         w = w ./ 2
         it = (x ./ 2) .+ 1/2
     else
-        if iseven(numpts) numpts += 1 end
-        it = range(0,stop=1,length=numpts)
+        if iseven(num_slices) num_slices += 1 end
+        it = range(0,stop=1,length=num_slices)
     end
     
     # Area of faces
@@ -3113,7 +3125,7 @@ function volume_hypvol3D(coeffs::Vector{<:Real}, tetrahedron::Matrix{<:Real}, qu
         vals = eval_poly(polybpts,coeffs,dim,deg)
         coeffs2D = getpoly_coeffs(vals,bpts2D,2,deg)
         triangle = Utilities.mapto_xyplane(pts)
-        intvals[i] = area_volume2D(coeffs2D,triangle,quantity,numpts,
+        intvals[i] = area_volume2D([barytocart(bpts2D,triangle); coeffs2D'],quantity,num_slices=num_slices,
             gauss=gauss,atol=atol)
     end
     if values return it,intvals end

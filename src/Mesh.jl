@@ -4,16 +4,17 @@ using ..Geometry: simplex_size, barytocart, lineseg₋pt_dist, ptface_mindist,
     sample_simplex
 using ..Defaults: def_atol, def_mesh_scale, def_max_neighbor_tol,
     def_neighbors_per_bin2D, def_neighbors_per_bin3D, def_num_neighbors2D, 
-    def_num_neighbors3D
+    def_num_neighbors3D, def_kpoint_tol
 using SymmetryReduceBZ.Utilities: unique_points, get_uniquefacets
 using PyCall: pyimport,PyObject
 using QHull: Chull
 using Statistics: mean
-using LinearAlgebra: norm, dot
+using LinearAlgebra: norm, dot, cross
+using Suppressor
 
 export get_neighbors, choose_neighbors, choose_neighbors3D, ibz_init₋mesh, 
     get_sym₋unique!, notbox_simplices, get_cvpts, get_extmesh, trimesh, ntripts,
-    ntetpts
+    ntetpts, simplex_cornerpts, gmsh_initmesh, ibz_initmesh
 
 @doc """
     get_neighbors(index,mesh,num₋neighbors=2)
@@ -709,5 +710,218 @@ function simplex_cornerpts(dim::Integer,deg::Integer)
         end
     end
     indices    
+end
+
+@doc """
+    gmsh_initmesh(ibz,meshsize;opt_threshold,mesh_algo,mesh_algo3D,
+        opt_algo, opt_iters,atol)
+
+Calculate a uniform mesh over the IBZ using gmsh.
+
+# Arguments
+- `ibz::Chull`: 
+- `meshsize::Real`:
+- `opt_threshold::Real=1.0`: 
+- `mesh_algo::Integer=6`: 
+- `mesh_algo3D::Integer=1`: 
+- `opt_algo::Integer=1`: 
+- `opt_iters::Integer=100`:
+- `atol::Real=def_atol`: 
+
+# Returns
+- `mesh`: a triangular or tetrahedral mesh over the IBZ
+- `msimplicesᵢ`: the simplices of the mesh obtained from gmsh.
+
+# Examples
+```
+using Pebsi.EPMs, Pebsi.Mesh
+ibz = epm.m11.ibz
+meshsize = 0.1
+gmsh_initmesh(ibz,meshsize)
+```
+"""
+function gmsh_initmesh(ibz::Chull, meshsize::Real;
+    opt_threshold::Real=1.0, mesh_algo::Integer=6, mesh_algo3D::Integer=1,
+    opt_algo::Integer=1, opt_iters::Integer=100, atol::Real=def_atol)
+    gmsh = pyimport("gmsh")
+    spatial = pyimport("scipy.spatial")
+    ibzpts = Matrix(ibz.points')
+    n = size(ibzpts,2); dim = size(ibzpts,1)
+    if dim == 2
+        ibzpts = ibzpts[:,sortpts2D(ibzpts)]
+        ibzpts = [ibzpts; zeros(size(ibzpts,2))']
+    end
+    gmsh.initialize()
+    gmsh.model.add("ibz")
+    gmsh.option.setNumber("Mesh.MeshSizeExtendFromBoundary", 0)
+    gmsh.option.setNumber("Mesh.MeshSizeFromPoints", 0)
+    gmsh.option.setNumber("Mesh.MeshSizeFromCurvature", 0)
+    gmsh.option.setNumber("Mesh.MeshSizeMin",meshsize)
+    gmsh.option.setNumber("Mesh.MeshSizeMax",meshsize)
+    gmsh.option.setNumber("Mesh.Optimize", opt_algo)
+    gmsh.option.setNumber("Mesh.OptimizeThreshold", opt_threshold)
+    gmsh.option.setNumber("Mesh.Algorithm", mesh_algo)
+    gmsh.option.setNumber("Mesh.Algorithm3D", mesh_algo3D)
+    for i=1:n
+        gmsh.model.geo.addPoint(ibzpts[:,i]...,meshsize,i)
+    end
+    
+    if dim == 2
+        for i=1:n
+            gmsh.model.geo.addLine(i, mod1(i+1,n), i)
+        end
+        gmsh.model.geo.addCurveLoop(collect(1:n), n+1)
+        gmsh.model.geo.addPlaneSurface([n+1], n+2)
+    else
+        # Make normals to surface point away from the IBZ
+        indices = get_uniquefacets(ibz)
+        c = mean(ibzpts,dims=2)
+        for (i,ind) in enumerate(indices)
+            p1,p2,p3 = [ibzpts[:,i] for i=ind[1:3]]
+            nor = cross(p2-p1, p3 - p1)
+            d = [dot(nor,p-c) for p=[p1,p2,p3]]
+            if all(d .> 0 .| isapprox.(d,0,atol=atol))
+                indices[i] = reverse(ind)
+            end
+        end
+        f = n+1
+        sl = []
+        edges = []
+        edgesᵢ = []
+        for (i,ind) in enumerate(indices)
+            m = length(ind)
+            ls = []
+            for j=1:m
+                edge = (ind[j], ind[mod1(j+1,m)])
+                pos = findall(x->(x==edge)||x==reverse(edge),edges)
+                if pos == []
+                    gmsh.model.geo.addLine(edge..., f+j)
+                    edges = [edges; edge]
+                    edgesᵢ = [edgesᵢ; f+j]
+                    ls = [ls;f+j]
+                else
+                    if edge in edges
+                        ls = [ls;edgesᵢ[pos[1]]]
+                    else
+                       ls = [ls;-edgesᵢ[pos[1]]]
+                    end
+                end
+            end
+            gmsh.model.geo.addCurveLoop(ls, f+m+1)
+            gmsh.model.geo.addPlaneSurface([f+m+1], f+m+2)
+            sl = [sl;f+m+2]
+            f += m + 2
+        end
+        gmsh.model.geo.addSurfaceLoop(sl,f+1)
+        gmsh.model.geo.addVolume([f+1],f+2)
+    end 
+    gmsh.model.geo.synchronize()
+    gmsh.model.mesh.generate(dim=dim)
+    entities = gmsh.model.getEntities()
+    pts = []
+    for ent in entities
+        nt,nc,npa = gmsh.model.mesh.getNodes(ent...)
+        pts = [pts; nc]
+    end
+    pts = reshape(pts,3,Int(length(pts)/3))
+    pts = pts[1:dim,:]
+    box_length = def_mesh_scale*maximum(abs.(ibz.points))
+    if dim == 2
+        box_pts = reduce(hcat,[[mean(ibz.points,dims=1)...] + box_length*[i,j] 
+            for i=[-1,1] for j=[-1,1]])
+    elseif dim == 3
+        box_pts = reduce(hcat,[[mean(ibz.points,dims=1)...] + box_length*[i,j,k] 
+            for i=[-1,1] for j=[-1,1] for k=[-1,1]])  
+    end
+    elemTypes, elemTags, elemNodeTags = gmsh.model.mesh.getElements(dim)
+    nt = Int.(elemNodeTags[1])
+    simplicesᵢ = [nt[i:i+dim] .+ 2^dim for i=1:dim+1:length(nt)-dim];
+    mesh = spatial.Delaunay([box_pts pts]')
+    gmsh.finalize()
+    mesh,simplicesᵢ
+end
+
+@doc """
+    ibz_initmesh(ibz,num_kpoints;opt_threshold,mesh_algo,mesh_algo3D,
+        opt_algo, opt_iters,atol)
+
+Calculate a uniform mesh over the IBZ using gmsh.
+
+# Arguments
+- `ibz::Chull`: 
+- `meshsize::Real`:
+- `opt_threshold::Real=1.0`: 
+- `mesh_algo::Integer=6`: 
+- `mesh_algo3D::Integer=1`: 
+- `opt_algo::Integer=1`: 
+- `opt_iters::Integer=100`:
+- `atol::Real=def_atol`: 
+
+# Returns
+- `mesh`: a triangular or tetrahedral mesh over the IBZ
+- `msimplicesᵢ`: the simplices of the mesh obtained from gmsh.
+
+# Examples
+```
+using Pebsi.EPMs, Pebsi.Mesh
+ibz = epm.m11.ibz
+meshsize = 0.1
+gmsh_initmesh(ibz,meshsize)
+```
+"""
+function ibz_initmesh(ibz,num_kpoints;
+    opt_threshold::Real=1.0, mesh_algo::Integer=6, mesh_algo3D::Integer=1,
+    opt_algo::Integer=1, opt_iters::Integer=100, kpoint_tol::Real=def_kpoint_tol, 
+    atol::Real=def_atol)
+    dim = size(ibz.points,2)
+    # Estimate the size of the mesh that will give the desired number of k-points
+    meshsize = (ibz.volume/num_kpoints)^(1/dim)
+    # Find mesh sizes that have more and less than the desired number of k-points
+    meshsize₀ = meshsize; meshsize₁ = meshsize
+    @suppress mesh,simplices = gmsh_initmesh(ibz, meshsize, opt_threshold=opt_threshold,
+    mesh_algo=mesh_algo, mesh_algo3D=mesh_algo3D, opt_algo=opt_algo, opt_iters=opt_iters,
+    atol=atol)
+    mesh₀ = mesh; mesh₁ = mesh; simplices₀ = simplices; simplices₁ = simplices
+    npts = size(mesh.points,1) - 2^dim
+    npts₀ = npts; npts₁ = npts
+    if npts > num_kpoints
+        while npts₀ > num_kpoints
+            meshsize₀ *= 2
+            @suppress mesh₀,simplices₀ = gmsh_initmesh(ibz, meshsize₀, opt_threshold=opt_threshold,
+            mesh_algo=mesh_algo, mesh_algo3D=mesh_algo3D, opt_algo=opt_algo, opt_iters=opt_iters,
+            atol=atol)
+            npts₀ = size(mesh₀.points,1) - 2^dim
+        end
+    else
+        while npts₁ < num_kpoints
+            meshsize₁ /= 2
+            @suppress mesh₁,simplices₁ = gmsh_initmesh(ibz, meshsize₁, opt_threshold=opt_threshold,
+            mesh_algo=mesh_algo, mesh_algo3D=mesh_algo3D, opt_algo=opt_algo, opt_iters=opt_iters,
+            atol=atol)
+            npts₁ = size(mesh₁.points,1) - 2^dim
+        end
+    end
+    meshsize = (meshsize₀ + meshsize₁)/2
+    mesh,simplices = gmsh_initmesh(ibz, meshsize)
+    npts = size(mesh.points,1) - 2^dim
+    prev_npts = npts
+    while abs(npts - num_kpoints) > kpoint_tol*num_kpoints
+        if npts > num_kpoints
+            npts₁ = npts; meshsize₁ = meshsize
+        else
+            npts₀ = npts; meshsize₀ = meshsize
+        end
+        meshsize = (meshsize₀ + meshsize₁)/2
+        @suppress mesh,simplices = gmsh_initmesh(ibz, meshsize, opt_threshold=opt_threshold,
+        mesh_algo=mesh_algo, mesh_algo3D=mesh_algo3D, opt_algo=opt_algo, opt_iters=opt_iters,
+        atol=atol)
+        npts = size(mesh.points,1) - 2^dim
+        if prev_npts == npts
+            break
+        else
+            prev_npts = npts
+        end
+    end
+    mesh,simplices
 end
 end # Module

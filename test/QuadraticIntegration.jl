@@ -7,7 +7,6 @@ using Pebsi.QuadraticIntegration: coeff_order1, coeff_order2, coeff_order3, coef
     vert_order1, vert_order2, vert_order3, vert_order4, slice_order1, slice_order2, slice_order3,
     slice_order4
 
-
 function contains_intersect(intersects,int1)
     contained = false
     if int1 == []
@@ -55,7 +54,6 @@ end
         coeffs = [-1,-2,-4]
         @test quadval_vertex(coeffs) == 0
     end
-
     @testset "simplex_intersects" begin
         dim=2
         deg=2
@@ -356,7 +354,6 @@ end
         intersects = simplex_intersects(bezpts)
         @test containsall(intersects, [[-0.7272474743090477 0.7272474743090478; 0.0 0.0], [0.7903769733600696; 0.20962302663993032], [-0.7903769733600696; 0.20962302663993038]])
     end
-
     @testset "two₋intersects_area₋volume" begin
         # Intersections on same edge
         bezpts = [-1.0 0.0 1.0 -0.5 0.5 0.0; 0.0 0.0 0.0 0.5 0.5 1.0; -0.89 -0.08 -1.28 1.12 -0.081 -0.88]
@@ -781,7 +778,6 @@ end
         bezpts = [simplex_pts;coeffs']
         @test isapprox(quad_area₋volume(bezpts,"area"),1/3)
     end
-
     @testset "quadslice_tanpt" begin
         ans_tpts = [[0.18257418583505536, 0.18257418583505536, 0.18257418583505536],
         [0.31622776601683794, 0.0, 0.0],
@@ -862,7 +858,6 @@ end
             end
         end
     end
-
     @testset "simpson3D" begin
         answers = [[0.016557647109660602, -0.0006623058843864066],
             [0.052787355609319415, -0.035171236804781694], 
@@ -871,54 +866,59 @@ end
             [0.03924641746264576, -0.048706217271428785]]
          
         tet = [0 1 0 0; 0 0 1 0; 0 0 0 1]
+        spts = [0.0 0.5 1.0 0.0 0.5 0.0 0.0 0.5 0.0 0.0; 0.0 0.0 0.0 0.5 0.5 1.0 0.0 0.0 0.5 0.0; 
+        0.0 0.0 0.0 0.0 0.0 0.0 0.5 0.5 0.5 1.0]
         coeffs1 = [-1/10, -1/10, 9/10, -1/10, -1/10, 9/10, -1/10, -1/10, -1/10, 9/10]
         coeffs2 = [-1.7, 1.5, 3.1, -5.5, 2.2, 5.1, 2.7, 3.3, -2.8, -1.6]
         coeffs3 = [3.3, 0.2, -0.1, -1.2, 0.9, -5.9, -3.3, -2.8, -0.5, -2.1]
         coeffs4 = [-2.8, -5.5, -2.1, -0.6, -0.3, -0.4, 3.1, 0.8, 0.4, 0.2]
         coeffs5 = [-8.5, 9.1, 0.2, -1.1, -4.4, 0.0, 2.9, 3.8, 10.4, -3.6]
         allcoeffs = [coeffs1, coeffs2, coeffs3, coeffs4, coeffs5]
-         
-        vals = [[simpson3D(coeffs,tet,q,num_slices=100,split=false,corner=4) for q=["area","volume"]] for coeffs=allcoeffs]
+        allbezpts = [[spts; coeffs'] for coeffs = allcoeffs]
+        
+        vals = [[simpson3D(bezpts,q,num_slices=100,split=false,corner=4) for q=["area","volume"]] for bezpts=allbezpts]
         test = [abs.(vals[i] .- answers[i]) for i=1:length(vals)]
         @test maximum(maximum(test)) < 5e-6
          
-        vals = [[simpson3D(coeffs,tet,q,num_slices=100,split=true,corner=3) for q=["area","volume"]] for coeffs=allcoeffs]
+        vals = [[simpson3D(bezpts,q,num_slices=100,split=true,corner=3) for q=["area","volume"]] for bezpts=allbezpts]
         test = [abs.(vals[i] .- answers[i]) for i=1:length(vals)]
         @test maximum(maximum(test)) < 5e-6
     end
-
     @testset "length_area1D" begin
         interval = [-1,2]
+        spts = [-1, 0.5, 2]
         coeffs = [-1,0.5,1.2] 
-        l1 = length_area1D(coeffs,interval,"area",100001,gauss=true)
+        bezpts= [spts'; coeffs']
+        l1 = length_area1D(bezpts,"area",num_slices=100001,gauss=true)
         domain = getdomain(coeffs);
         domain = [x*(interval[2] - interval[1]) + interval[1] for x=domain]
         l2 = diff(domain)[1]
         @test isapprox(l1,l2,atol=1e-4)
-        a1 = length_area1D(coeffs,interval,"volume",100001,gauss=true)
+        a1 = length_area1D(bezpts,"volume",num_slices=100001,gauss=true)
         a2 = analytic_area1D(coeffs,getdomain(coeffs))*(interval[2] - interval[1])
         @test isapprox(a1,a2,atol=1e-4)
     end
-
     @testset "area_volume2D" begin        
         triangle = [0 1 0; 0 0 1]
         sbpts = sample_simplex(2,2)
         spts = barytocart(sbpts,triangle)
         coeffs = [-0.1, -0.2, -0.4, 0.4, 0.3, -0.3]
         bezpts = [spts; coeffs']
-        @test isapprox(abs(area_volume2D(coeffs,triangle,"area",100) - quad_area₋volume(bezpts,"area")),0,atol=1e-4)
-        @test isapprox(abs(area_volume2D(coeffs,triangle,"volume",100) - quad_area₋volume(bezpts,"volume")),0,atol=1e-6)
+        @test isapprox(abs(area_volume2D(bezpts,"area") - quad_area₋volume(bezpts,"area")),0,atol=1e-4)
+        @test isapprox(abs(area_volume2D(bezpts,"volume") - quad_area₋volume(bezpts,"volume")),0,atol=1e-6)
     end
-
-    # @testset "volume_hypvol3D" begin
-    #     tetrahedron = [0 1 0 0; 0 0 1 0; 0 0 0 1]
-    #     coeffs = [-0.2,-0.3, 0.2,0.3,0.4,-0.5,-0.6.-0.2,0.1,0.2,0.1]
-    #     v1 = simpson3D(coeffs,tetrahedron,"area")
-    #     v2 = volume_hypvol3D(coeffs,tetrahedron,"area",10)
-    #     @test isapprox(v1,v2,atol=1e-2)
+    @testset "volume_hypvol3D" begin
+        spts = [0.0 0.5 1.0 0.0 0.5 0.0 0.0 0.5 0.0 0.0; 0.0 0.0 0.0 0.5 0.5 1.0 0.0 0.0 0.5 0.0; 
+            0.0 0.0 0.0 0.0 0.0 0.0 0.5 0.5 0.5 1.0]
+        tetrahedron = [0 1 0 0; 0 0 1 0; 0 0 0 1]
+        coeffs = [-0.2,-0.3,0.2,0.3,0.4,-0.5,-0.6,-0.2,0.1,0.2]
+        bezpts = [spts; coeffs']
+        v1 = simpson3D(bezpts,"area")
+        v2 = volume_hypvol3D(bezpts,"area",num_slices=10)
+        @test isapprox(abs(v1-v2),0,atol=1e-2)
         
-    #     h1 = simpson3D(coeffs,tetrahedron,"volume")
-    #     h2 = volume_hypvol3D(coeffs,tetrahedron,"volume",10)
-    #     @test isapprox(h1,h2,atol=1e-5)
-    # end
+        h1 = simpson3D(bezpts,"volume")
+        h2 = volume_hypvol3D(bezpts,"volume",num_slices=10)
+        @test isapprox(abs(h1-h2),0,atol=1e-4)
+    end
 end
