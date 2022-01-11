@@ -5,7 +5,7 @@ using ..Geometry: simplex_size, barytocart, lineseg₋pt_dist, ptface_mindist,
 using ..Defaults: def_atol, def_mesh_scale, def_max_neighbor_tol,
     def_neighbors_per_bin2D, def_neighbors_per_bin3D, def_num_neighbors2D, 
     def_num_neighbors3D, def_kpoint_tol
-using SymmetryReduceBZ.Utilities: unique_points, get_uniquefacets
+using SymmetryReduceBZ.Utilities: unique_points, get_uniquefacets, sortpts2D
 using PyCall: pyimport,PyObject
 using QHull: Chull
 using Statistics: mean

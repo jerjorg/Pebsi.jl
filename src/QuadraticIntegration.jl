@@ -5,11 +5,11 @@ using SymmetryReduceBZ.Utilities: unique_points, shoelace, remove_duplicates, ge
 using SymmetryReduceBZ.Symmetry: calc_spacegroup
 
 using ..Polynomials: eval_poly,getpoly_coeffs,getbez_pts₋wts,eval_bezcurve,
-    conicsection, evalpoly1D, get_1Dquad_coeffs, solve_quadratic
+    conicsection, evalpoly1D, get_1Dquad_coeffs, solve_quadratic, bernstein_basis
 using ..EPMs: eval_epm, epm₋model, epm₋model2D
 using ..Mesh: get_neighbors, notbox_simplices, get_cvpts, ibz_init₋mesh, 
     get_extmesh, choose_neighbors, choose_neighbors3D, trimesh, ntripts, ntetpts,
-    get_sym₋unique!, simplex_cornerpts
+    get_sym₋unique!, simplex_cornerpts, ibz_initmesh
 using ..Geometry: order_vertices!, simplex_size, insimplex, barytocart,
     carttobary, sample_simplex, lineseg₋pt_dist, mapto_xyplane, ptface_mindist
 using ..Defaults
@@ -30,7 +30,7 @@ export bandstructure, init_bandstructure, quadval_vertex, corner_indices,
     bezcurve_intersects, getdomain, analytic_area1D, simpson, simpson2D, 
     linept_dist, tetface_areas, simpson3D, quadslice_tanpt, containment_percentage,
     stop_refinement!, calc_fabe, quadlin_esterr, length_area1D, area_volume2D,
-    volume_hypvol3D, init_exactfit
+    volume_hypvol3D, init_exactfit, cubequad_esterr
 
 @doc """
     bandstructure
@@ -157,7 +157,7 @@ mutable struct bandstructure
 end
 
 @doc """
-    init_bandstructure(epm,init_msize,num_near_neigh,num_neighbors,fermiarea_eps,
+    init_bandstructure(epm,init_msize,num_kpoints,num_near_neigh,num_neighbors,fermiarea_eps,
         target_accuracy,fermilevel_method,refine_method,sample_method,neighbor_method,
         fatten,weighted,constrained,stop_criterion,target_kpoints,exactfit,polydegree,
         rtol,atol)
@@ -185,6 +185,7 @@ bandstructure
 function init_bandstructure(
     epm::Union{epm₋model,epm₋model2D,epm₋model};
     init_msize::Integer=def_init_msize,
+    init_num_kpoints::Integer=def_num_kpoints,
     num_near_neigh::Integer=def_num_near_neigh,
     num_neighbors::Union{Nothing,Integer}=nothing,
     fermiarea_eps::Real=def_fermiarea_eps,
@@ -204,13 +205,13 @@ function init_bandstructure(
     atol::Real=def_atol)
 
     dim = size(epm.recip_latvecs,1)
-    mesh = ibz_init₋mesh(epm.ibz,init_msize;rtol=rtol,atol=atol)
     if exactfit
         (points, mesh, simplicesᵢ, sym₋unique, eigenvals, mesh_bezcoeffs, mesh_intcoeffs) =
-            init_exactfit(epm,init_msize=init_msize,polydegree=polydegree,atol=atol,
+            init_exactfit(epm,num_kpoints=init_num_kpoints,polydegree=polydegree,atol=atol,
             rtol=rtol)
         ext_mesh = mesh; num_neighbors = 0;
     else
+        mesh = ibz_init₋mesh(epm.ibz,init_msize;rtol=rtol,atol=atol)
         mesh,ext_mesh,sym₋unique = get_extmesh(epm.ibz,mesh,epm.pointgroup,
             epm.recip_latvecs,num_near_neigh; rtol=rtol,atol=atol)
         simplicesᵢ = notbox_simplices(mesh)
@@ -223,8 +224,9 @@ function init_bandstructure(
         if num_neighbors == nothing
             num_neighbors = if dim == 2 def_num_neighbors2D else def_num_neighbors3D end
         end
-        coeffs = [get_intercoeffs(index,mesh,ext_mesh,sym₋unique,eigenvals,
-            simplicesᵢ,fatten,num_near_neigh,epm=epm,neighbor_method=neighbor_method,
+        coeffs = [get_intercoeffs(index,mesh=mesh,ext_mesh=ext_mesh,sym₋unique=sym₋unique,
+            eigenvals=eigenvals,simplicesᵢ=simplicesᵢ,degree=polydegree,fatten=fatten,
+            num_near_neigh=num_near_neigh,epm=epm,neighbor_method=neighbor_method,
             num_neighbors=num_neighbors, weighted=weighted, constrained=constrained) 
             for index=1:length(simplicesᵢ)]
         mesh_intcoeffs = [coeffs[index][1] for index=1:length(simplicesᵢ)]
@@ -891,7 +893,7 @@ function quad_area₋volume(bezpts::AbstractMatrix{<:Real},
 end
 
 @doc """
-    get_intercoeffs(index, mesh, ext_mesh, sym₋unique, eigenvals, simplicesᵢ,
+    get_intercoeffs(index, mesh, ext_mesh, sym₋unique, eigenvals, simplicesᵢ, degree,
         fatten, num_near_neigh; sigma, epm, neighbor_method, num_neighbors, weighted,
         constrained, atol)
 
@@ -906,6 +908,7 @@ Calculate the interval Bezier points for all sheets.
 - `eigenvals::AbstractMatrix{<:Real}`: a matrix of eigenvalues for the symmetrically
     distinc points as columns of a matrix.
 - `simplicesᵢ::AbstractVector`: the simplices of `mesh` that do not include the box points.
+- `degree::Integer`: the degree of the polynomial.
 - `fatten::Real=def_fatten`: scale the interval coefficients by this amount.
 - `num_near_neigh::Integer=def_num_near_neigh`: how many nearest neighbors to include.
 - `sigma::Integer=0`: the number of sheets summed and then interpolated, if any.
@@ -941,29 +944,37 @@ for i = sort(unique(sym₋unique))[2:end]
     eigenvals[:,i] = eval_epm(mesh.points[i,:],m2recip_latvecs,m2rules,m2cutoff,sheets,energy_conv)
 end
 index = 1
-intercoeffs,bezcoeffs = get_intercoeffs(index,mesh,ext_mesh,sym₋unique,eigenvals,simplicesᵢ)
+degree = 2
+intercoeffs,bezcoeffs = get_intercoeffs(index,mesh=mesh,ext_mesh=ext_mesh,sym₋unique=sym₋unique,
+    eigenvals=eigenvals,simplicesᵢ=simplicesᵢ,degree=degree)
 length(bezcoeffs)
 # output
 7
 ```
 """
-function get_intercoeffs(index::Integer, mesh::PyObject, ext_mesh::PyObject,
+function get_intercoeffs(index::Integer; mesh::PyObject, ext_mesh::PyObject,
     sym₋unique::AbstractVector{<:Real}, eigenvals::AbstractMatrix{<:Real}, 
-    simplicesᵢ::AbstractVector, fatten::Real=def_fatten, 
-    num_near_neigh::Integer=def_num_near_neigh; sigma::Real=0, 
+    simplicesᵢ::AbstractVector, degree::Integer, fatten::Real=def_fatten, 
+    num_near_neigh::Integer=def_num_near_neigh, sigma::Real=0, 
     epm::Union{Nothing,epm₋model2D,epm₋model}=nothing,
     neighbor_method::Integer=def_neighbor_method, 
     num_neighbors::Union{Nothing,Integer}=nothing,
     weighted::Bool=false,constrained::Bool=true,atol::Real=def_atol)
+
     simplexᵢ = simplicesᵢ[index]
     simplex = Matrix(mesh.points[simplexᵢ,:]')
-    dim = size(simplex,2)-1 
+    dim = size(simplex,2)-1
+    nsheets = size(eigenvals,1)
+    if dim == 2
+        nterms = ntripts(degree)
+    else
+        nterms = ntetpts(degree)
+    end
     neighborsᵢ = reduce(vcat,[get_neighbors(s,ext_mesh,num_near_neigh) for s=simplexᵢ]) |> unique
     neighborsᵢ = filter(x -> !(x in simplexᵢ),neighborsᵢ)
     if num_neighbors == nothing
         num_neighbors = if dim == 2 def_num_neighbors2D else def_num_neighbors3D end
     end
-
     if length(neighborsᵢ) < num_neighbors num_neighbors = length(neighborsᵢ) end
 
     # Select neighbors that are closest to the triangle.
@@ -997,26 +1008,18 @@ function get_intercoeffs(index::Integer, mesh::PyObject, ext_mesh::PyObject,
     else
         b = carttobary(ext_mesh.points[neighborsᵢ,:]',simplex)
     end
-
-    # Constrained least-squares
-    if constrained
-        if dim == 2
-            M = mapslices(x -> 2*[x[1]*x[2],x[1]*x[3],x[2]*x[3]],b,dims=1)'
-        else
-            M = mapslices(x -> 2*[x[1]*x[2],x[1]*x[3],x[2]*x[3],x[1]*x[4],x[2]*x[4],x[3]*x[4]],b,dims=1)'
-        end
-    # Unconstrained least-squares
-    else
-        if dim == 2
-            b = [[1 0 0; 0 1 0; 0 0 1] b]
-            M = mapslices(x->[x[1]^2,2*x[1]*x[2],x[2]^2,2*x[1]*x[3],2*x[2]*x[3],x[3]^2],b,dims=1)'
-        else
-            b = [[1 0 0 0; 0 1 0 0; 0 0 1 0; 0 0 0 1] b]
-            M = mapslices(x->[x[1]^2,2*x[1]*x[2],x[2]^2,2*x[1]*x[3],2*x[2]*x[3],x[3]^2,
-                2*x[1]*x[4],2*x[2]*x[4],2*x[3]*x[4],x[4]^2],b,dims=1)' 
-        end
+    cornerind = simplex_cornerpts(dim,degree)
+    if !constrained && neighbor_method != 3
+        # Add corner points to b
+        b = [sample_simplex(dim,degree)[:,cornerind] b]
     end
-
+    M = Matrix(bernstein_basis(b,dim,degree)')
+    if constrained && neighbor_method != 3
+        # Remove terms at corners of basis function evaluations matrix
+        ind = setdiff(1:nterms,cornerind)
+        M = M[:,ind]
+    end
+ 
     # Weighted least squares
     if weighted
         if dim == 2
@@ -1031,17 +1034,17 @@ function get_intercoeffs(index::Integer, mesh::PyObject, ext_mesh::PyObject,
     else
         W = I
     end
- 
-    nterms = sum([i for i=1:dim+1])
+     
+    # Only one sheet if calculating the coefficients of the sigma sheet.
     if sigma == 0
-        bezcoeffs = [zeros(nterms) for i=1:size(eigenvals,1)]
-        inter_bezcoeffs = [zeros(dim,6) for i=1:size(eigenvals,1)]
+        bezcoeffs = [zeros(nterms) for i=1:nsheets]
+        inter_bezcoeffs = [zeros(2,nterms) for i=1:nsheets]
     else
         bezcoeffs = [zeros(nterms) for i=1:1]
-        inter_bezcoeffs = [zeros(dim,6) for i=1:1]
+        inter_bezcoeffs = [zeros(2,nterms) for i=1:1]
     end
-
-    for sheet = 1:size(eigenvals,1)
+     
+    for sheet = 1:nsheets
         if sigma == 0
             if neighbor_method != 3
                 fᵢ = eigenvals[sheet,sym₋unique[neighborsᵢ]]
@@ -1064,7 +1067,7 @@ function get_intercoeffs(index::Integer, mesh::PyObject, ext_mesh::PyObject,
             fᵢ = [q; fᵢ];
             Z = fᵢ
         end
-
+     
         if weighted
             MWM = M'*W*M
             if isapprox(det(MWM),0,atol=atol)
@@ -1076,55 +1079,28 @@ function get_intercoeffs(index::Integer, mesh::PyObject, ext_mesh::PyObject,
             # c = pinv(M)*Z        
             c = M\Z
         end
-        if dim == 2
-            c1,c2,c3 = c
-            q1,q2,q3 = q
-        else
-            c1,c2,c3,c4,c5,c6 = c
-            q1,q2,q3,q4 = q
-        end
-
-        if dim == 2        
-            scoeffs = [q1,c1,q2,c2,c3,q3]
-        else
-            scoeffs = [q1,c1,q2,c2,c3,q3,c4,c5,c6,q4]
-        end
-
-        if sigma == 0
-            if constrained
-                bezcoeffs[sheet] = scoeffs
-            else
-                bezcoeffs[sheet] = c
-            end
-        else
-            if constrained
-                bezcoeffs[1] = scoeffs
-            else
-                bezcoeffs[1] = c
-            end
-        end
         if constrained
-            qᵢ = [eval_poly(b[:,i],scoeffs,dim,2) for i=1:size(b,2)]
+            scoeffs = zeros(nterms)
+            scoeffs[cornerind] = q
+            scoeffs[setdiff(1:nterms,cornerind)] = c
         else
-            qᵢ = [eval_poly(b[:,i],c,dim,2) for i=1:size(b,2)]
+            scoeffs = c
         end
+        bezcoeffs[sheet] = scoeffs
+        qᵢ = [eval_poly(b[:,i],scoeffs,dim,degree) for i=1:size(b,2)]
         δᵢ = fᵢ - qᵢ; 
         ϵ = Matrix(reduce(hcat,[(1/dot(M[i,:],M[i,:])*δᵢ[i])*M[i,:] for i=1:length(δᵢ)])')
-        ϵ = [minimum(ϵ,dims=1); maximum(ϵ,dims=1)].*fatten 
+        ϵ = [minimum(ϵ,dims=1); maximum(ϵ,dims=1)].*fatten
         intercoeffs = [c';c'] .+ ϵ
         if constrained
-            if dim == 2
-                c1,c2,c3 = [intercoeffs[:,i] for i=1:3]
-                intercoeffs = reduce(hcat,[[q1,q1],c1,[q2,q2],c2,c3,[q3,q3]])
-            else
-                c1,c2,c3,c4,c5,c6 = [intercoeffs[:,i] for i=1:6]
-                intercoeffs = reduce(hcat,[[q1,q1],c1,[q2,q2],c2,c3,[q3,q3],c4,c5,c6,[q4,q4]])
-            end
+            ic = zeros(2,nterms)
+            ic[:,cornerind] = [q q]'
+            ic[:,setdiff(1:nterms,cornerind)] = intercoeffs
+            intercoeffs = ic
         end
-        if sigma == 0
-            inter_bezcoeffs[sheet] = intercoeffs
-        else
-            inter_bezcoeffs[1] = intercoeffs
+
+        inter_bezcoeffs[sheet] = intercoeffs
+        if sigma != 0
             break
         end
     end
@@ -1215,13 +1191,17 @@ function calc_fl(epm::Union{epm₋model,epm₋model2D},ebs::bandstructure;
     E = (E₁ + E₂)/2
     f₃,E₃,iters,f,t = 0,0,0,1e9,0
     ϵ = def_chandrupatla_tol
+    fhist = []
+    count = 1
     while abs(f) > ebs.fermiarea_eps
+        count += 1
         iters += 1
-        if iters > def_fl_max_iters
-            @warn "Failed to converge the Fermi area to within the provided tolerance of $(ebs.fermiarea_eps) after $(def_fl_max_iters) iterations. Fermi area converged to within $(f)."
+        if (iters > def_fl_max_iters) || ((length(fhist) - length(unique(fhist))) > 5)
+            @warn "Failed to converge the Fermi area to within the provided tolerance of $(ebs.fermiarea_eps) after $(count) iterations. Fermi area converged to within $(f)."
                 break
         end
         f = calc_fabe(ebs, quantity="area", ctype=ctype, fl=E, num_slices=num_slices) - fermi_area
+        append!(fhist,f)
 
         if sign(f) != sign(f₁)
             E₃ = E₂
@@ -1305,7 +1285,24 @@ function calc_flbe!(epm::Union{epm₋model2D,epm₋model},ebs::bandstructure;
         fl = calc_fl(epm, ebs, fermi_area=epm.fermiarea/npg, ctype="mean", num_slices=num_slices)
         be = calc_fabe(ebs, quantity="volume", ctype="mean", fl=fl, num_slices=num_slices,
             sum_fabe=true)
+        # Calculate occupancy of sheets
+        simplices = [Matrix(ebs.mesh.points[s,:]') for s=ebs.simplicesᵢ]
+        # The areas of the triangles in the mesh
+        simplex_sizes = [simplex_size(s) for s=simplices];     
+        nsheet,npts = size(ebs.eigenvals);
+        mesh_fa = calc_fabe(ebs, quantity="area", ctype="mean", fl=ebs.fermilevel, num_slices=def_num_slices, sum_fabe=false)
+        partial_occ = [[(
+            if isapprox(mesh_fa[tri][sheet],0,atol=ebs.atol)
+                2
+            elseif isapprox(mesh_fa[tri][sheet],simplex_sizes[tri],atol=ebs.atol)
+                0
+            else
+                1
+            end
+            ) for sheet=1:epm.sheets] for tri = 1:nsheet];
+            
         ebs.fermilevel = fl; ebs.bandenergy = 2*npg*(be + fl*epm.fermiarea/npg)
+        ebs.partially_occupied = partial_occ
         return ebs
     end
     
@@ -1399,8 +1396,10 @@ function calc_flbe!(epm::Union{epm₋model2D,epm₋model},ebs::bandstructure;
         (if sigmas[i] == nothing
             [[zeros(2,nterms)],[zeros(1,nterms)]]
         else
-            get_intercoeffs(i,ebs.mesh,ebs.ext_mesh,ebs.sym₋unique,ebs.eigenvals,ebs.simplicesᵢ,ebs.fatten,ebs.num_near_neigh,sigma=sigmas[i],epm=epm,
-            neighbor_method = ebs.neighbor_method)
+            get_intercoeffs(i,mesh=ebs.mesh,ext_mesh=ebs.ext_mesh,sym₋unique=ebs.sym₋unique,
+            eigenvals=ebs.eigenvals,simplicesᵢ=ebs.simplicesᵢ,degree=ebs.polydegree,
+            fatten=ebs.fatten,num_near_neigh=ebs.num_near_neigh,sigma=sigmas[i],
+            epm=epm,neighbor_method=ebs.neighbor_method)
         end) for i=1:ns]
 
     # Calculate the "sigma" coefficients for the "true" occupations of the sheets. The true sigma 
@@ -1410,7 +1409,9 @@ function calc_flbe!(epm::Union{epm₋model2D,epm₋model},ebs::bandstructure;
         (if true_sigmas[i] == nothing
             [[zeros(2,nterms)],[zeros(1,nterms)]]
         else
-            get_intercoeffs(i,ebs.mesh,ebs.ext_mesh,ebs.sym₋unique,ebs.eigenvals,ebs.simplicesᵢ,ebs.fatten,ebs.num_near_neigh,sigma=true_sigmas[i],epm=epm,
+            get_intercoeffs(i,mesh=ebs.mesh,ext_mesh=ebs.ext_mesh,sym₋unique=ebs.sym₋unique,
+            eigenvals=ebs.eigenvals,simplicesᵢ=ebs.simplicesᵢ,degree=ebs.polydegree,
+            fatten=ebs.fatten,num_near_neigh=ebs.num_near_neigh,sigma=true_sigmas[i],epm=epm,
             neighbor_method = ebs.neighbor_method)
         end) for i=1:ns]
     
@@ -1740,8 +1741,9 @@ function refine_mesh!(epm::Union{epm₋model2D,epm₋model},ebs::bandstructure)
     end
 
     ebs.simplicesᵢ = notbox_simplices(ebs.mesh)
-    coeffs = [get_intercoeffs(index,ebs.mesh,ebs.ext_mesh,
-    ebs.sym₋unique,ebs.eigenvals,ebs.simplicesᵢ,ebs.fatten,ebs.num_near_neigh,
+    coeffs = [get_intercoeffs(index,mesh=ebs.mesh,ext_mesh=ebs.ext_mesh,
+    sym₋unique=ebs.sym₋unique,eigenvals=ebs.eigenvals,simplicesᵢ=ebs.simplicesᵢ,
+    degree=ebs.polydegree,fatten=ebs.fatten,num_near_neigh=ebs.num_near_neigh,
     neighbor_method=ebs.neighbor_method,epm=epm) for index=1:length(ebs.simplicesᵢ)]
 
     ebs.mesh_intcoeffs = [coeffs[index][1] for index=1:length(ebs.simplicesᵢ)]
@@ -2841,6 +2843,25 @@ function quadlin_esterr(epm,ebs;num_slices::Integer=def_num_slices)
 end
 
 @doc """
+    cubequad_esterr(epm,ebs)
+
+Estimate the band energy error by taking the difference between cubic and quadratic polynomials.
+"""
+function cubequad_esterr(epm,ebs)
+    ebs3 = ebs; ebs3.polydegree = 3
+    ns = length(ebs3.simplicesᵢ)
+    c = [get_intercoeffs(i,mesh=ebs3.mesh,ext_mesh=ebs3.ext_mesh,sym₋unique=ebs3.sym₋unique,
+        eigenvals=ebs3.eigenvals,simplicesᵢ=ebs3.simplicesᵢ,degree=ebs3.polydegree,constrained=false)
+            for i=1:ns]
+    coeffs = [i[2] for i=c]; intervals = [i[1] for i=c]
+    ebs3.mesh_bezcoeffs = coeffs; ebs3.mesh_intcoeffs = intervals
+    fl = ebs3.fermilevel
+    be = calc_fabe(ebs3, quantity="volume", ctype="mean", fl=fl, num_slices=def_num_slices,sum_fabe=true)
+    npg = length(epm.pointgroup); fl = ebs3.fermilevel; fa = epm.fermiarea
+    abs(ebs.bandenergy - 2*npg*(be + fl*fa/npg))
+end
+
+@doc """
     length_area1D(bezpts,quantity;num_slices,gauss,values,atol)
 
 Calculate the area or length of a polynomial where it is less than zero.
@@ -3143,7 +3164,7 @@ Calculate the polynomial coefficients for an exact fit, among other quantities.
 
 # Arguments
 - `epm::Union{epm₋model,epm₋model2D}`: an empirical pseudopotential object.
-- `init_msize::Integer`: the number of divisions of an edge of the IBZ.
+- `num_kpoints::Integer`: the number of k-points in the mesh.
 - `polydegree::Integer`: the degree of the polynomial.
 
 # Returns
@@ -3162,11 +3183,10 @@ using Pebsi.EPMs, Pebsi.QuadraticIntegration
 init_exactfit(m11,init_msize=3,polydegree=1)
 ```
 """
-function init_exactfit(epm::Union{epm₋model,epm₋model2D}; init_msize::Integer, polydegree::Integer,
-    atol=def_atol,rtol=def_rtol)
+function init_exactfit(epm::Union{epm₋model,epm₋model2D}; num_kpoints::Integer, polydegree::Integer,
+    atol::Real=def_atol,rtol::Real=def_rtol)
     dim = size(epm.recip_latvecs,1)
-    mesh = ibz_init₋mesh(epm.ibz,init_msize)
-    simplicesᵢ = notbox_simplices(mesh)
+    mesh,simplicesᵢ = ibz_initmesh(epm.ibz,num_kpoints)
     simplices = [Array(mesh.points[s,:]') for s=simplicesᵢ]
     bspts = sample_simplex(dim,polydegree);
     pts = [barytocart(bspts,s) for s=simplices]
