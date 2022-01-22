@@ -30,7 +30,7 @@ export bandstructure, init_bandstructure, quadval_vertex, corner_indices,
     bezcurve_intersects, getdomain, analytic_area1D, simpson, simpson2D, 
     linept_dist, tetface_areas, simpson3D, quadslice_tanpt, containment_percentage,
     stop_refinement!, calc_fabe, quadlin_esterr, length_area1D, area_volume2D,
-    volume_hypvol3D, init_exactfit, cubequad_esterr
+    volume_hypvol3D, init_exactfit, cubequad_esterr, kpoint_weights
 
 @doc """
     bandstructure
@@ -157,7 +157,7 @@ mutable struct bandstructure
 end
 
 @doc """
-    init_bandstructure(epm,init_msize,num_kpoints,num_near_neigh,num_neighbors,fermiarea_eps,
+    init_bandstructure(epm,init_msize,init_num_kpoints,num_near_neigh,num_neighbors,fermiarea_eps,
         target_accuracy,fermilevel_method,refine_method,sample_method,neighbor_method,
         fatten,weighted,constrained,stop_criterion,target_kpoints,exactfit,polydegree,
         rtol,atol)
@@ -1299,7 +1299,7 @@ function calc_flbe!(epm::Union{epm₋model2D,epm₋model},ebs::bandstructure;
             else
                 1
             end
-            ) for sheet=1:epm.sheets] for tri = 1:nsheet];
+            ) for sheet=1:epm.sheets] for tri = 1:length(simplices)]
             
         ebs.fermilevel = fl; ebs.bandenergy = 2*npg*(be + fl*epm.fermiarea/npg)
         ebs.partially_occupied = partial_occ
@@ -2761,7 +2761,7 @@ calc_fabe(ebs,quantity,ctype,fl)
 """
 function calc_fabe(ebs::bandstructure; quantity::String, ctype::String, fl::Real=ebs.fermilevel,
     num_slices::Integer=def_num_slices, sum_fabe::Bool=true, sheets::Union{Nothing,Vector}=nothing)
-
+     
     ns = length(ebs.simplicesᵢ)
     nsheets = size(ebs.eigenvals,1)
     if sheets == nothing
@@ -2776,7 +2776,7 @@ function calc_fabe(ebs::bandstructure; quantity::String, ctype::String, fl::Real
         coeffs = ebs.mesh_bezcoeffs
         cfun = do_nothing
     end
-
+     
     fabe = [[0. for sheet=1:nsheets] for tri=1:ns]
     quadfun = (
         if dim == 2
@@ -2784,7 +2784,7 @@ function calc_fabe(ebs::bandstructure; quantity::String, ctype::String, fl::Real
         else
             if ebs.polydegree > 3 volume_hypvol3D else simpson3D end
         end)
-
+     
     d = if ebs.polydegree < 2 2 else ebs.polydegree end       
     simplex_bpts = sample_simplex(dim,d)
     simplex_pts = [barytocart(simplex_bpts,s) for s=simplices]
@@ -3158,7 +3158,7 @@ function volume_hypvol3D(bezpts::Matrix{<:Real}, quantity::String;
 end
 
 @doc """
-    init_exactfit(epm; init_msize, polydegree)
+    init_exactfit(epm; num_kpoints,polydegree,atol,rtol)
 
 Calculate the polynomial coefficients for an exact fit, among other quantities.
 
@@ -3239,5 +3239,64 @@ function init_exactfit(epm::Union{epm₋model,epm₋model2D}; num_kpoints::Integ
     mesh_intcoeffs = [[Matrix([mesh_bezcoeffs[i][j] mesh_bezcoeffs[i][j]]') 
         for j=1:epm.sheets] for i=1:length(simplices)]
     (unique_pts, mesh, simplicesᵢ, sym₋unique, eigenvals, mesh_bezcoeffs, mesh_intcoeffs)
+end
+
+@doc """
+    kpoint_weights(epm,ebs;def_num_slices)
+
+Calculate the k-points weights for a give approximation of the band structure.
+
+# Arguments
+- `epm::Union{epm₋model,epm₋model2D,epm₋model}`: the empirical pseudopotential.
+- `ebs::bandstructure`: the band structure
+- `num_slices::Integer=def_num_slices)`: the number of slices for integration.
+
+# Returns
+- `ns_weights::Vector{<:Real}`: the weights for the number of states
+- `be_weights::Vector{<:Real}`: the weights for the band energy
+
+# Examples
+using Pebsi.EPMs, Pebsi.QuadraticIntegration
+ebs = init_bandstructure(m11)
+kpoint_weights(epm,ebs)
+"""
+function kpoint_weights(epm::Union{epm₋model,epm₋model2D,epm₋model},
+        ebs::bandstructure; num_slices::Integer=def_num_slices)
+    dim = size(epm.recip_latvecs,1)
+    npg = length(epm.pointgroup)
+
+    # The "true" Fermi level for the given approximation of the band structure
+    fl = calc_fl(epm, ebs, fermi_area=epm.fermiarea/npg, ctype="mean", num_slices=num_slices)
+
+    # Calculate the Fermi area and band energy for each tile and sheet.
+    mesh_fa = npg.*calc_fabe(ebs, quantity="area", ctype="mean", fl=fl, num_slices=num_slices,
+        sum_fabe=false)
+    mesh_be = calc_fabe(ebs, quantity="volume", ctype="mean", fl=fl, num_slices=num_slices,
+        sum_fabe=false)
+    mesh_be = 2 .* (npg.*mesh_be .+ fl*mesh_fa);
+
+    start = 2^dim +1
+    simplices = [Matrix(ebs.mesh.points[s,:]') for s=ebs.simplicesᵢ];
+    sum([simplex_size(s) for s=simplices]) - epm.ibz.volume
+
+    spts = [[] for i=1:length(simplices)]
+    for i=1:size(ebs.points,2)
+        for j=1:length(simplices)
+            if insimplex(carttobary(ebs.points[:,i],simplices[j]))
+                spts[j] = [spts[j]; i]
+            end
+        end
+    end
+    
+    nsheets,npts = size(ebs.eigenvals)
+    ns_weights = zeros(nsheets,npts)
+    be_weights = zeros(nsheets,npts);
+    for i=1:length(spts)
+        for j=1:nsheets
+            ns_weights[j,spts[i]] .+= mesh_fa[i][j]/length(spts[i])
+            be_weights[j,spts[i]] .+= mesh_be[i][j]/length(spts[i])
+        end
+    end
+   ns_weights, be_weights 
 end
 end # module
