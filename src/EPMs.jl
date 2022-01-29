@@ -178,35 +178,52 @@ Rb_rules = [1.46 => -0.002]
 Sn_rules = [4.48 => 0.033,1.65 => -0.056,2.38 => -0.069,3.75 => 0.051]
 Zn_rules = [1.34 => -0.022,1.59 => 0.063,1.44 => 0.02]
 
-# The number of electrons for pseudopotential models
-Ag_electrons = 1
+# # The number of electrons for pseudopotential models with the correct number
+# # of valence electrons
+# Ag_electrons = 1
+# Al_electrons = 3
+# Au_electrons = 1
+# Cs_electrons = 1
+# Cu_electrons = 1
+# In_electrons = 3
+# K_electrons = 1
+# Li_electrons = 1
+# Na_electrons = 1
+# Pb_electrons = 4
+# Rb_electrons = 1
+# Sn_electrons = 4
+# Zn_electrons = 2
+
+# The number of valence electrons so that there are always multiple sheets
+Ag_electrons = 5
 Al_electrons = 3
-Au_electrons = 1
-Cs_electrons = 1
-Cu_electrons = 1
+Au_electrons = 3
+Cs_electrons = 7
+Cu_electrons = 5
 In_electrons = 3
-K_electrons = 1
-Li_electrons = 1
-Na_electrons = 1
+K_electrons = 5
+Li_electrons = 3
+Na_electrons = 3
 Pb_electrons = 4
-Rb_electrons = 1
+Rb_electrons = 5
 Sn_electrons = 4
-Zn_electrons = 2
+Zn_electrons = 5
+
 
 # The number of sheets included in band energy calculations
-Ag_sheets = 1 + 3
-Al_sheets = 4 + 2
-Au_sheets = 1 + 2
-Cs_sheets = 2 + 2
-Cu_sheets = 1 + 2
-In_sheets = 4 + 2
-K_sheets = 2 + 2
-Li_sheets = 1 + 2
-Na_sheets = 2 + 2
-Pb_sheets = 4 + 2
-Rb_sheets = 2 + 2
-Sn_sheets = 5 + 2 
-Zn_sheets = 3 + 2
+Ag_sheets = round(Ag_electrons/2) + 2
+Al_sheets = round(Al_electrons/2) + 2
+Au_sheets = round(Au_electrons/2) + 2
+Cs_sheets = round(Cs_electrons/2) + 2
+Cu_sheets = round(Cu_electrons/2) + 2
+In_sheets = round(In_electrons/2) + 2
+K_sheets = round(K_electrons/2) + 2
+Li_sheets = round(Li_electrons/2) + 2
+Na_sheets = round(Na_electrons/2) + 2
+Pb_sheets = round(Pb_electrons/2) + 2
+Rb_sheets = round(Rb_electrons/2) + 2
+Sn_sheets = round(Sn_electrons/2) + 2 
+Zn_sheets = round(Zn_electrons/2) + 2
 
 # Cutoffs are chosen so that there are at least 1000 terms in the expansion at
 # the origin.
