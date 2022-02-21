@@ -394,8 +394,8 @@ saddlepoint(coeffs)
 # output
 3-element Vector{Float64}:
  0.5000000000000001
- 4.163336342344338e-17
  0.5000000000000001
+ 4.163336342344338e-17
 ```
 """
 function saddlepoint(coeffs::AbstractVector{<:Real};
@@ -1138,7 +1138,7 @@ epm = m21
 ebs = init_bandstructure(epm);
 calc_fl(epm,ebs)
 # output
-0.06335261485115436
+0.0607640136066831
 ```
 """
 function calc_fl(epm::Union{epm₋model,epm₋model2D},ebs::bandstructure; 
@@ -1255,7 +1255,7 @@ Calculate the Fermi level and band energy for a given rep. of the band struct.
 # Arguments
 - `epm::Union{epm₋model2D,epm₋model}`: an empirical pseudopotential.
 - `ebs::bandstructure`: the band structure container.
-- `num_slices::Integer=10`: the number of slices when integrating in 3D.
+- `num_slices::Integer=def_num_slices`: the number of slices when integrating in 3D.
 - `flerrors::Bool=true`: if true, band energy errors include effects from Fermi 
     level error.
 
@@ -1273,7 +1273,7 @@ ebs = init_bandstructure(epm);
 calc_flbe!(epm,ebs)
 ebs.bandenergy
 # output
-0.013600374450169372
+0.007513770523596364
 ```
 """
 function calc_flbe!(epm::Union{epm₋model2D,epm₋model},ebs::bandstructure;
@@ -1868,14 +1868,12 @@ See the documentation for `bandstructure` for descriptions of the optional argum
 - `ebs::bandstructure`: a quadratic approximation of the band structure.
 
 # Examples
-```jldoctest
+```
 using Pebsi.EPMs: m51
 using Pebsi.QuadraticIntegration: quadratic_method
 epm = m51
 ebs = quadratic_method(epm,target_accuracy=1e-2)
 abs(ebs.bandenergy - epm.bandenergy) < 1e-1
-# output
-true
 ```
 """
 function quadratic_method(epm::Union{epm₋model2D,epm₋model};
@@ -2213,6 +2211,7 @@ Calculate the shortest distance between a point and a line embedded in 2D.
 using Pebsi.QuadraticIntegration: linept_dist
 line = [0 1; 0 0]
 pt = [0,2]
+linept_dist(line,pt)
 # output
 2.0
 ```
@@ -2316,7 +2315,7 @@ true
 ```
 """
 function simpson3D(bezpts::Matrix{<:Real}, quantity::String; num_slices::Integer=def_num_slices,
-    values::Bool=false, gauss::Bool=true, split::Bool=true, corner::Union{Nothing,Integer}=nothing,
+    values::Bool=false, gauss::Bool=false, split::Bool=false, corner::Union{Nothing,Integer}=1,
     atol::Real=def_atol)
     coeffs = bezpts[end,:]
     # All the coefficients are well below zero.

@@ -1028,7 +1028,7 @@ cutoff = 3.0
 sheets = 10
 eval_epm(kpoint, rlatvecs, rules, cutoff, sheets)
 # output
- 10-element Vector{Float64}:
+10-element Vector{Float64}:
  -0.025091555116792823
  13.191390044925443
  13.191390044925663
@@ -1114,13 +1114,11 @@ Calculate the eigenvalues of an empirical pseudopotential at a *k*-point.
 import Pebsi.EPMs: eval_epm,Al_epm
 eval_epm([0,0,0],Al_epm)
 # output
-6-element Vector{Float64}:
+4-element Vector{Float64}:
  -0.05904720925479707
  26.68476356943067
  26.684763569434374
  26.68476356943802
- 26.713073023266258
- 28.17466342570331
 ```
 """
 function eval_epm(kpoint::AbstractVector{<:Real},
@@ -1158,7 +1156,7 @@ import Pebsi.EPMs: eval_epm, Al_epm
 eigvals = eval_epm([0 0; 0 1; 0 0],Al_epm)
 size(eigvals)
 # output
-(6, 2)
+(4, 2)
 ```
 """
 function eval_epm(kpoints::AbstractMatrix{<:Real},

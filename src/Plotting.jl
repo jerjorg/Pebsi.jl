@@ -231,10 +231,10 @@ Plot the triangles shaded by error and approx. Fermi curve of an approx. of the 
 - `ax::PyObject`: a `PyPlot` axes object. 
 """
 function contourplot(ebs::bandstructure, ax::Union{PyObject,Nothing}=nothing;
-    sort::Bool=false, linewidth::Real=0.5, edgecolor::String="black", 
+    sort::Bool=false, linewidth::Real=0.5, edgecolor::String="black",
     filled::Bool=false, ndiv::Integer=100,
-    colors::AbstractVector{String}=["black","white"], alpha_curve::Real=1, 
-    curvewidths::Real=0.5)::PyObject 
+    colors::AbstractVector{String}=["black","white"], alpha_curve::Real=1,
+    curvewidths::Real=0.5)::PyObject
      
     patch=pyimport("matplotlib.patches")
     collections=pyimport("matplotlib.collections")

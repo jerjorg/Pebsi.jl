@@ -301,7 +301,7 @@ n = 2
 mesh = ibz_init₋mesh(ibz,n)
 mesh.npoints
 # output
-8
+13
 ```
 """
 function ibz_init₋mesh(ibz::Chull{<:Real},n::Int;
@@ -356,22 +356,10 @@ Calculate the symmetrically unique points within the IBZ.
 using Pebsi.EPMs: m51
 using Pebsi.Mesh: get_sym₋unique!, ibz_init₋mesh
 mesh = ibz_init₋mesh(m51.ibz,3)
-sym_unique,points = get_sym₋unique!(mesh.points',m51.pointgroup)
-sym_unique
+sym_unique,points = get_sym₋unique!(Matrix(mesh.points'),m51.pointgroup)
+length(sym_unique)
 # output
-12-element Vector{Int64}:
-  0
-  0
-  0
-  0
-  5
-  6
-  7
-  8
-  9
- 10
- 11
-  7
+44
 ```
 """
 function get_sym₋unique!(points::Matrix{<:Real},pointgroup::Vector{Matrix{Float64}};
@@ -443,13 +431,13 @@ Determine all simplices in a triangulation that do not contain a box point.
     box points.
 
 # Examples
-```jldoctest
+```
 using Pebsi.EPMs: m51
 using Pebsi.Mesh: ibz_init₋mesh, notbox_simplices
-mesh = ibz_init₋mesh(m51.ibz,3)
+mesh = ibz_init₋mesh(m51.ibz,1)
 notbox_simplices(mesh)
 # output
-8-element Vector{Vector{var"#s29"} where var"#s29"<:Integer}:
+8-element Vector{Vector{var"#s18"} where var"#s18"<:Integer}:
  [10, 6, 9]
  [10, 8, 12]
  [8, 10, 9]
