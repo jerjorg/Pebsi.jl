@@ -2310,12 +2310,13 @@ spts = [0.0 0.5 1.0 0.0 0.5 0.0 0.0 0.5 0.0 0.0; 0.0 0.0 0.0 0.5 0.5 1.0 0.0 0.0
 coeffs = [-1/10, -1/10, 9/10, -1/10, -1/10, 9/10, -1/10, -1/10, -1/10, 9/10]
 bezpts= [spts; coeffs']
 simpson3D(bezpts,"area",num_slices=10) ≈ 0.01528831567698499
+
 # output
 true
 ```
 """
-function simpson3D(bezpts::Matrix{<:Real}, quantity::String; num_slices::Integer=def_num_slices,
-    values::Bool=false, gauss::Bool=false, split::Bool=false, corner::Union{Nothing,Integer}=1,
+function simpson3D(bezpts::Matrix{<:Real}, quantity::String; num_slices::Integer=def_num_slices, 
+    values::Bool=false, gauss::Bool=true, split::Bool=true, corner::Union{Nothing,Integer}=Nothing,
     atol::Real=def_atol)
     coeffs = bezpts[end,:]
     # All the coefficients are well below zero.
