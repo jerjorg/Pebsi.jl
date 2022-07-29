@@ -2316,7 +2316,7 @@ true
 ```
 """
 function simpson3D(bezpts::Matrix{<:Real}, quantity::String; num_slices::Integer=def_num_slices, 
-    values::Bool=false, gauss::Bool=true, split::Bool=true, corner::Union{Nothing,Integer}=Nothing,
+    values::Bool=false, gauss::Bool=true, split::Bool=true, corner::Union{Nothing,Integer}=nothing,
     atol::Real=def_atol)
     coeffs = bezpts[end,:]
     # All the coefficients are well below zero.
@@ -2790,6 +2790,9 @@ function calc_fabe(ebs::bandstructure; quantity::String, ctype::String, fl::Real
     simplex_pts = [barytocart(simplex_bpts,s) for s=simplices]
     for tri=1:ns
         for sheet=sheets[tri]
+            # println("bezpts: ", [simplex_pts[tri]; [cfun(coeffs[tri][sheet],dims=1)...]' .- fl])
+            # println("quantity: ", quantity)
+            # println("num_slices: ", num_slices)
             fabe[tri][sheet] = quadfun([simplex_pts[tri]; [cfun(coeffs[tri][sheet],dims=1)...]' .- fl],
                 quantity, num_slices=num_slices)
         end
@@ -3252,8 +3255,10 @@ Calculate the k-points weights for a give approximation of the band structure.
 - `num_slices::Integer=def_num_slices)`: the number of slices for integration.
 
 # Returns
-- `ns_weights::Vector{<:Real}`: the weights for the number of states
-- `be_weights::Vector{<:Real}`: the weights for the band energy
+- `eigenvals::Matrix{<:Real}`: the eigenvalues of the band structure at each 
+    sample k-point.
+- `ns_weights::Matrix{<:Real}`: the weights for the number of states
+- `be_weights::Matrix{<:Real}`: the weights for the band energy
 
 # Examples
 using Pebsi.EPMs, Pebsi.QuadraticIntegration
@@ -3274,11 +3279,8 @@ function kpoint_weights(epm::Union{epm₋model,epm₋model2D,epm₋model},
     mesh_be = calc_fabe(ebs, quantity="volume", ctype="mean", fl=fl, num_slices=num_slices,
         sum_fabe=false)
     mesh_be = 2 .* (npg.*mesh_be .+ fl*mesh_fa);
-
     start = 2^dim +1
     simplices = [Matrix(ebs.mesh.points[s,:]') for s=ebs.simplicesᵢ];
-    sum([simplex_size(s) for s=simplices]) - epm.ibz.volume
-
     spts = [[] for i=1:length(simplices)]
     for i=1:size(ebs.points,2)
         for j=1:length(simplices)
@@ -3297,6 +3299,14 @@ function kpoint_weights(epm::Union{epm₋model,epm₋model2D,epm₋model},
             be_weights[j,spts[i]] .+= mesh_be[i][j]/length(spts[i])
         end
     end
-   ns_weights, be_weights 
+
+
+    # Integration is a weighted sum of eigenvalues. Remove the eigenvalues for 
+    # the bounding box and divide the weights by the eigenvalues
+    be_weights = (be_weights ./ ebs.eigenvals)[:,start:end]
+    ns_weights = (ns_weights ./ ebs.eigenvals)[:,start:end]
+    eigenvals = ebs.eigenvals[:,start:end]
+
+    eigenvals,ns_weights, be_weights 
 end
 end # module

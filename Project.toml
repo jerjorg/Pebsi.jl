@@ -46,6 +46,8 @@ Suppressor = "fd094767-a336-5f1f-9728-57cf17d0bbfb"
 SymPy = "24249f21-da20-56a4-8eb1-6a02cf4ae2e6"
 SymmetryReduceBZ = "49a35663-c880-4242-bebb-1ec8c0fa8046"
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
+Unitful = "1986cc42-f94f-5a68-af5c-568840ba703d"
+UnitfulAtomic = "a7773ee8-282e-5fa2-be4e-bd808c38a91a"
 
 [compat]
 julia = "1.6"
