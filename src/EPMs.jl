@@ -1062,7 +1062,7 @@ function eval_epm(kpoint::AbstractVector{<:Real},
     end
 
     npts = size(rlatpts,2)
-    if npts < sheets[end]
+    if npts < sheets
         error("The cutoff is too small for the requested number of sheets. The"*
             " number of terms in the expansion is $npts.")
     end
@@ -1070,7 +1070,7 @@ function eval_epm(kpoint::AbstractVector{<:Real},
     ham=zeros(Float64,npts,npts)
     maxff = maximum([x[2] for x=rules])
     maxd = maximum([x[1] for x=rules]) + 1e-3
-    pairwise!(ham, SqEuclidean(), rlatpts, dims=2)
+    pairwise!(SqEuclidean(), ham, rlatpts, dims=2)
     replace!(x -> x > maxd ? 0 : x, ham)
     ind = findall(!iszero, ham)
     ham[ind] = replace(round.(ham[ind],digits=2),rules...)

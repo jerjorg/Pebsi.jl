@@ -7,6 +7,6 @@ include("EPMs.jl")
 include("Mesh.jl")
 include("RectangularMethod.jl")
 include("QuadraticIntegration.jl")
-include("Plotting.jl")
+# include("Plotting.jl")  # Temporarily disabled due to PyCall issues
 
 end
