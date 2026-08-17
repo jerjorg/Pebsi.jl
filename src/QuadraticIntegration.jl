@@ -729,8 +729,16 @@ function two₋intersects_area₋volume(bezpts::AbstractMatrix{<:Real},
     bezptsᵣ = []
     if intersects != [[],[],[]]
         all_intersects = reduce(hcat,[i for i=intersects if i != []])
+        # Known limitation, reachable via the `m31` EPM: `split_bezsurf` can hand
+        # back a surface with three intersections when it cannot subdivide the
+        # triangle any further. The trigger is a triangle of area ~3e-9, where
+        # the box-padded Delaunay triangulation in `split_bezsurf1` produces only
+        # triangles with a corner on the padding box, so `tri_ind` is empty.
+        # `def_min_simplex_size` (1e-12) is far too small to catch this. Deciding
+        # how such a patch should contribute is a question about the integration
+        # method, not a typo, so it is left erroring rather than papered over.
         if size(all_intersects,2) != 2
-            error("Can only calculate the area or volume when the curve intersects 
+            error("Can only calculate the area or volume when the curve intersects
                 the triangle at two points or doesn't intersect the triangle.")
         end
         p₀ = all_intersects[:,1]
