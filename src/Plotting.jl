@@ -16,8 +16,15 @@ using SymmetryReduceBZ.Lattices: get_recip_latvecs
 export meshplot, contourplot, bezplot, bezcurve_plot, polygonplot, 
     plot_bandstructure, fermicurve_plot
 
-prop_cycle = plt.rcParams["axes.prop_cycle"]
-colors = prop_cycle.by_key()["color"]    
+# The default matplotlib color cycle. This has to be populated in `__init__`
+# rather than at module scope: PyPlot binds `plt` in its own `__init__`, so at
+# precompilation time it is still a NULL PyObject and indexing it throws.
+const colors = String[]
+
+function __init__()
+    prop_cycle = plt.rcParams["axes.prop_cycle"]
+    append!(colors, prop_cycle.by_key()["color"])
+end
 
 @doc """
     meshplot(meshpts,ax,color)
