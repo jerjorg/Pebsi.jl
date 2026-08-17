@@ -4,7 +4,7 @@ using Pebsi.QuadraticIntegration: bezcurve_intersects, getdomain, analytic_area1
     simpson, simpson3D
 using Pebsi.Geometry: sample_simplex, barytocart
 
-@testset "Simpson" begin
+@testset "SimpsonQuadrature" begin
   @testset "bezcurve_intersects" begin
     # Case 1: [0,0,0]
     coeffs = [0,0,0]
