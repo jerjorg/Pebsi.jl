@@ -34,5 +34,6 @@ Pkg.add(url="https://github.com/jerjorg/Pebsi.jl")
 
 ## Status
 
-This is research code written alongside work on adaptive Brillouin zone integration. It is
-functional but not under active development.
+This package implements the methods developed for research on adaptive Brillouin zone
+integration. It is complete and functional, and is kept as a reference implementation of
+those methods.
