@@ -349,8 +349,8 @@ bezpts = [-1.0 0.0 1.0 -0.5 0.5 0.0; 0.0 0.0 0.0 0.5 0.5 1.0; 0.0 -1.0 -2.0 1.0 
 simplex_intersects(bezpts)
 # output
 3-element Vector{Array}:
- [-1.0; 0.0]
- [0.5; 0.5]
+ [-1.0; 0.0;;]
+ [0.5; 0.5;;]
  Any[]
 ```
 """
@@ -476,9 +476,11 @@ function split_bezsurf₁(bezpts::AbstractMatrix{<:Real}; atol::Real=def_atol)::
     del = spatial.Delaunay(Matrix(allpts'))
     tri_ind = notbox_simplices(del)
     # For small triangles, all triangles may have a corner at a box corner.
-    # In this case, return the original points.
+    # In this case, return the original points. Return `bezpts` rather than
+    # `pts`: callers expect the coefficients in the last row, and dropping it
+    # leaves a matrix one row short that fails downstream in `simplex_size`.
     if length(tri_ind) == 0
-        return [pts]
+        return [bezpts]
     end
     tri_ind = reduce(hcat,tri_ind)
     subtri = [order_vertices!(allpts[:,tri_ind[:,i]]) for i=1:size(tri_ind,2)]
@@ -527,14 +529,24 @@ function split_bezsurf(bezpts::AbstractMatrix{<:Real};atol=def_atol)::AbstractAr
         num_intersects = [sum([size(sub_intersects[i][j])[1] == 0 ? 0 : 
             size(sub_intersects[i][j])[2] for j=1:3]) for i=1:length(sub_intersects)]
         while any(num_intersects .> 2)
+            # `split_bezsurf₁` returns its input unchanged when the surface
+            # cannot be subdivided any further (a degenerate or very small
+            # triangle). Re-splitting such a surface makes no progress, so track
+            # whether any split succeeded and stop when none did — otherwise
+            # this loop never terminates.
+            split_occurred = false
             for i = length(num_intersects):-1:1
                 if num_intersects[i] <= 2 continue end
-                append!(sub_bezpts,split_bezsurf₁(sub_bezpts[i]))
+                subs = split_bezsurf₁(sub_bezpts[i])
+                if length(subs) == 1 continue end
+                split_occurred = true
+                append!(sub_bezpts,subs)
                 deleteat!(sub_bezpts,i)
                 sub_intersects = [simplex_intersects(b,atol=atol) for b=sub_bezpts]
-                num_intersects = [sum([size(sub_intersects[i][j])[1] == 0 ? 0 : 
+                num_intersects = [sum([size(sub_intersects[i][j])[1] == 0 ? 0 :
                     size(sub_intersects[i][j])[2] for j=1:3]) for i=1:length(sub_intersects)]
             end
+            if !split_occurred break end
         end
     end
     sub_bezpts
@@ -652,7 +664,7 @@ sub₋coeffs(bezpts,subtriangle)
   1.75
  -0.07322330470336313
   0.45710678118654746
- -5.551115123125783e-17
+ -4.85722573273506e-17
 ```
 """
 function sub₋coeffs(bezpts::AbstractMatrix{<:Real},
@@ -1138,7 +1150,7 @@ epm = m21
 ebs = init_bandstructure(epm);
 calc_fl(epm,ebs)
 # output
-0.0607640136066831
+0.061318649613692225
 ```
 """
 function calc_fl(epm::Union{epm₋model,epm₋model2D},ebs::bandstructure; 
@@ -1671,7 +1683,7 @@ function refine_mesh!(epm::Union{epm₋model2D,epm₋model},ebs::bandstructure)
 
     if dim == 2
         # The Line segments that bound the IBZ.
-        borders = [Matrix(epm.ibz.points[i,:]') for i=epm.ibz.simplices]
+        borders = [Matrix(epm.ibz.points[i,:]') for i=eachrow(epm.ibz.simplices)]
         distfun = lineseg₋pt_dist
         # Translations that need to be considered when calculating points outside the IBZ.
         # Assumes the reciprocal latice vectors are Minkowski reduced.

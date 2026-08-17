@@ -505,7 +505,7 @@ get_cvpts(Matrix(mesh.points'),ibz)
 function get_cvpts(points::Matrix{<:Real},ibz::Chull;atol::Real=def_atol)::AbstractVector{<:Integer}
     dim = size(points,1)
     if dim == 2
-        borders = [Matrix(ibz.points[i,:]') for i=ibz.simplices]
+        borders = [Matrix(ibz.points[i,:]') for i=eachrow(ibz.simplices)]
         distfun = lineseg₋pt_dist
     else
         borders = [Matrix(ibz.points[f,:]') for f=get_uniquefacets(ibz)]
@@ -572,14 +572,14 @@ function get_extmesh(ibz::Chull,mesh::PyObject,pointgroup::Vector{Matrix{Float64
                     for j=get_neighbors(i,mesh,near_neigh)] for i=cv_pointsᵢ]))
 
     if dim == 2
-        borders = [Matrix(ibz.points[i,:]') for i=ibz.simplices]
+        borders = [Matrix(ibz.points[i,:]') for i=eachrow(ibz.simplices)]
         distfun = lineseg₋pt_dist
         bztrans = [[[i,j] for i=-1:1,j=-1:1]...]
     else
         borders = [Matrix(ibz.points[f,:]') for f=get_uniquefacets(ibz)]
         distfun = ptface_mindist
         bztrans = [[[i,j,k] for i=-1:1,j=-1:1,k=-1:1]...]
-    end 
+    end
 
     neighborsᵢ = reduce(vcat,[get_neighbors(i,mesh,near_neigh) for i=cv_pointsᵢ]) |> unique
     neighbors = zeros(Float64,dim,length(neighborsᵢ)*length(pointgroup)*length(bztrans));
