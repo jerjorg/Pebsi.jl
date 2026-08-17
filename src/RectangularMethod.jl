@@ -100,7 +100,7 @@ import Pebsi.EPMs: m11
 import Pebsi.RectangularMethod: rectangular_method
 rectangular_method(m11,3)
 # output
-(3, 0.6898935531209884, 2.021267761566246)
+(3, 0.6898935531209407, 2.0212677615661567)
 ```
 """
 function rectangular_method(epm::Union{epm₋model2D,epm₋model},
@@ -300,7 +300,7 @@ pointgroup = [[0.0 -1.0; -1.0 0.0], [0.0 -1.0; 1.0 0.0], [-1.0 0.0; 0.0 -1.0],
     [0.0 1.0; -1.0 0.0], [0.0 1.0; 1.0 0.0]]
 symreduce_grid(recip_latvecs,N,grid_offset,pointgroup)
 # output
-([4], [0.25; 0.25], [[0.25 0.75 0.75 0.25; 0.25 0.75 0.25 0.75]])
+([4], [0.25; 0.25;;], [[0.25 0.75 0.75 0.25; 0.25 0.75 0.25 0.75]])
 ```
 """
 function symreduce_grid(recip_latvecs::AbstractMatrix{<:Real},

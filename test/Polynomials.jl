@@ -2,8 +2,13 @@ using Test
 
 using Pebsi.Polynomials: bernstein_basis, getpoly_coeffs, eval_poly
 using Pebsi.Geometry: barytocart
-using PyCall: pyimport
-sympy=pyimport("sympy")
+using PyCall: pyimport_conda
+# Make sure sympy exists in the Python environment PyCall is using. A plain
+# `pyimport` assumes it is already installed, which does not hold on CI: the
+# Julia cache does not cover ~/.julia/conda, so the Conda environment starts
+# empty on a fresh runner. `pyimport_conda` installs it if it is missing, the
+# same way QHull obtains scipy.
+pyimport_conda("sympy", "sympy")
 using SymPy: symbols, Sym
 
 @testset "Polynomials" begin

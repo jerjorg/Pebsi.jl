@@ -30,12 +30,12 @@ using SymPy: symbols, Sym
 s,t,u=symbols("s,t,u")
 bernstein_basis([s,t,u],2,2)
 # output
-6-element Vector{Sym}:
+6-element Vector{Sym{PyCall.PyObject}}:
  1.0*s^2
- 2.0⋅s⋅t
+ 2.0*s*t
  1.0*t^2
- 2.0⋅s⋅u
- 2.0⋅t⋅u
+ 2.0*s*u
+ 2.0*t*u
  1.0*u^2
 ```
 """
@@ -110,7 +110,7 @@ getpoly_coeffs(values,simplex_bpts,dim,deg)
   0.65
   0.3
  -0.9
- -0.25
+ -0.24999999999999997
  -0.2
 ```
 """
@@ -212,7 +212,7 @@ p₀ = [1,0]
 p₂ = [0,1]
 bptswts = getbez_pts₋wts(bezpts,p₀,p₂)
 # output
-2-element Vector{Array{Float64, N} where N}:
+2-element Vector{Array{Float64}}:
  [1.0 0.0 0.0; 0.0 0.3333333333333333 1.0]
  [1.0, 1.5, 1.0]
 ```
