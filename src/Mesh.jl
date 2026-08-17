@@ -4,7 +4,7 @@ using ..Geometry: simplex_size, barytocart, lineseg₋pt_dist, ptface_mindist,
     sample_simplex
 using ..Defaults: def_atol, def_mesh_scale, def_max_neighbor_tol,
     def_neighbors_per_bin2D, def_neighbors_per_bin3D, def_num_neighbors2D, 
-    def_num_neighbors3D, def_kpoint_tol
+    def_num_neighbors3D, def_initmesh_kpoint_tol
 using SymmetryReduceBZ.Utilities: unique_points, get_uniquefacets, sortpts2D
 using PyCall: pyimport,PyObject
 using QHull: Chull
@@ -859,7 +859,7 @@ gmsh_initmesh(ibz,meshsize)
 """
 function ibz_initmesh(ibz,num_kpoints;
     opt_threshold::Real=1.0, mesh_algo::Integer=6, mesh_algo3D::Integer=1,
-    opt_algo::Integer=1, opt_iters::Integer=100, kpoint_tol::Real=def_kpoint_tol, 
+    opt_algo::Integer=1, opt_iters::Integer=100, kpoint_tol::Real=def_initmesh_kpoint_tol,
     atol::Real=def_atol)
     dim = size(ibz.points,2)
     # Estimate the size of the mesh that will give the desired number of k-points

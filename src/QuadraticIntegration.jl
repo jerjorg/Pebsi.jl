@@ -1865,7 +1865,7 @@ function stop_refinement!(epm::Union{epm₋model,epm₋model2D},ebs::bandstructu
         stop = db/da*diff(ebs.fermiarea_interval)[1]/2 < ebs.target_accuracy
     elseif ebs.stop_criterion == 4 
         nkpts = size(ebs.eigenvals,2) - 2^size(epm.recip_latvecs,1)
-        stop = ((ebs.target_kpoints - nkpts) < def_kpoint_tol*nkpts/100) || (nkpts >  ebs.target_kpoints)
+        stop = ((ebs.target_kpoints - nkpts) < def_stop_kpoint_tol*nkpts) || (nkpts >  ebs.target_kpoints)
     else
         error("Valid values of stop_criterion are integers 1,...,4")
     end

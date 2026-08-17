@@ -34,10 +34,10 @@ def_weighted = false # Points are not weighted to calculate interval coefficient
 def_constrained = true # Band structure interpolated with constrained least squares
 def_stop_criterion = 4 # The default method used to determine if AMR may stop
 def_target_kpoints = 100 # The default number of k-points for stop_criterion = 4
-def_kpoint_tol = 5 # The number of k-points may be within this percentage of the target k-points
+def_stop_kpoint_tol = 0.05 # AMR may stop when the k-point count is within this fraction of the target
 def_deriv_step = 1e-4 # The step size for numerical derivatives
 def_num_slices = 100 # The number of slices for integration in 3D
-def_kpoint_tol = 0.05 # The number of k-points is within this amount of the number requested for IBZ mesh
+def_initmesh_kpoint_tol = 0.05 # The IBZ mesh k-point count is within this fraction of the number requested
 def_num_kpoints = 100 # The default number of k-points
 
 # Export all
