@@ -49,6 +49,7 @@ UnitfulAtomic = "a7773ee8-282e-5fa2-be4e-bd808c38a91a"
 
 [compat]
 Conda = "1.10.2"
+SymmetryReduceBZ = "0.1"
 julia = "1.6"
 
 [extras]
