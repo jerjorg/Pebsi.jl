@@ -19,7 +19,11 @@ export meshplot, contourplot, bezplot, bezcurve_plot, polygonplot,
 # The default matplotlib color cycle. This has to be populated in `__init__`
 # rather than at module scope: PyPlot binds `plt` in its own `__init__`, so at
 # precompilation time it is still a NULL PyObject and indexing it throws.
-const colors = String[]
+#
+# The element type is deliberately `Any`: depending on the matplotlib version and
+# active style, the cycle comes back either as hex strings ("#1f77b4") or as RGB
+# tuples. Both are accepted wherever these values are handed back to matplotlib.
+const colors = Any[]
 
 function __init__()
     prop_cycle = plt.rcParams["axes.prop_cycle"]
