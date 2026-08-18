@@ -55,7 +55,7 @@ function refine_mesh!(epm::Union{EPM2D,EPM},ebs::BandStructure)
         bandenergy_err = 2*sum(ebs.fermiarea_errors)*ebs.fermilevel_interval[2]
         splitpos = filter(x -> x>0,[2*ebs.fermiarea_errors[i]*ebs.fermilevel_interval[2] > err_cutoff[i] ? i : 0 for i=1:length(err_cutoff)])
         if length(splitpos) == 0 || bandenergy_err < ebs.target_accuracy
-            ebs.refine_method = 3
+            ebs.refine_method = refine_fraction_above_allowed
             refine_mesh!(epm,ebs)
             return ebs
         elseif length(splitpos) > n
@@ -67,7 +67,7 @@ function refine_mesh!(epm::Union{EPM2D,EPM},ebs::BandStructure)
     elseif ebs.refine_method == refine_fermiarea_largest
         if sum(ebs.fermiarea_errors) < ebs.fermiarea_eps
             println("Switching to band energy refinement.")
-            ebs.refine_method = 6
+            ebs.refine_method = refine_partially_occupied
             refine_mesh!(epm,ebs)
             return ebs
         end
@@ -100,7 +100,7 @@ function refine_mesh!(epm::Union{EPM2D,EPM},ebs::BandStructure)
             splitpos = order
         end        
     else
-        ArgumentError("Unhandled RefineMethod: $(ebs.refine_method)")
+        throw(ArgumentError("Unhandled RefineMethod: $(ebs.refine_method)"))
     end
 
     # Split fewer simplices if too many k-points are added.
@@ -146,7 +146,7 @@ function refine_mesh!(epm::Union{EPM2D,EPM},ebs::BandStructure)
         barytocart(edgepts,simplices[splitpos[i]])
         for i=1:length(splitpos)])
     else
-        ArgumentError("Unhandled SampleMethod: $(ebs.sample_method)")
+        throw(ArgumentError("Unhandled SampleMethod: $(ebs.sample_method)"))
     end
 
     # Remove duplicates from the new mesh points.

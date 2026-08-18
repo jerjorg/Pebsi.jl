@@ -40,6 +40,36 @@ using Pebsi.QuadraticIntegration: init_bandstructure
         @test def_fermilevel_method == fl_chandrupatla
     end
 
+    @testset "fields accept every named value" begin
+        # The enum conversion originally rewrote only the `==` comparisons, not
+        # the two places that *assign* a method (`ebs.refine_method = 3` in the
+        # fermi-area fallbacks). Those became a MethodError that no test reached,
+        # because they only run for non-default refine methods. Setting every
+        # value on a real container would have caught it.
+        ebs = init_bandstructure(m11)
+        for m in instances(RefineMethod)
+            ebs.refine_method = m
+            @test ebs.refine_method == m
+        end
+        for c in instances(StopCriterion)
+            ebs.stop_criterion = c
+            @test ebs.stop_criterion == c
+        end
+        for sm in instances(SampleMethod)
+            ebs.sample_method = sm
+            @test ebs.sample_method == sm
+        end
+        for nm in instances(NeighborMethod)
+            ebs.neighbor_method = nm
+            @test ebs.neighbor_method == nm
+        end
+        for fm in instances(FermiLevelMethod)
+            ebs.fermilevel_method = fm
+            @test ebs.fermilevel_method == fm
+        end
+        @test_throws MethodError ebs.refine_method = 3
+    end
+
     @testset "constructor accepts named values, rejects integers" begin
         ebs = init_bandstructure(m11; refine_method=refine_most_error,
                                  stop_criterion=stop_total_error)
