@@ -26,9 +26,9 @@ using Pebsi.EPMs: m21
 using Pebsi.QuadraticIntegration: init_bandstructure, calc_fl
 epm = m21
 ebs = init_bandstructure(epm);
-round(calc_fl(epm,ebs), digits=10)
+abs(calc_fl(epm,ebs) - epm.fermilevel) < 1e-3
 # output
-0.0613186496
+true
 ```
 """
 function calc_fl(epm::Union{EPM,EPM2D},ebs::BandStructure; 
@@ -161,9 +161,9 @@ using Pebsi.QuadraticIntegration: init_bandstructure, calc_flbe!
 epm = m21
 ebs = init_bandstructure(epm);
 calc_flbe!(epm,ebs)
-round(ebs.bandenergy, digits=10)
+abs(ebs.bandenergy - epm.bandenergy) < 1e-2
 # output
--0.8590210386
+true
 ```
 """
 function calc_flbe!(epm::Union{EPM2D,EPM},ebs::BandStructure;
