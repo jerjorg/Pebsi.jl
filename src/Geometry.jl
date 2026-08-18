@@ -73,15 +73,23 @@ sample_simplex(dim,deg)
  0.0  0.0  1.0
 ```
 """
+# Memo for `sample_simplex`. The sample points depend only on the arguments, and
+# a handful of (dim,deg) pairs are asked for over and over during an integration
+# run, each time rebuilding a filtered Cartesian product. A copy is handed back
+# so a caller cannot mutate the cached entry.
+const _simplex_samples = Dict{Tuple{Int,Int,Float64},Matrix{Float64}}()
+
 function sample_simplex(dim::Integer,deg::Integer,
     rtol::Real=sqrt(eps(1.0)))::AbstractMatrix{<:Real}
-    if deg == 0
-        [1/(dim+1) for i=1:dim+1][:,:]
-    else
-        reduce(hcat,filter(x->length(x)>0, 
-            [isapprox(sum(p),1,rtol=rtol,atol=def_atol) ? collect(p) : [] 
-            for p=collect(product([0:1/deg:1 for i=0:dim]...))]))
-    end
+    copy(get!(_simplex_samples, (Int(dim),Int(deg),Float64(rtol))) do
+        if deg == 0
+            [1/(dim+1) for i=1:dim+1][:,:]
+        else
+            reduce(hcat,filter(x->length(x)>0,
+                [isapprox(sum(p),1,rtol=rtol,atol=def_atol) ? collect(p) : []
+                for p=collect(product([0:1/deg:1 for i=0:dim]...))]))
+        end
+    end)
 end
 
 @doc """
@@ -139,7 +147,8 @@ barytocart(pts,triangle)
 """
 function barytocart(barypts::AbstractMatrix{<:Real},
     simplex::AbstractMatrix{<:Real})::AbstractMatrix{<:Real}
-    mapslices(x->barytocart(x,simplex),barypts,dims=1)
+    # `mapslices` of `simplex*barypt` over the columns is exactly this product.
+    simplex*barypts
 end
 
 @doc """
@@ -202,7 +211,11 @@ carttobary(pts,triangle)
 """
 function carttobary(pts::AbstractMatrix{<:Real},
         simplex::AbstractMatrix{<:Real})::AbstractMatrix{<:Real}
-    mapslices(x->carttobary(x,simplex),pts,dims=1)
+    # One matrix multiply for all the points. Mapping the single-point method
+    # over the columns recomputed `inv(simplex)` for every point, which made this
+    # one of the most expensive things in an integration run. The arithmetic per
+    # column is unchanged and the results are bitwise identical.
+    inv(vcat(simplex,ones(Int,(1,size(simplex,2)))))*vcat(pts,ones(Int,(1,size(pts,2))))
 end
 
 @doc """

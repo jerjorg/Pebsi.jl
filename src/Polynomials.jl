@@ -39,11 +39,24 @@ bernstein_basis([s,t,u],2,2)
  1.0*u^2
 ```
 """
+# Memo for the exponent tuples and multinomial coefficients of the Bernstein
+# basis. Both depend only on (dim,deg), but were rebuilt from a filtered
+# Cartesian product on every call - and this is called once per sample point.
+# Only these internals are shared; each call still builds its own result.
+const _bernstein_terms = Dict{Tuple{Int,Int},Tuple{Vector{Vector{Int}},Vector{Float64}}}()
+
+function bernstein_terms(dim::Integer, deg::Integer)
+    get!(_bernstein_terms, (Int(dim),Int(deg))) do
+        indices = [collect(p) for p=collect(product([0:deg for i=0:dim]...)) if
+            sum(p) == deg]
+        (indices, [factorial(deg)/prod(factorial.(index)) for index=indices])
+    end
+end
+
 function bernstein_basis(bpt::AbstractVector, dim::Integer, 
     deg::Integer)::AbstractVector
-    indices = [p for p=collect(product([0:deg for i=0:dim]...)) if 
-        sum(p) == deg]
-    [factorial(deg)/prod(factorial.(index))*prod(bpt.^index) for index=indices]
+    indices,coeffs = bernstein_terms(dim,deg)
+    [coeffs[i]*prod(bpt.^indices[i]) for i=eachindex(indices)]
 end
 
 """

@@ -9,7 +9,8 @@ using ..Polynomials: eval_poly,getpoly_coeffs,getbez_pts₋wts,eval_bezcurve,
 using ..EPMs: eval_epm, epm₋model, epm₋model2D
 using ..Mesh: get_neighbors, notbox_simplices, get_cvpts, ibz_init₋mesh, 
     get_extmesh, choose_neighbors, choose_neighbors3D, trimesh, ntripts, ntetpts,
-    get_sym₋unique!, simplex_cornerpts, ibz_initmesh
+    get_sym₋unique!, simplex_cornerpts, ibz_initmesh, ibz_borders,
+    bz_translations
 using ..Geometry: order_vertices!, simplex_size, insimplex, barytocart,
     carttobary, sample_simplex, lineseg₋pt_dist, mapto_xyplane, ptface_mindist
 using ..Defaults
@@ -27,7 +28,7 @@ export bandstructure, init_bandstructure, quadval_vertex, corner_indices,
     split_bezsurf, analytic_area, analytic_volume, sub₋coeffs,
     two₋intersects_area₋volume, quad_area₋volume, get_intercoeffs, calc_fl,
     calc_flbe!, refine_mesh!, get_tolerances, quadratic_method, truebe, 
-    bezcurve_intersects, getdomain, analytic_area1D, simpson, simpson2D, 
+    bezcurve_intersects, getdomain, analytic_area1D, simpson, 
     linept_dist, tetface_areas, simpson3D, quadslice_tanpt, containment_percentage,
     stop_refinement!, calc_fabe, quadlin_esterr, length_area1D, area_volume2D,
     volume_hypvol3D, init_exactfit, cubequad_esterr, kpoint_weights
@@ -1689,18 +1690,8 @@ function refine_mesh!(epm::Union{epm₋model2D,epm₋model},ebs::bandstructure)
         reduce(vcat,[[norm(ebs.mesh.points[i,:] - ebs.mesh.points[j,:]) 
                     for j=get_neighbors(i,ebs.mesh,ebs.num_near_neigh)] for i=cv_pointsᵢ]))
 
-    if dim == 2
-        # The Line segments that bound the IBZ.
-        borders = [Matrix(epm.ibz.points[i,:]') for i=eachrow(epm.ibz.simplices)]
-        distfun = lineseg₋pt_dist
-        # Translations that need to be considered when calculating points outside the IBZ.
-        # Assumes the reciprocal latice vectors are Minkowski reduced.
-        bztrans = [[[i,j] for i=-1:1,j=-1:1]...]
-    else
-        borders = [Matrix(epm.ibz.points[f,:]') for f=get_uniquefacets(epm.ibz)]
-        distfun = ptface_mindist
-        bztrans = [[[i,j,k] for i=-1:1,j=-1:1,k=-1:1]...]
-    end
+    borders,distfun = ibz_borders(epm.ibz)
+    bztrans = bz_translations(dim)
      
     # The number of points in the mesh before adding new points.
     s = size(ebs.mesh.points,1)
@@ -1865,7 +1856,7 @@ function stop_refinement!(epm::Union{epm₋model,epm₋model2D},ebs::bandstructu
         stop = db/da*diff(ebs.fermiarea_interval)[1]/2 < ebs.target_accuracy
     elseif ebs.stop_criterion == 4 
         nkpts = size(ebs.eigenvals,2) - 2^size(epm.recip_latvecs,1)
-        stop = ((ebs.target_kpoints - nkpts) < def_kpoint_tol*nkpts/100) || (nkpts >  ebs.target_kpoints)
+        stop = ((ebs.target_kpoints - nkpts) < def_stop_kpoint_tol*nkpts) || (nkpts >  ebs.target_kpoints)
     else
         error("Valid values of stop_criterion are integers 1,...,4")
     end
