@@ -4,15 +4,15 @@ using SymmetryReduceBZ.Utilities
 using SymmetryReduceBZ.Utilities: unique_points, shoelace, remove_duplicates, get_uniquefacets
 using SymmetryReduceBZ.Symmetry: calc_spacegroup
 
-using ..Polynomials: eval_poly,getpoly_coeffs,getbez_pts₋wts,eval_bezcurve,
+using ..Polynomials: eval_poly,getpoly_coeffs,getbez_pts_wts,eval_bezcurve,
     conicsection, evalpoly1D, get_1Dquad_coeffs, solve_quadratic, bernstein_basis
-using ..EPMs: eval_epm, epm₋model, epm₋model2D
-using ..Mesh: get_neighbors, notbox_simplices, get_cvpts, ibz_init₋mesh, 
+using ..EPMs: eval_epm, epm_model, epm_model2D
+using ..Mesh: get_neighbors, notbox_simplices, get_cvpts, ibz_init_mesh, 
     get_extmesh, choose_neighbors, choose_neighbors3D, trimesh, ntripts, ntetpts,
-    get_sym₋unique!, simplex_cornerpts, ibz_initmesh, ibz_borders,
+    get_sym_unique!, simplex_cornerpts, ibz_initmesh, ibz_borders,
     bz_translations
 using ..Geometry: order_vertices!, simplex_size, insimplex, barytocart,
-    carttobary, sample_simplex, lineseg₋pt_dist, mapto_xyplane, ptface_mindist
+    carttobary, sample_simplex, lineseg_pt_dist, mapto_xyplane, ptface_mindist
 using ..Defaults
 
 using QHull: chull, Chull
@@ -25,8 +25,8 @@ using FastGaussQuadrature: gausslegendre
 
 export bandstructure, init_bandstructure, quadval_vertex, corner_indices, 
     edge_indices, simplex_intersects, saddlepoint, split_bezsurf₁, 
-    split_bezsurf, analytic_area, analytic_volume, sub₋coeffs,
-    two₋intersects_area₋volume, quad_area₋volume, get_intercoeffs, calc_fl,
+    split_bezsurf, analytic_area, analytic_volume, sub_coeffs,
+    two_intersects_area_volume, quad_area_volume, get_intercoeffs, calc_fl,
     calc_flbe!, refine_mesh!, get_tolerances, quadratic_method, truebe, 
     bezcurve_intersects, getdomain, analytic_area1D, simpson, 
     linept_dist, tetface_areas, simpson3D, quadslice_tanpt, containment_percentage,
@@ -70,7 +70,7 @@ A container for all variables related to the band structure.
     tile for all tiles in the triangulation.
 - `ext_mesh::PyObject`: a Delaunay triangulation of points within and around the 
     IBZ. The number of points outside is determined by `num_near_neigh`.
-- `sym₋unique::AbstractVector{<:Integer}`: the indices of symmetrically unique points
+- `sym_unique::AbstractVector{<:Integer}`: the indices of symmetrically unique points
     in the mesh.
 - `eigenvals::AbstractMatrix{<:Real}`: the eigenvalues at each of the points unique
     by symmetry.
@@ -135,7 +135,7 @@ mutable struct bandstructure
     points::Matrix{<:Real}
     simplicesᵢ::Vector{Vector{Integer}}
     ext_mesh::PyObject
-    sym₋unique::AbstractVector{<:Integer}
+    sym_unique::AbstractVector{<:Integer}
     eigenvals::AbstractMatrix{<:Real}
     fatten::Real
     mesh_intcoeffs::Vector{Vector{Matrix{Float64}}}
@@ -169,7 +169,7 @@ end
 Initialize a band structure container.
 
 # Arguments
-- `epm::Union{epm₋model,epm₋model2D}`: an empirical pseudopotential.
+- `epm::Union{epm_model,epm_model2D}`: an empirical pseudopotential.
 
 See the documentation for `bandstructure` for a description of the remaining arguments.
 
@@ -187,7 +187,7 @@ bandstructure
 ```
 """
 function init_bandstructure(
-    epm::Union{epm₋model,epm₋model2D,epm₋model};
+    epm::Union{epm_model,epm_model2D,epm_model};
     init_msize::Integer=def_init_msize,
     init_num_kpoints::Integer=def_num_kpoints,
     num_near_neigh::Integer=def_num_near_neigh,
@@ -210,16 +210,16 @@ function init_bandstructure(
 
     dim = size(epm.recip_latvecs,1)
     if exactfit
-        (points, mesh, simplicesᵢ, sym₋unique, eigenvals, mesh_bezcoeffs, mesh_intcoeffs) =
+        (points, mesh, simplicesᵢ, sym_unique, eigenvals, mesh_bezcoeffs, mesh_intcoeffs) =
             init_exactfit(epm,num_kpoints=init_num_kpoints,polydegree=polydegree,atol=atol,
             rtol=rtol)
         ext_mesh = mesh; num_neighbors = 0;
     else
-        mesh = ibz_init₋mesh(epm.ibz,init_msize;rtol=rtol,atol=atol)
-        mesh,ext_mesh,sym₋unique = get_extmesh(epm.ibz,mesh,epm.pointgroup,
+        mesh = ibz_init_mesh(epm.ibz,init_msize;rtol=rtol,atol=atol)
+        mesh,ext_mesh,sym_unique = get_extmesh(epm.ibz,mesh,epm.pointgroup,
             epm.recip_latvecs,num_near_neigh; rtol=rtol,atol=atol)
         simplicesᵢ = notbox_simplices(mesh)
-        uniqueᵢ = sort(unique(sym₋unique))[2:end]
+        uniqueᵢ = sort(unique(sym_unique))[2:end]
         estart = if dim == 2 4 else 8 end
         eigenvals = zeros(Float64,epm.sheets,estart+length(uniqueᵢ))
         for i=uniqueᵢ
@@ -228,7 +228,7 @@ function init_bandstructure(
         if num_neighbors == nothing
             num_neighbors = if dim == 2 def_num_neighbors2D else def_num_neighbors3D end
         end
-        coeffs = [get_intercoeffs(index,mesh=mesh,ext_mesh=ext_mesh,sym₋unique=sym₋unique,
+        coeffs = [get_intercoeffs(index,mesh=mesh,ext_mesh=ext_mesh,sym_unique=sym_unique,
             eigenvals=eigenvals,simplicesᵢ=simplicesᵢ,degree=polydegree,fatten=fatten,
             num_near_neigh=num_near_neigh,epm=epm,neighbor_method=neighbor_method,
             num_neighbors=num_neighbors, weighted=weighted, constrained=constrained) 
@@ -269,7 +269,7 @@ function init_bandstructure(
         points,
         simplicesᵢ,
         ext_mesh,
-        sym₋unique,
+        sym_unique,
         eigenvals,
         fatten,
         mesh_intcoeffs,
@@ -492,8 +492,8 @@ function split_bezsurf₁(bezpts::AbstractMatrix{<:Real}; atol::Real=def_atol)::
     sub_bpts = [carttobary(pts,triangle) for pts=sub_pts]
     sub_vals = [reduce(hcat, [eval_poly(sub_bpts[j][:,i],coeffs,dim,deg)
         for i=1:6]) for j=1:length(subtri)]
-    sub_coeffs = [getpoly_coeffs(v[:],simplex_bpts,dim,deg) for v=sub_vals]
-    sub_bezpts = [[sub_pts[i]; sub_coeffs[i]'] for i=1:length(sub_coeffs)]
+    subtri_coeffs = [getpoly_coeffs(v[:],simplex_bpts,dim,deg) for v=sub_vals]
+    sub_bezpts = [[sub_pts[i]; subtri_coeffs[i]'] for i=1:length(subtri_coeffs)]
     sub_bezpts
 end
 
@@ -642,7 +642,7 @@ function analytic_volume(coeffs::AbstractVector{<:Real},w::Real)::Real
 end
 
 @doc """
-    sub₋coeffs(bezpts,subtriangle)
+    sub_coeffs(bezpts,subtriangle)
 
 Calculate the coefficients of a quadratic sub-surface of a quadratic triangle.
 
@@ -657,10 +657,10 @@ Calculate the coefficients of a quadratic sub-surface of a quadratic triangle.
 
 # Examples
 ```jldoctest
-import Pebsi.QuadraticIntegration: sub₋coeffs
+import Pebsi.QuadraticIntegration: sub_coeffs
 bezpts = [-1.0 0.0 1.0 -0.5 0.5 0.0; 0.0 0.0 0.0 0.5 0.5 1.0; -0.25 -0.25 3.75 -0.25 1.75 1.75]
 subtriangle = [-0.5 0.0 -0.6464466094067263; 0.0 1.0 0.35355339059327373]
-sub₋coeffs(bezpts,subtriangle)
+sub_coeffs(bezpts,subtriangle)
 # output
 6-element Vector{Float64}:
   0.0
@@ -671,7 +671,7 @@ sub₋coeffs(bezpts,subtriangle)
  -4.85722573273506e-17
 ```
 """
-function sub₋coeffs(bezpts::AbstractMatrix{<:Real},
+function sub_coeffs(bezpts::AbstractMatrix{<:Real},
     subtriangle::AbstractMatrix{<:Real})::AbstractVector{<:Real}
 
     ptsᵢ = carttobary(barytocart(sample_simplex(2,2),subtriangle),bezpts[1:2,corner_indices])
@@ -680,7 +680,7 @@ function sub₋coeffs(bezpts::AbstractMatrix{<:Real},
 end
 
 @doc """
-    two₋intersects_area₋volume(bezpts,quantity;atol)
+    two_intersects_area_volume(bezpts,quantity;atol)
 
 Calculate the area or volume within a quadratic curve and triangle.
 
@@ -696,14 +696,14 @@ Calculate the area or volume within a quadratic curve and triangle.
 
 # Examples
 ```jldoctest
-import Pebsi.QuadraticIntegration: two₋intersects_area₋volume
+import Pebsi.QuadraticIntegration: two_intersects_area_volume
 bezpts = [-1.0 0.0 1.0 -0.5 0.5 0.0; 0.0 0.0 0.0 0.5 0.5 1.0; -0.89 -0.08 -1.28 1.12 -0.081 -0.88]
-two₋intersects_area₋volume(bezpts,"volume")
+two_intersects_area_volume(bezpts,"volume")
 # output
 -0.3533719907367465
 ```
 """
-function two₋intersects_area₋volume(bezpts::AbstractMatrix{<:Real},
+function two_intersects_area_volume(bezpts::AbstractMatrix{<:Real},
     quantity::String; atol::Real=def_atol)::Real
      
     # Calculate the bezier curve and weights, make sure the curve passes through
@@ -747,7 +747,7 @@ function two₋intersects_area₋volume(bezpts::AbstractMatrix{<:Real},
         end
         p₀ = all_intersects[:,1]
         p₂ = all_intersects[:,2]
-        (bezptsᵣ,bezwtsᵣ) = getbez_pts₋wts(bezpts,p₀,p₂,atol=atol)
+        (bezptsᵣ,bezwtsᵣ) = getbez_pts_wts(bezpts,p₀,p₂,atol=atol)
         ptᵣ = eval_bezcurve(0.5,bezptsᵣ,bezwtsᵣ)
         # Make sure the weight of the middle Bezier point has the correct sign.
         if !insimplex(carttobary(ptᵣ,triangle))
@@ -758,7 +758,7 @@ function two₋intersects_area₋volume(bezpts::AbstractMatrix{<:Real},
             end
         else
             # Remove intersections if the mipoint of the Bezier curve is on an edge.
-            on_edge = any(isapprox.([lineseg₋pt_dist(ptᵣ,triangle[:,i],atol=atol) 
+            on_edge = any(isapprox.([lineseg_pt_dist(ptᵣ,triangle[:,i],atol=atol) 
                 for i=[[1,2],[2,3],[3,1]]],0,atol=atol))
             if on_edge intersects = [[],[],[]] end
         end
@@ -785,7 +785,7 @@ function two₋intersects_area₋volume(bezpts::AbstractMatrix{<:Real},
 
     if split
         bezptsᵤ = [split_bezsurf(b,atol=atol) for b=split_bezsurf₁(bezpts)] |> flatten |> collect
-        return sum([two₋intersects_area₋volume(b,quantity,atol=atol) for b=bezptsᵤ])
+        return sum([two_intersects_area_volume(b,quantity,atol=atol) for b=bezptsᵤ])
     end
 
     # No intersections, no island, and the coefficients are less or greater than 0.
@@ -844,7 +844,7 @@ function two₋intersects_area₋volume(bezpts::AbstractMatrix{<:Real},
         # curve area or volume
         areaₒᵣvolumeᵣ = simplex_size(bezptsᵣ)*analytic_area(bezwtsᵣ[2])
     elseif quantity == "volume"
-        coeffsᵣ = sub₋coeffs(bezpts,bezptsᵣ)
+        coeffsᵣ = sub_coeffs(bezpts,bezptsᵣ)
         areaₒᵣvolumeᵣ = simplex_size(bezptsᵣ)*analytic_volume(coeffsᵣ,bezwtsᵣ[2])
     else
         throw(ArgumentError("The quantity calculated is either \"area\" or \"volume\"."))
@@ -869,7 +869,7 @@ function two₋intersects_area₋volume(bezpts::AbstractMatrix{<:Real},
             areaₒᵣvolume = simplex_size(triangle) - areaₒᵣvolume
         end
     else # quantity == "volume"
-        coeffsₑ = sub₋coeffs(bezpts,triangleₑ)
+        coeffsₑ = sub_coeffs(bezpts,triangleₑ)
         areaₒᵣvolume = mean(coeffsₑ)*simplex_size(triangleₑ) + areaₒᵣvolumeᵣ
         if !below₀
             areaₒᵣvolume = simplex_size(triangle)*mean(coeffs) - areaₒᵣvolume
@@ -880,7 +880,7 @@ function two₋intersects_area₋volume(bezpts::AbstractMatrix{<:Real},
 end
 
 @doc """
-    quad_area₋volume(bezpts,quantity;num_slices,atol)
+    quad_area_volume(bezpts,quantity;num_slices,atol)
 
 Calculate the area of the shadow or the volume beneath a quadratic.
 
@@ -898,26 +898,26 @@ Calculate the area of the shadow or the volume beneath a quadratic.
 
 # Examples
 ```jldoctest
-import Pebsi.QuadraticIntegration: quad_area₋volume
+import Pebsi.QuadraticIntegration: quad_area_volume
 bezpts = [-1.0 0.0 1.0 -0.5 0.5 0.0; 0.0 0.0 0.0 0.5 0.5 1.0; 2/3 -4/3 2/3 -2/3 -2/3 0]
-quad_area₋volume(bezpts,"area") ≈ 0.8696051011068969
+quad_area_volume(bezpts,"area") ≈ 0.8696051011068969
 # output
 true
 ```
 """
-function quad_area₋volume(bezpts::AbstractMatrix{<:Real},
+function quad_area_volume(bezpts::AbstractMatrix{<:Real},
         quantity::String; num_slices::Integer=def_num_slices, atol::Real=def_atol)::Real
      
     # Modifications to make when working in 3D.
     if size(bezpts,1) == 4
         bezpts = [mapto_xyplane(bezpts[1:3,:]); bezpts[end,:]']
     end
-    sum([two₋intersects_area₋volume(b,quantity,atol=atol) for 
+    sum([two_intersects_area_volume(b,quantity,atol=atol) for 
         b=split_bezsurf(bezpts,atol=atol)])
 end
 
 @doc """
-    get_intercoeffs(index, mesh, ext_mesh, sym₋unique, eigenvals, simplicesᵢ, degree,
+    get_intercoeffs(index, mesh, ext_mesh, sym_unique, eigenvals, simplicesᵢ, degree,
         fatten, num_near_neigh; sigma, epm, neighbor_method, num_neighbors, weighted,
         constrained, atol)
 
@@ -927,7 +927,7 @@ Calculate the interval Bezier points for all sheets.
 - `index::Integer`: the index of the simplex in `simplicesᵢ`.
 - `mesh::PyObject`: a triangulation of the irreducible Brillouin zone.
 - `ext_mesh::PyObject`: a triangulation of the region within and around the IBZ.
-- `sym₋unique::AbstractVector{<:Real}`: the index of the eigenvalues for each point
+- `sym_unique::AbstractVector{<:Real}`: the index of the eigenvalues for each point
     in the `mesh`.
 - `eigenvals::AbstractMatrix{<:Real}`: a matrix of eigenvalues for the symmetrically
     distinc points as columns of a matrix.
@@ -936,7 +936,7 @@ Calculate the interval Bezier points for all sheets.
 - `fatten::Real=def_fatten`: scale the interval coefficients by this amount.
 - `num_near_neigh::Integer=def_num_near_neigh`: how many nearest neighbors to include.
 - `sigma::Integer=0`: the number of sheets summed and then interpolated, if any.
-- `epm::Union{Nothing,epm₋model2D,epm₋model}=nothing`: an empirical pseudopotential.
+- `epm::Union{Nothing,epm_model2D,epm_model}=nothing`: an empirical pseudopotential.
 - `neighbor_method::NeighborMethod=def_neighbor_method`: the method for calculating neighbors
     to include in the calculation.
 - `num_neighbors::Union{Nothing,Integer}=nothing`: the minimum number of neighbors
@@ -954,22 +954,22 @@ Calculate the interval Bezier points for all sheets.
 # Examples
 ```jldoctest
 import Pebsi.EPMs: m2ibz,m2pointgroup,m2recip_latvecs,m2rules,m2cutoff,eval_epm
-import Pebsi.Mesh: ibz_init₋mesh, get_extmesh, notbox_simplices
+import Pebsi.Mesh: ibz_init_mesh, get_extmesh, notbox_simplices
 import Pebsi.QuadraticIntegration: get_intercoeffs
 n = 10
-mesh = ibz_init₋mesh(m2ibz,n)
+mesh = ibz_init_mesh(m2ibz,n)
 simplicesᵢ = notbox_simplices(mesh)
 num_near_neigh = 2
-mesh,ext_mesh,sym₋unique = get_extmesh(m2ibz,mesh,m2pointgroup,m2recip_latvecs,num_near_neigh)
+mesh,ext_mesh,sym_unique = get_extmesh(m2ibz,mesh,m2pointgroup,m2recip_latvecs,num_near_neigh)
 sheets = 7
 energy_conv = 1
 eigenvals = zeros(sheets,size(mesh.points,1))
-for i = sort(unique(sym₋unique))[2:end]
+for i = sort(unique(sym_unique))[2:end]
     eigenvals[:,i] = eval_epm(mesh.points[i,:],m2recip_latvecs,m2rules,m2cutoff,sheets,energy_conv)
 end
 index = 1
 degree = 2
-intercoeffs,bezcoeffs = get_intercoeffs(index,mesh=mesh,ext_mesh=ext_mesh,sym₋unique=sym₋unique,
+intercoeffs,bezcoeffs = get_intercoeffs(index,mesh=mesh,ext_mesh=ext_mesh,sym_unique=sym_unique,
     eigenvals=eigenvals,simplicesᵢ=simplicesᵢ,degree=degree)
 length(bezcoeffs)
 # output
@@ -977,10 +977,10 @@ length(bezcoeffs)
 ```
 """
 function get_intercoeffs(index::Integer; mesh::PyObject, ext_mesh::PyObject,
-    sym₋unique::AbstractVector{<:Real}, eigenvals::AbstractMatrix{<:Real}, 
+    sym_unique::AbstractVector{<:Real}, eigenvals::AbstractMatrix{<:Real}, 
     simplicesᵢ::AbstractVector, degree::Integer, fatten::Real=def_fatten, 
     num_near_neigh::Integer=def_num_near_neigh, sigma::Real=0, 
-    epm::Union{Nothing,epm₋model2D,epm₋model}=nothing,
+    epm::Union{Nothing,epm_model2D,epm_model}=nothing,
     neighbor_method::NeighborMethod=def_neighbor_method, 
     num_neighbors::Union{Nothing,Integer}=nothing,
     weighted::Bool=false,constrained::Bool=true,atol::Real=def_atol)
@@ -1048,7 +1048,7 @@ function get_intercoeffs(index::Integer; mesh::PyObject, ext_mesh::PyObject,
     if weighted
         if dim == 2
             # Minimum distance from the edges of the triangle
-            W = diagm([minimum([lineseg₋pt_dist(ext_mesh.points[i,:],simplex[:,s]) for s=[[1,2],[2,3],[3,1]]])
+            W = diagm([minimum([lineseg_pt_dist(ext_mesh.points[i,:],simplex[:,s]) for s=[[1,2],[2,3],[3,1]]])
                 for i=neighborsᵢ])
         else
             # Minimum distance from the faces of the tetrahedron 
@@ -1071,18 +1071,18 @@ function get_intercoeffs(index::Integer; mesh::PyObject, ext_mesh::PyObject,
     for sheet = 1:nsheets
         if sigma == 0
             if neighbor_method != 3
-                fᵢ = eigenvals[sheet,sym₋unique[neighborsᵢ]]
+                fᵢ = eigenvals[sheet,sym_unique[neighborsᵢ]]
             else
                 fᵢ = eigvals[sheet,:]
             end
-            q = eigenvals[sheet,sym₋unique[simplexᵢ]]
+            q = eigenvals[sheet,sym_unique[simplexᵢ]]
         else
             if neighbor_method != 3
-                fᵢ = [sum(eigenvals[1:sigma,sym₋unique[neighborsᵢ]],dims=1)...]
+                fᵢ = [sum(eigenvals[1:sigma,sym_unique[neighborsᵢ]],dims=1)...]
             else
                 fᵢ = [sum(eigvals[1:sigma,:],dims=1)...]
             end
-            q = [sum(eigenvals[1:sigma,sym₋unique[simplexᵢ]],dims=1)...]
+            q = [sum(eigenvals[1:sigma,sym_unique[simplexᵢ]],dims=1)...]
         end
 
         if constrained
@@ -1138,7 +1138,7 @@ end
 Calculate the Fermi level for a representation of the band structure.
 
 # Arguments
-- `epm::Union{epm₋model,epm₋model2D}`: an empirical pseudopotential 
+- `epm::Union{epm_model,epm_model2D}`: an empirical pseudopotential 
 - `ebs::bandstructure`: a `bandstructure` data structure.
 - `num_slices::Int=10`: the number of slices for integration in 3D.
 - `window::Union{Nothing,Vector{<:Real}}=ebs.fermilevel_interval`: an energy window
@@ -1165,7 +1165,7 @@ calc_fl(epm,ebs)
 0.061318649613692225
 ```
 """
-function calc_fl(epm::Union{epm₋model,epm₋model2D},ebs::bandstructure; 
+function calc_fl(epm::Union{epm_model,epm_model2D},ebs::bandstructure; 
     num_slices::Int=def_num_slices, window::Vector{<:Real}=ebs.fermilevel_interval, 
         ctype::String="mean", fermi_area::Real=epm.fermiarea/length(epm.pointgroup),
         test::Bool=false)
@@ -1277,7 +1277,7 @@ end
 Calculate the Fermi level and band energy for a given rep. of the band struct.
 
 # Arguments
-- `epm::Union{epm₋model2D,epm₋model}`: an empirical pseudopotential.
+- `epm::Union{epm_model2D,epm_model}`: an empirical pseudopotential.
 - `ebs::bandstructure`: the band structure container.
 - `num_slices::Integer=def_num_slices`: the number of slices when integrating in 3D.
 - `flerrors::Bool=true`: if true, band energy errors include effects from Fermi 
@@ -1300,7 +1300,7 @@ ebs.bandenergy
 0.007513770523596364
 ```
 """
-function calc_flbe!(epm::Union{epm₋model2D,epm₋model},ebs::bandstructure;
+function calc_flbe!(epm::Union{epm_model2D,epm_model},ebs::bandstructure;
     num_slices::Integer=def_num_slices, flerrors::Bool=true)::bandstructure
      
     # The number of point operators
@@ -1376,7 +1376,7 @@ function calc_flbe!(epm::Union{epm₋model2D,epm₋model},ebs::bandstructure;
 
     # The Fermi area errors for each quadratic triangle (triangle and sheet) for the
     # given band structure approximation
-    mesh_fa₋errs = mesh_fa₁ .- mesh_fa₀
+    mesh_fa_errs = mesh_fa₁ .- mesh_fa₀
      
     # Determine which triangles and sheets are partially occupied by comparing
     # the Fermi area (shadows of the sheets) for each quadratic triangle to zero
@@ -1420,7 +1420,7 @@ function calc_flbe!(epm::Union{epm₋model2D,epm₋model},ebs::bandstructure;
         (if sigmas[i] == nothing
             [[zeros(2,nterms)],[zeros(1,nterms)]]
         else
-            get_intercoeffs(i,mesh=ebs.mesh,ext_mesh=ebs.ext_mesh,sym₋unique=ebs.sym₋unique,
+            get_intercoeffs(i,mesh=ebs.mesh,ext_mesh=ebs.ext_mesh,sym_unique=ebs.sym_unique,
             eigenvals=ebs.eigenvals,simplicesᵢ=ebs.simplicesᵢ,degree=ebs.polydegree,
             fatten=ebs.fatten,num_near_neigh=ebs.num_near_neigh,sigma=sigmas[i],
             epm=epm,neighbor_method=ebs.neighbor_method)
@@ -1433,7 +1433,7 @@ function calc_flbe!(epm::Union{epm₋model2D,epm₋model},ebs::bandstructure;
         (if true_sigmas[i] == nothing
             [[zeros(2,nterms)],[zeros(1,nterms)]]
         else
-            get_intercoeffs(i,mesh=ebs.mesh,ext_mesh=ebs.ext_mesh,sym₋unique=ebs.sym₋unique,
+            get_intercoeffs(i,mesh=ebs.mesh,ext_mesh=ebs.ext_mesh,sym_unique=ebs.sym_unique,
             eigenvals=ebs.eigenvals,simplicesᵢ=ebs.simplicesᵢ,degree=ebs.polydegree,
             fatten=ebs.fatten,num_near_neigh=ebs.num_near_neigh,sigma=true_sigmas[i],epm=epm,
             neighbor_method = ebs.neighbor_method)
@@ -1501,7 +1501,7 @@ function calc_flbe!(epm::Union{epm₋model2D,epm₋model},ebs::bandstructure;
     # The limits of the Fermi area interval
     ebs.fermiarea_interval = npg.*[fa₀,fa₁]
     # The Fermi area errors in each triangle
-    ebs.fermiarea_errors = npg*[sum(m) for m=mesh_fa₋errs]
+    ebs.fermiarea_errors = npg*[sum(m) for m=mesh_fa_errs]
     ebs.fermilevel_interval = [fl₀,fl₁]
     ebs.fermilevel = fl
       
@@ -1529,7 +1529,7 @@ Perform one iteration of adaptive refinement. See the composite type
 `bandstructure` for refinement options.
 
 # Arguments
-- `epm::Union{epm₋model2D,epm₋model}`: an empirical pseudopotential.
+- `epm::Union{epm_model2D,epm_model}`: an empirical pseudopotential.
 - `ebs::bandstructure`: a quadratic approximation of the band structure.
 
 # Returns
@@ -1550,7 +1550,7 @@ abs(ebs.bandenergy - epm.bandenergy) < 1e-2
 true
 ```
 """
-function refine_mesh!(epm::Union{epm₋model2D,epm₋model},ebs::bandstructure)
+function refine_mesh!(epm::Union{epm_model2D,epm_model},ebs::bandstructure)
     spatial = pyimport("scipy.spatial")
     simplices = [Matrix(ebs.mesh.points[s,:]') for s=ebs.simplicesᵢ]
     err_cutoff = [simplex_size(s)/epm.ibz.volume for s=simplices]*ebs.target_accuracy
@@ -1698,7 +1698,7 @@ function refine_mesh!(epm::Union{epm₋model2D,epm₋model},ebs::bandstructure)
      
     # The number of points in the mesh before adding new points.
     s = size(ebs.mesh.points,1)
-    m = maximum(ebs.sym₋unique)
+    m = maximum(ebs.sym_unique)
 
     # Indices of the new mesh points.
     new_ind = (m+1):(m+size(new_meshpts,2))
@@ -1745,10 +1745,10 @@ function refine_mesh!(epm::Union{epm₋model2D,epm₋model},ebs::bandstructure)
     @show nₑ
 
     if m == s
-        ebs.sym₋unique = [ebs.sym₋unique[1:m]; new_ind; sym_ind[1:nₑ]] 
+        ebs.sym_unique = [ebs.sym_unique[1:m]; new_ind; sym_ind[1:nₑ]] 
         ebs.ext_mesh = spatial.Delaunay([ebs.ext_mesh.points[1:m,:]; new_meshpts'; neighbors[:,1:nₑ]'])
     else
-        ebs.sym₋unique = [ebs.sym₋unique[1:m]; new_ind; sym_ind[1:nₘ]; ebs.sym₋unique[m+1:end];
+        ebs.sym_unique = [ebs.sym_unique[1:m]; new_ind; sym_ind[1:nₘ]; ebs.sym_unique[m+1:end];
             sym_ind[nₘ+1:nₑ]]
         ebs.ext_mesh = spatial.Delaunay([ebs.ext_mesh.points[1:m,:]; new_meshpts'; neighbors[:,1:nₘ]';
             ebs.ext_mesh.points[m+1:end,:]; neighbors[:,nₘ+1:nₑ]']) 
@@ -1756,7 +1756,7 @@ function refine_mesh!(epm::Union{epm₋model2D,epm₋model},ebs::bandstructure)
 
     ebs.simplicesᵢ = notbox_simplices(ebs.mesh)
     coeffs = [get_intercoeffs(index,mesh=ebs.mesh,ext_mesh=ebs.ext_mesh,
-    sym₋unique=ebs.sym₋unique,eigenvals=ebs.eigenvals,simplicesᵢ=ebs.simplicesᵢ,
+    sym_unique=ebs.sym_unique,eigenvals=ebs.eigenvals,simplicesᵢ=ebs.simplicesᵢ,
     degree=ebs.polydegree,fatten=ebs.fatten,num_near_neigh=ebs.num_near_neigh,
     neighbor_method=ebs.neighbor_method,epm=epm) for index=1:length(ebs.simplicesᵢ)]
 
@@ -1771,7 +1771,7 @@ end
 Calculate the Fermi level and Fermi area tolerances.
 
 # Arguments
-- `epm::Union{epm₋model2D,epm₋model}`: an empirical pseudopotential.
+- `epm::Union{epm_model2D,epm_model}`: an empirical pseudopotential.
 - `ebs::bandstructure`: a quadratic approximation of the band structure.
 
 # Returns
@@ -1831,7 +1831,7 @@ end
 Select a condition that determines if refinement may stop.
 
 # Arguments
-- `epm::Union{epm₋model,epm₋model2D}`: a empirical pseudopotential model.
+- `epm::Union{epm_model,epm_model2D}`: a empirical pseudopotential model.
 - `ebs::bandstructure`: a band structure object
 
 # Returns
@@ -1846,7 +1846,7 @@ calc_flbe!(epm,ebs)
 stop_refinement!(ebs)
 ```
 """
-function stop_refinement!(epm::Union{epm₋model,epm₋model2D},ebs::bandstructure,
+function stop_refinement!(epm::Union{epm_model,epm_model2D},ebs::bandstructure,
     prevbe)::Bool
     stop = false
     if ebs.stop_criterion == stop_total_error
@@ -1874,7 +1874,7 @@ end
 Calculate the band energy using uniform or adaptive quadratic integation.
 
 # Arguments
-- `epm::Union{epm₋model2D,epm₋model}`: an empirical pseudopotential
+- `epm::Union{epm_model2D,epm_model}`: an empirical pseudopotential
 
 See the documentation for `bandstructure` for descriptions of the optional arguments.
 
@@ -1890,7 +1890,7 @@ ebs = quadratic_method(epm,target_accuracy=1e-2)
 abs(ebs.bandenergy - epm.bandenergy) < 1e-1
 ```
 """
-function quadratic_method(epm::Union{epm₋model2D,epm₋model};
+function quadratic_method(epm::Union{epm_model2D,epm_model};
     init_msize::Int=def_init_msize, num_near_neigh::Int=def_num_near_neigh,
     num_neighbors::Union{Nothing,Int}=nothing,
     fermiarea_eps::Real=def_fermiarea_eps,
@@ -1962,7 +1962,7 @@ Calculate (roughly) the true band energy error for each quadratic triangle.
 
 # Arguments
 - `epm::bandstructure`: a quadratic approximation of the band structure
-- `ebs::epm₋model2D`: an empirical pseudopotential
+- `ebs::epm_model2D`: an empirical pseudopotential
 - `ndivs::Integer`: the number of divisions of triangles when computing the band
     energy component within each triangle using the rectangular method with a triangular
     base.
@@ -1984,7 +1984,7 @@ ebs = calc_flbe!(epm,ebs)
 sigma_be,part_be = truebe(epm,ebs,10)
 ```
 """
-function truebe(epm::epm₋model2D,ebs::bandstructure,ndivs::Integer;
+function truebe(epm::epm_model2D,ebs::bandstructure,ndivs::Integer;
     num_cores::Integer=1,triangles::Union{Nothing,Integer}=nothing)
     dim = 2
     deg = 2
@@ -2408,7 +2408,7 @@ function simpson3D(bezpts::Matrix{<:Real}, quantity::String; num_slices::Integer
             pts = barytocart(bpts,tetrahedron)
             vals = eval_poly(bpts,coeffs,dim,deg)
             coeffs2D = getpoly_coeffs(vals,bpts2D,2,2)
-            intvals[i] = quad_area₋volume([pts; coeffs2D'],quantity)
+            intvals[i] = quad_area_volume([pts; coeffs2D'],quantity)
         end
         if intvals[end] === NaN
             intvals[end] = 0
@@ -2687,7 +2687,7 @@ end
 Calculate the containment percentage of a quadratic interval representation of the bandstructure.
 
 # Arguments
-- `epm::Union{epm₋model,epm₋model2D}`: an empirical pseudopotential model.
+- `epm::Union{epm_model,epm_model2D}`: an empirical pseudopotential model.
 - `ebs::bandstructure`: a `bandstructure` data structure.
 - `divs::Integer`: the number of divisions of a triangle when sampling quadratic surfaces
 - `atol::Real=1e-6`: an absolute tolerance. Eigenvalues closer than `atol` to the
@@ -2707,7 +2707,7 @@ divs = 3
 containment_percentage(epm,ebs,divs)
 ```
 """
-function containment_percentage(epm::Union{epm₋model,epm₋model2D},
+function containment_percentage(epm::Union{epm_model,epm_model2D},
     ebs::bandstructure,divs::Integer,atol::Real=1e-6)
     dim = size(epm.recip_latvecs,1); deg = 2
     simplex_bpts = sample_simplex(dim,deg)
@@ -2794,7 +2794,7 @@ function calc_fabe(ebs::bandstructure; quantity::String, ctype::String, fl::Real
     fabe = [[0. for sheet=1:nsheets] for tri=1:ns]
     quadfun = (
         if dim == 2
-            if ebs.polydegree > 2 area_volume2D else quad_area₋volume end
+            if ebs.polydegree > 2 area_volume2D else quad_area_volume end
         else
             if ebs.polydegree > 3 volume_hypvol3D else simpson3D end
         end)
@@ -2824,7 +2824,7 @@ function quadlin_esterr(epm,ebs;num_slices::Integer=def_num_slices)
     npg = length(epm.pointgroup)
     sbpt = sample_simplex(dim,2)
     simplices = [Matrix(ebs.mesh.points[s,:]') for s=ebs.simplicesᵢ]
-    vals = [ebs.eigenvals[:,ebs.sym₋unique[s]] for s=ebs.simplicesᵢ]
+    vals = [ebs.eigenvals[:,ebs.sym_unique[s]] for s=ebs.simplicesᵢ]
     nterms = if dim == 2 ntripts(2) else ntetpts(2) end
     bezpts = [[zeros(dim+1,nterms) for i=1:epm.sheets] for j=1:length(simplices)];
     lin_sigma_bandenergy = zeros(length(ebs.simplicesᵢ))
@@ -2845,8 +2845,8 @@ function quadlin_esterr(epm,ebs;num_slices::Integer=def_num_slices)
                             (v[2]+v[3])/2,v[3],(v[1]+v[4])/2,(v[2]+v[4])/2,(v[3]+v[4])/2,v[4]]']
                 end
                 if dim == 2
-                    fa = quad_area₋volume(bezpts,"area")
-                    lin_partial_bandenergy[j][i] = (ebs.fermilevel*fa + quad_area₋volume(bezpts,"volume"))*2*npg
+                    fa = quad_area_volume(bezpts,"area")
+                    lin_partial_bandenergy[j][i] = (ebs.fermilevel*fa + quad_area_volume(bezpts,"volume"))*2*npg
                 else
                     fa = simpson3D(bezpts[end,:], simplices[j],"area")
                     lin_partial_bandenergy[j][i] = (ebs.fermilevel*fa + simpson3D(bezpts[end,:], simplices[j],"volume",
@@ -2867,7 +2867,7 @@ Estimate the band energy error by taking the difference between cubic and quadra
 function cubequad_esterr(epm,ebs)
     ebs3 = ebs; ebs3.polydegree = 3
     ns = length(ebs3.simplicesᵢ)
-    c = [get_intercoeffs(i,mesh=ebs3.mesh,ext_mesh=ebs3.ext_mesh,sym₋unique=ebs3.sym₋unique,
+    c = [get_intercoeffs(i,mesh=ebs3.mesh,ext_mesh=ebs3.ext_mesh,sym_unique=ebs3.sym_unique,
         eigenvals=ebs3.eigenvals,simplicesᵢ=ebs3.simplicesᵢ,degree=ebs3.polydegree,constrained=false)
             for i=1:ns]
     coeffs = [i[2] for i=c]; intervals = [i[1] for i=c]
@@ -3180,7 +3180,7 @@ end
 Calculate the polynomial coefficients for an exact fit, among other quantities.
 
 # Arguments
-- `epm::Union{epm₋model,epm₋model2D}`: an empirical pseudopotential object.
+- `epm::Union{epm_model,epm_model2D}`: an empirical pseudopotential object.
 - `num_kpoints::Integer`: the number of k-points in the mesh.
 - `polydegree::Integer`: the degree of the polynomial.
 
@@ -3189,7 +3189,7 @@ Calculate the polynomial coefficients for an exact fit, among other quantities.
 - `mesh::PyObject`: a triangulation or tetrahedralization of the IBZ from QHull called
     from SciPy.
 - `simplicesᵢ::Vector`: the indices of points at the corners of the simplices in `mesh`.
-- `sym₋unique::Vector{<:Integer}`: the indices of rotationally unique points in `unique_pts`.
+- `sym_unique::Vector{<:Integer}`: the indices of rotationally unique points in `unique_pts`.
 - `eigenvals::Matrix{<:Real}`: the eigenvalues at the rotationally unique points.
 - `mesh_bezcoeffs::Vector`: the coefficients of the polynomial for each tile and sheet.
 - `mesh_intcoeffs::Vector`: the interval coefficients (length 0 in the case of exact fit).
@@ -3200,7 +3200,7 @@ using Pebsi.EPMs, Pebsi.QuadraticIntegration
 init_exactfit(m11,init_msize=3,polydegree=1)
 ```
 """
-function init_exactfit(epm::Union{epm₋model,epm₋model2D}; num_kpoints::Integer, polydegree::Integer,
+function init_exactfit(epm::Union{epm_model,epm_model2D}; num_kpoints::Integer, polydegree::Integer,
     atol::Real=def_atol,rtol::Real=def_rtol)
     dim = size(epm.recip_latvecs,1)
     mesh,simplicesᵢ = ibz_initmesh(epm.ibz,num_kpoints)
@@ -3229,9 +3229,9 @@ function init_exactfit(epm::Union{epm₋model,epm₋model2D}; num_kpoints::Integ
     unique_pts = unique_pts[:,1:n]
     cvpts = get_cvpts(unique_pts,epm.ibz);
     # Points on the boundary may be symmetrically unique
-    sym₋unique,unique_pts = get_sym₋unique!(unique_pts,epm.pointgroup,cvpts=cvpts)
-    ptsᵢ = [sym₋unique[p] for p=ptsᵢ]
-    uniqueᵢ = sort(unique(sym₋unique))[2:end]
+    sym_unique,unique_pts = get_sym_unique!(unique_pts,epm.pointgroup,cvpts=cvpts)
+    ptsᵢ = [sym_unique[p] for p=ptsᵢ]
+    uniqueᵢ = sort(unique(sym_unique))[2:end]
     eigenvals = zeros(epm.sheets,length(uniqueᵢ)+npad)
     for i=uniqueᵢ
         eigenvals[:,i] = eval_epm(unique_pts[:,i], epm, rtol=rtol, atol=atol)
@@ -3255,7 +3255,7 @@ function init_exactfit(epm::Union{epm₋model,epm₋model2D}; num_kpoints::Integ
     end
     mesh_intcoeffs = [[Matrix([mesh_bezcoeffs[i][j] mesh_bezcoeffs[i][j]]') 
         for j=1:epm.sheets] for i=1:length(simplices)]
-    (unique_pts, mesh, simplicesᵢ, sym₋unique, eigenvals, mesh_bezcoeffs, mesh_intcoeffs)
+    (unique_pts, mesh, simplicesᵢ, sym_unique, eigenvals, mesh_bezcoeffs, mesh_intcoeffs)
 end
 
 @doc """
@@ -3264,7 +3264,7 @@ end
 Calculate the k-points weights for a give approximation of the band structure.
 
 # Arguments
-- `epm::Union{epm₋model,epm₋model2D,epm₋model}`: the empirical pseudopotential.
+- `epm::Union{epm_model,epm_model2D,epm_model}`: the empirical pseudopotential.
 - `ebs::bandstructure`: the band structure
 - `num_slices::Integer=def_num_slices)`: the number of slices for integration.
 
@@ -3279,7 +3279,7 @@ using Pebsi.EPMs, Pebsi.QuadraticIntegration
 ebs = init_bandstructure(m11)
 kpoint_weights(epm,ebs)
 """
-function kpoint_weights(epm::Union{epm₋model,epm₋model2D,epm₋model},
+function kpoint_weights(epm::Union{epm_model,epm_model2D,epm_model},
         ebs::bandstructure; num_slices::Integer=def_num_slices)
     dim = size(epm.recip_latvecs,1)
     npg = length(epm.pointgroup)

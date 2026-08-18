@@ -5,7 +5,7 @@ using ..Geometry: barytocart, carttobary
 using Base.Iterators: product
 using LinearAlgebra: dot
 
-export bernstein_basis, getpoly_coeffs, eval_poly, getbez_pts₋wts, 
+export bernstein_basis, getpoly_coeffs, eval_poly, getbez_pts_wts, 
     eval_bezcurve, conicsection, eval_1Dquad_basis, get_1Dquad_coeffs, 
     evalpoly1D, solve_quadratic
 
@@ -202,7 +202,7 @@ function eval_poly(barypts::AbstractMatrix{<:Real},
 end
 
 @doc """
-    getbez_pts₋wts(bezpts,p₀,p₂)
+    getbez_pts_wts(bezpts,p₀,p₂)
 
 Calculate the Bezier points and weights of a level curve of a Quadratic surface passing through two points.
 
@@ -219,18 +219,18 @@ Calculate the Bezier points and weights of a level curve of a Quadratic surface 
 
 # Examples
 ```jldoctest
-using Pebsi.Polynomials: getbez_pts₋wts
+using Pebsi.Polynomials: getbez_pts_wts
 bezpts = [-1.0 0.0 1.0 -0.5 0.5 0.0; 0.0 0.0 0.0 0.5 0.5 1.0; 0.0 1.0 0.0 1.0 -1.0 0.0]
 p₀ = [1,0]
 p₂ = [0,1]
-bptswts = getbez_pts₋wts(bezpts,p₀,p₂)
+bptswts = getbez_pts_wts(bezpts,p₀,p₂)
 # output
 2-element Vector{Array{Float64}}:
  [1.0 0.0 0.0; 0.0 0.3333333333333333 1.0]
  [1.0, 1.5, 1.0]
 ```
 """
-function getbez_pts₋wts(bezpts::AbstractMatrix{<:Real}, p₀::AbstractVector{<:Real},
+function getbez_pts_wts(bezpts::AbstractMatrix{<:Real}, p₀::AbstractVector{<:Real},
     p₂::AbstractVector{<:Real}; 
     atol::Real=def_bez_weight_tol)
 

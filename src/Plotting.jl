@@ -5,11 +5,11 @@ using PyCall: pyimport_conda
 using Statistics: mean
 
 using ..QuadraticIntegration: bandstructure
-using ..EPMs: epm₋model2D, epm₋model, eval_epm
+using ..EPMs: epm_model2D, epm_model, eval_epm
 using ..RectangularMethod: sample_unitcell
 using ..Polynomials: eval_poly, eval_bezcurve
 using ..Geometry: carttobary, barytocart, simplex_size, sample_simplex
-using ..Mesh: notbox_simplices, ibz_init₋mesh
+using ..Mesh: notbox_simplices, ibz_init_mesh
 
 using SymmetryReduceBZ.Utilities: sortpts2D, sample_sphere, unique_points
 using SymmetryReduceBZ.Lattices: get_recip_latvecs
@@ -129,10 +129,10 @@ Plot the triangles in a triangular mesh.
 # Examples
 ```
 using PyPlot: subplots
-using Pebsi.Mesh: ibz_init₋mesh
+using Pebsi.Mesh: ibz_init_mesh
 using Pebsi.EPMs: m11
 using Pebsi.Plotting: meshplot
-mesh = ibz_init₋mesh(m11.ibz,3)
+mesh = ibz_init_mesh(m11.ibz,3)
 fig,ax = subplots()
 ax = meshplot(mesh,ax)
 ```
@@ -586,7 +586,7 @@ end
 Plot the band structure of an empirical pseudopotential.
 
 # Arguments
-- `epm::Union{epm₋model2D,epm₋model}`: an empirical pseudopotential.
+- `epm::Union{epm_model2D,epm_model}`: an empirical pseudopotential.
 - `ax::Union{PyObject,Nothing}=nothing`: an axes object from PyPlot.
 - `kpoint_dist::Real`: the distance between k-points in the band plot.
 - `expansion_size::Integer`: the desired number of terms in the Fourier
@@ -603,7 +603,7 @@ using Pebsi.Plotting: plot_bandstructure
 plot_bandstructure(Al_epm)
 ```
 """
-function plot_bandstructure(epm::Union{epm₋model2D,epm₋model},
+function plot_bandstructure(epm::Union{epm_model2D,epm_model},
     ax::Union{PyObject,Nothing}=nothing; kpoint_dist::Real=0.1,
     expansion_size::Integer=1000, sheets::Integer=epm.sheets)
     plot_bandstructure(epm.name, epm.real_latvecs, epm.atom_types, epm.atom_pos,
@@ -631,7 +631,7 @@ Plot the Fermi curve of a 2D EPM.
 """
 function fermicurve_plot(epm, ax=nothing; ntri=10, ndivs=20, zorder=2, linewidths=1.2, color="red")
     dim = 2
-    ibzmesh = ibz_init₋mesh(epm.ibz,ntri)
+    ibzmesh = ibz_init_mesh(epm.ibz,ntri)
     simplicesᵢ = notbox_simplices(ibzmesh)
     simplices = [Array(ibzmesh.points[s,:]') for s=simplicesᵢ]
     bpts = sample_simplex(dim,ndivs)

@@ -13,7 +13,7 @@ using Test
 using PyPlot: PyObject, subplots, figure, subplot, close
 using Pebsi.Plotting: meshplot, contourplot, bezplot, bezcurve_plot, polygonplot,
     plot_bandstructure, fermicurve_plot, default_colors
-using Pebsi.Mesh: ibz_init₋mesh
+using Pebsi.Mesh: ibz_init_mesh
 using Pebsi.EPMs: m11, Al_epm
 
 @testset "Plotting" begin
@@ -35,7 +35,7 @@ using Pebsi.EPMs: m11, Al_epm
         @test meshplot([0 1 1 0 0 1 1 0; 0 0 1 1 0 0 1 1; 0 0 0 0 1 1 1 1], ax3) isa PyObject
         close(fig)
 
-        mesh = ibz_init₋mesh(m11.ibz, 3)
+        mesh = ibz_init_mesh(m11.ibz, 3)
         fig, ax = subplots()
         @test meshplot(mesh, ax) isa PyObject
         close(fig)

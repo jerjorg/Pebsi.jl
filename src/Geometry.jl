@@ -5,7 +5,7 @@ using LinearAlgebra: dot, cross, norm, det
 using Base.Iterators: product
 
 export order_vertices!, sample_simplex, barytocart, carttobary, simplex_size, 
-    insimplex, lineseg₋pt_dist, affine_trans, mapto_xyplane, ptface_mindist,
+    insimplex, lineseg_pt_dist, affine_trans, mapto_xyplane, ptface_mindist,
     point_in_polygon
 
 @doc """
@@ -297,7 +297,7 @@ function insimplex(bpts::AbstractMatrix{<:Real},atol::Real=def_atol)
 end
 
 @doc """
-    lineseg₋pt_dist(p3,line_seg,line;atol)
+    lineseg_pt_dist(p3,line_seg,line;atol)
 
 Calculate the shortest distance from a point to a line segment.
 
@@ -314,15 +314,15 @@ Calculate the shortest distance from a point to a line segment.
 
 # Examples
 ```jldoctest
-import Pebsi.Geometry: lineseg₋pt_dist
+import Pebsi.Geometry: lineseg_pt_dist
 lineseg = [0 0; 0 1]
 pt = [0.5, 0.5]
-lineseg₋pt_dist(pt,lineseg)
+lineseg_pt_dist(pt,lineseg)
 # output
 0.5000000000000001
 ```
 """
-function lineseg₋pt_dist(p3::AbstractVector{<:Real},line_seg::AbstractMatrix{<:Real},
+function lineseg_pt_dist(p3::AbstractVector{<:Real},line_seg::AbstractMatrix{<:Real},
     line::Bool=false;atol::Real=def_atol)::Real
     
     p1 = line_seg[:,1]; p2 = line_seg[:,2]
@@ -432,7 +432,7 @@ function ptface_mindist(pt::AbstractVector{<:Real},
     if point_in_polygon(ppt,face)
         abs(d)
     else
-        minimum([lineseg₋pt_dist(pt,face[:,[i,mod1(i+1,npts)]]) for i=1:npts])
+        minimum([lineseg_pt_dist(pt,face[:,[i,mod1(i+1,npts)]]) for i=1:npts])
     end
 end
 
