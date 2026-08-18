@@ -1,6 +1,6 @@
 module Mesh
 
-using ..Geometry: simplex_size, barytocart, lineseg₋pt_dist, ptface_mindist,
+using ..Geometry: simplex_size, barytocart, lineseg_pt_dist, ptface_mindist,
     sample_simplex
 using ..Defaults: def_atol, def_mesh_scale, def_max_neighbor_tol,
     def_neighbors_per_bin2D, def_neighbors_per_bin3D, def_num_neighbors2D, 
@@ -12,13 +12,13 @@ using Statistics: mean
 using LinearAlgebra: norm, dot, cross
 using Suppressor
 
-export get_neighbors, choose_neighbors, choose_neighbors3D, ibz_init₋mesh,
+export get_neighbors, choose_neighbors, choose_neighbors3D, ibz_init_mesh,
     ibz_borders, bz_translations, 
-    get_sym₋unique!, notbox_simplices, get_cvpts, get_extmesh, trimesh, ntripts,
+    get_sym_unique!, notbox_simplices, get_cvpts, get_extmesh, trimesh, ntripts,
     ntetpts, simplex_cornerpts, gmsh_initmesh, ibz_initmesh
 
 @doc """
-    get_neighbors(index,mesh,num₋neighbors=2)
+    get_neighbors(index,mesh,num_near_neigh=2)
 
 Calculate the nth-nearest neighbors of a point in a mesh.
 
@@ -26,7 +26,7 @@ Calculate the nth-nearest neighbors of a point in a mesh.
 - `index::Int`: the index of the point in the mesh. The coordinates
     of the point are `mesh.points[index,:]`.
 - `mesh::PyObject`: a Delaunay triangulation of the mesh from `Delaunay.delaunay`.
-- `num₋neighbors::Int=2`: the number of neighbors to find. For example,
+- `num_near_neigh::Int=2`: the number of neighbors to find. For example,
     if 2, find first and second nearest neighbors.
 
 # Returns
@@ -48,7 +48,7 @@ get_neighbors(index,mesh)
 ```
 """
 function get_neighbors(index::Int,mesh::PyObject,
-    num₋neighbors::Int=2)::AbstractVector{Int}
+    num_near_neigh::Int=2)::AbstractVector{Int}
     dim = size(mesh.points,2)
     if dim == 2 ignore = collect(1:4) else ignore = collect(1:8) end
     indices,indptr = mesh.vertex_neighbor_vertices
@@ -58,10 +58,10 @@ function get_neighbors(index::Int,mesh::PyObject,
     # The mesh is enclosed in a box. Don't include neighbors that are the corners
     # of the box.
     neighborsᵢ = filter(x->!(x in [ignore; index]), unique(neighborsᵢ))
-    for _=2:num₋neighbors
-         first₋neighborsᵢ = reduce(vcat,[indptr[indices[k]:indices[k+1]-1] for k=neighborsᵢ])
-         first₋neighborsᵢ = filter(x->!(x in [ignore;index]), unique(first₋neighborsᵢ))
-         neighborsᵢ = [neighborsᵢ;first₋neighborsᵢ]
+    for _=2:num_near_neigh
+         first_neighborsᵢ = reduce(vcat,[indptr[indices[k]:indices[k+1]-1] for k=neighborsᵢ])
+         first_neighborsᵢ = filter(x->!(x in [ignore;index]), unique(first_neighborsᵢ))
+         neighborsᵢ = [neighborsᵢ;first_neighborsᵢ]
     end
     
     unique(neighborsᵢ)
@@ -118,7 +118,7 @@ function choose_neighbors(simplex::AbstractMatrix{<:Real},
     order = sortperm(angles); neighbors = neighbors[:,order]; angles = angles[order]
     neighborsᵢ = neighborsᵢ[order]
     distances = [minimum([
-        lineseg₋pt_dist(neighbors[:,j],simplex[:,[i,mod1(i+1,3)]]) for i=1:3]) for j=1:size(neighbors,2)]
+        lineseg_pt_dist(neighbors[:,j],simplex[:,[i,mod1(i+1,3)]]) for i=1:3]) for j=1:size(neighbors,2)]
     
     # Group neighboring points by angle ranges
     nbins = round(Int,num_neighbors/neighbors_per_bin)
@@ -137,7 +137,7 @@ function choose_neighbors(simplex::AbstractMatrix{<:Real},
 
     for p=1:nbins
         # Order the points in each bin by distance
-        distances = [minimum([lineseg₋pt_dist(
+        distances = [minimum([lineseg_pt_dist(
             neighbors[:,j],simplex[:,[i,mod1(i+1,3)]]) for i=1:3]) for j=angle_ran[p]]
         dorder = sortperm(distances)
         angle_ran[p] = neighborsᵢ[angle_ran[p][dorder]]
@@ -275,7 +275,7 @@ function choose_neighbors3D(simplex,neighborsᵢ,neighbors;num_neighbors=nothing
 end
 
 @doc """
-    ibz_init₋mesh(ibz,n;rtol,atol)
+    ibz_init_mesh(ibz,n;rtol,atol)
 
 Create a triangulation of a roughly uniform mesh over the IBZ.
 
@@ -296,16 +296,16 @@ Create a triangulation of a roughly uniform mesh over the IBZ.
 # Examples
 ```jldoctest
 using QHull
-import Pebsi.Mesh: ibz_init₋mesh
+import Pebsi.Mesh: ibz_init_mesh
 ibz = chull(Matrix([0. 0. 1. 1.; 0. 1. 0. 1.]'))
 n = 2
-mesh = ibz_init₋mesh(ibz,n)
+mesh = ibz_init_mesh(ibz,n)
 mesh.npoints
 # output
 13
 ```
 """
-function ibz_init₋mesh(ibz::Chull{<:Real},n::Int;
+function ibz_init_mesh(ibz::Chull{<:Real},n::Int;
     rtol::Real=sqrt(eps(maximum(ibz.points))),atol::Real=def_atol)::PyObject
     spatial = pyimport("scipy.spatial")
 
@@ -332,7 +332,7 @@ function ibz_init₋mesh(ibz::Chull{<:Real},n::Int;
 end
 
 @doc """
-    get_sym₋unique!(points,pointgroup;rtol,atol)
+    get_sym_unique!(points,pointgroup;rtol,atol)
 
 Calculate the symmetrically unique points within the IBZ.
 
@@ -344,7 +344,7 @@ Calculate the symmetrically unique points within the IBZ.
 - `atol::Real=1e-9`: an absolute tolerance.
 
 # Returns
-- `sym₋unique::AbstractVector{<:Int}`: a vector that gives the position of the k-point
+- `sym_unique::AbstractVector{<:Int}`: a vector that gives the position of the k-point
     that is equivalent to each k-point (except for the first 4 points or the
     points of the box). The first k-points, after the first 4, are unique.
 - `points::PyObject`: The points in the mesh, with the unique points first. To avoid
@@ -355,15 +355,15 @@ Calculate the symmetrically unique points within the IBZ.
 # Examples
 ```jldoctest
 using Pebsi.EPMs: m51
-using Pebsi.Mesh: get_sym₋unique!, ibz_init₋mesh
-mesh = ibz_init₋mesh(m51.ibz,3)
-sym_unique,points = get_sym₋unique!(Matrix(mesh.points'),m51.pointgroup)
+using Pebsi.Mesh: get_sym_unique!, ibz_init_mesh
+mesh = ibz_init_mesh(m51.ibz,3)
+sym_unique,points = get_sym_unique!(Matrix(mesh.points'),m51.pointgroup)
 length(sym_unique)
 # output
 44
 ```
 """
-function get_sym₋unique!(points::Matrix{<:Real},pointgroup::Vector{Matrix{Float64}};
+function get_sym_unique!(points::Matrix{<:Real},pointgroup::Vector{Matrix{Float64}};
     cvpts::Union{Nothing,Vector{<:Integer}}=nothing,
     rtol::Real=sqrt(eps(maximum(points))),atol::Real=def_atol) 
     spatial = pyimport("scipy.spatial")
@@ -371,12 +371,12 @@ function get_sym₋unique!(points::Matrix{<:Real},pointgroup::Vector{Matrix{Floa
     if dim == 2 nstart = 5 else nstart = 9 end
     # Calculate the unique points of the uniform IBZ mesh.
     n = size(points,2)
-    sym₋unique = zeros(Int,n)
+    sym_unique = zeros(Int,n)
     move = []
     for i=nstart:n
         # If this point hasn't been added already, add it to the list of unique points.
-        if sym₋unique[i] == 0
-            sym₋unique[i] = i
+        if sym_unique[i] == 0
+            sym_unique[i] = i
         else
             push!(move,i)
             continue
@@ -392,30 +392,30 @@ function get_sym₋unique!(points::Matrix{<:Real},pointgroup::Vector{Matrix{Floa
             pos = findall(x->x==1,rotpts)
             if pos == []
                 continue
-            elseif sym₋unique[pos[1]] == 0
-                sym₋unique[pos[1]] = i
+            elseif sym_unique[pos[1]] == 0
+                sym_unique[pos[1]] = i
             end
         end
     end
-    # Make the leading points in sym₋unique the unique points in the mesh.
-    copy_sym₋unique = deepcopy(sym₋unique)
+    # Make the leading points in sym_unique the unique points in the mesh.
+    copy_sym_unique = deepcopy(sym_unique)
     if length(move) != 0
         for i = move
             if i == length(move)
                 continue
             end 
             for j = i+1:n
-                if copy_sym₋unique[j] > i
-                    sym₋unique[j] -= 1
+                if copy_sym_unique[j] > i
+                    sym_unique[j] -= 1
                 end
             end
         end
-        sym₋unique = [zeros(Int,nstart-1); sym₋unique[setdiff(nstart:n,move)]; sym₋unique[move]]
+        sym_unique = [zeros(Int,nstart-1); sym_unique[setdiff(nstart:n,move)]; sym_unique[move]]
         if move != []
             points = [points[:,1:nstart-1] points[:,setdiff(nstart:n,move)] points[:,move]] 
         end
     end
-    sym₋unique,points
+    sym_unique,points
 end
 
 @doc """
@@ -434,8 +434,8 @@ Determine all simplices in a triangulation that do not contain a box point.
 # Examples
 ```
 using Pebsi.EPMs: m51
-using Pebsi.Mesh: ibz_init₋mesh, notbox_simplices
-mesh = ibz_init₋mesh(m51.ibz,1)
+using Pebsi.Mesh: ibz_init_mesh, notbox_simplices
+mesh = ibz_init_mesh(m51.ibz,1)
 notbox_simplices(mesh)
 # output
 8-element Vector{Vector{var"#s18"} where var"#s18"<:Integer}:
@@ -502,7 +502,7 @@ function ibz_borders(ibz::Chull)
     # Taken from the hull itself rather than passed in, so the borders and the
     # distance function cannot disagree about the dimension.
     if size(ibz.points,2) == 2
-        [Matrix(ibz.points[i,:]') for i=eachrow(ibz.simplices)], lineseg₋pt_dist
+        [Matrix(ibz.points[i,:]') for i=eachrow(ibz.simplices)], lineseg_pt_dist
     else
         [Matrix(ibz.points[f,:]') for f=get_uniquefacets(ibz)], ptface_mindist
     end
@@ -608,15 +608,15 @@ Calculate a triangulation of points within and just outside the IBZ.
 - `::PyObject`: a triangulation of points within and without the IBZ. The points
     outside the IBZ are rotationally or translationally equivalent to point inside
     the IBZ.
-- `sym₋unique::AbstractVector{<:Int}`: a vector that gives the position of the k-point
+- `sym_unique::AbstractVector{<:Int}`: a vector that gives the position of the k-point
     that is equivalent to each k-point (except for the first 4 points or the
     points of the box).
 
 # Examples
 ```
 using Pebsi.EPMs: m21
-using Pebsi.Mesh: ibz_init₋mesh, get_extmesh
-mesh = ibz_init₋mesh(m21.ibz,1)
+using Pebsi.Mesh: ibz_init_mesh, get_extmesh
+mesh = ibz_init_mesh(m21.ibz,1)
 mesh,extmesh,sym_unique = get_extmesh(m21.ibz,mesh,m21.pointgroup,m21.recip_latvecs)
 ```
 """
@@ -627,7 +627,7 @@ function get_extmesh(ibz::Chull,mesh::PyObject,pointgroup::Vector{Matrix{Float64
     dim = size(recip_latvecs,1)
     spatial = pyimport("scipy.spatial")
     cv_pointsᵢ = get_cvpts(Matrix(mesh.points'),ibz)
-    sym₋unique,points = get_sym₋unique!(Matrix(mesh.points'), pointgroup, cvpts=cv_pointsᵢ)
+    sym_unique,points = get_sym_unique!(Matrix(mesh.points'), pointgroup, cvpts=cv_pointsᵢ)
     mesh = spatial.Delaunay(points')
     # Calculate the maximum distance between neighboring points
     bound_limit = def_max_neighbor_tol*maximum(
@@ -639,7 +639,7 @@ function get_extmesh(ibz::Chull,mesh::PyObject,pointgroup::Vector{Matrix{Float64
 
     neighborsᵢ = reduce(vcat,[get_neighbors(i,mesh,near_neigh) for i=cv_pointsᵢ]) |> unique
     neighbors = zeros(Float64,dim,length(neighborsᵢ)*length(pointgroup)*length(bztrans));
-    sym₋unique = [sym₋unique; zeros(Int,size(neighbors,2))];
+    sym_unique = [sym_unique; zeros(Int,size(neighbors,2))];
     numpts = size(mesh.points,1)    
     n = 0
     for i=neighborsᵢ,op=pointgroup,trans=bztrans
@@ -648,16 +648,16 @@ function get_extmesh(ibz::Chull,mesh::PyObject,pointgroup::Vector{Matrix{Float64
             !any(mapslices(x->isapprox(x,pt,atol=atol,rtol=rtol),[mesh.points' neighbors[:,1:n]],dims=1))
             n += 1
             neighbors[:,n] = pt
-            sym₋unique[numpts + n] = sym₋unique[i]
+            sym_unique[numpts + n] = sym_unique[i]
         end
     end
 
     neighbors = neighbors[:,1:n]
-    sym₋unique = sym₋unique[1:numpts + n]
+    sym_unique = sym_unique[1:numpts + n]
     ext_mesh = spatial.Delaunay(unique_points([mesh.points; neighbors']',
         rtol=rtol,atol=atol)')
     
-    (mesh,ext_mesh,sym₋unique)
+    (mesh,ext_mesh,sym_unique)
 end
 
 """

@@ -6,7 +6,7 @@ using LinearAlgebra: det, diag, dot, inv
 using AbstractAlgebra: ZZ, matrix, snf_with_transform, hnf_with_transform, hnf
 using Distributed: pmap
 
-using ..EPMs: eval_epm, RytoeV, epm₋model, epm₋model2D, sym_offset
+using ..EPMs: eval_epm, RytoeV, EPM, EPM2D, sym_offset
 using ..Defaults: def_atol
 
 export sample_unitcell, rectangular_method, symreduce_grid, convert_mixedradix,
@@ -78,7 +78,7 @@ end
 Calculate the fermi level and band energy of an EPM with the rectangular method.
 
 # Arguments
-- `epm::Union{epm₋model2D,epm₋model}`: an empirical pseudopotential.
+- `epm::Union{EPM2D,EPM}`: an empirical pseudopotential.
 - `N::Union{Integer,AbstractMatrix{<:Integer}}`: an integer, square array that relates
     the reciprocal lattice vectors `R` to the grid generating vectors `K`: `R=KN`.
     If a integer is provided, the matrix is a diagonal matrix, and each element along
@@ -103,7 +103,7 @@ rectangular_method(m11,3)
 (3, 0.6898935531209407, 2.0212677615661567)
 ```
 """
-function rectangular_method(epm::Union{epm₋model2D,epm₋model},
+function rectangular_method(epm::Union{EPM2D,EPM},
     N::Union{Integer,AbstractMatrix{<:Integer}},num_cores::Integer=1;
     partial::Bool=true,
     rtol::Real=sqrt(eps(float(maximum(epm.recip_latvecs)))), 
