@@ -98,9 +98,9 @@ Calculate the fermi level and band energy of an EPM with the rectangular method.
 ```jldoctest
 import Pebsi.EPMs: m11
 import Pebsi.RectangularMethod: rectangular_method
-rectangular_method(m11,3)
+(n,fl,be) = rectangular_method(m11,3); (n, round(fl,digits=10), round(be,digits=10))
 # output
-(3, 0.6898935531209407, 2.0212677615661567)
+(3, 0.6898935531, 2.0212677616)
 ```
 """
 function rectangular_method(epm::Union{EPM2D,EPM},

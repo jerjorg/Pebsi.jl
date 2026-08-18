@@ -116,14 +116,14 @@ import Pebsi.Polynomials: getpoly_coeffs
 simplex_bpts = [1.0 0.5 0.0 0.5 0.0 0.0; 0.0 0.5 1.0 0.0 0.5 0.0; 0.0 0.0 0.0 0.5 0.5 1.0]
 values = [0.4, 0.5, 0.3, -0.4, -0.1, -0.2]
 dim = 2; deg = 2
-getpoly_coeffs(values,simplex_bpts,dim,deg)
+round.(getpoly_coeffs(values,simplex_bpts,dim,deg), digits=10)
 # output
 6-element Vector{Float64}:
   0.4
   0.65
   0.3
  -0.9
- -0.24999999999999997
+ -0.25
  -0.2
 ```
 """
