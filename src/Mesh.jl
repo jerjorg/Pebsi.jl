@@ -4,7 +4,7 @@ using ..Geometry: simplex_size, barytocart, lineseg_pt_dist, ptface_mindist,
     sample_simplex
 using ..Defaults: def_atol, def_mesh_scale, def_max_neighbor_tol,
     def_neighbors_per_bin2D, def_neighbors_per_bin3D, def_num_neighbors2D, 
-    def_num_neighbors3D, def_initmesh_kpoint_tol
+    def_num_neighbors3D, def_initmesh_kpoint_tol, def_neighbor_dist_rtol, def_simplex_size_rtol
 using SymmetryReduceBZ.Utilities: unique_points, get_uniquefacets, sortpts2D
 using PyCall: pyimport, pyimport_conda, PyObject
 using QHull: Chull
@@ -115,10 +115,19 @@ function choose_neighbors(simplex::AbstractMatrix{<:Real},
 
     center = vec(mean(simplex,dims=2)) # Measure angles from the center of the triangle
     angles = [atan(neighbors[2,i]-center[2],neighbors[1,i]-center[1]) for i=1:size(neighbors,2)]
-    order = sortperm(angles); neighbors = neighbors[:,order]; angles = angles[order]
+    order = sortperm(angles, alg=Base.Sort.DEFAULT_STABLE); neighbors = neighbors[:,order]; angles = angles[order]
     neighborsᵢ = neighborsᵢ[order]
     distances = [minimum([
         lineseg_pt_dist(neighbors[:,j],simplex[:,[i,mod1(i+1,3)]]) for i=1:3]) for j=1:size(neighbors,2)]
+
+    # Two neighbours count as the same distance away when they agree to within
+    # this much. Scaled by the simplex's shortest edge so it means the same thing
+    # on a coarse triangle and on a refined one.
+    edge = minimum([norm(simplex[:,i] - simplex[:,j])
+        for i=1:size(simplex,2) for j=1:size(simplex,2) if i < j])
+    dtol = def_neighbor_dist_rtol*edge
+    # Distance of each candidate, by its index in the mesh, for the tie sweep below.
+    dist_by_id = Dict(neighborsᵢ[j] => distances[j] for j=1:length(neighborsᵢ))
     
     # Group neighboring points by angle ranges
     nbins = round(Int,num_neighbors/neighbors_per_bin)
@@ -137,9 +146,12 @@ function choose_neighbors(simplex::AbstractMatrix{<:Real},
 
     for p=1:nbins
         # Order the points in each bin by distance
-        distances = [minimum([lineseg_pt_dist(
-            neighbors[:,j],simplex[:,[i,mod1(i+1,3)]]) for i=1:3]) for j=angle_ran[p]]
-        dorder = sortperm(distances)
+        # Snapped to a multiple of dtol before sorting, so neighbours that are
+        # equidistant on one machine are equidistant on all of them and the
+        # stable sort's index tie-break is what decides between them.
+        bindist = round.([minimum([lineseg_pt_dist(
+            neighbors[:,j],simplex[:,[i,mod1(i+1,3)]]) for i=1:3]) for j=angle_ran[p]] ./ dtol) .* dtol
+        dorder = sortperm(bindist, alg=Base.Sort.DEFAULT_STABLE)
         angle_ran[p] = neighborsᵢ[angle_ran[p][dorder]]
     end
     
@@ -156,6 +168,20 @@ function choose_neighbors(simplex::AbstractMatrix{<:Real},
                 push!(neighᵢ,angle_ran[i][c])            
             end
         end    
+    end
+    # Keep every remaining candidate that is the same distance away as the
+    # furthest one already kept. Choosing a subset of an equidistant group means
+    # choosing arbitrarily among symmetry-related points, which biases the fit in
+    # a direction nothing physical picked out; and the choice is exactly what was
+    # sensitive to the last bits of the geometry. Taking all of them leaves
+    # nothing to be sensitive to.
+    if !isempty(neighᵢ)
+        dmax = maximum(dist_by_id[i] for i=neighᵢ)
+        for id in neighborsᵢ
+            if !(id in neighᵢ) && dist_by_id[id] <= dmax + dtol
+                push!(neighᵢ,id)
+            end
+        end
     end
     neighᵢ
 end
@@ -204,13 +230,16 @@ function choose_neighbors3D(simplex,neighborsᵢ,neighbors;num_neighbors=nothing
         return neighborsᵢ
     end
 
+    edge = minimum([norm(simplex[:,i] - simplex[:,j])
+        for i=1:size(simplex,2) for j=1:size(simplex,2) if i < j])
+    dtol = def_neighbor_dist_rtol*edge
     center = vec(mean(simplex,dims=2)) # Measure angles from the center of the triangle
     ϕs = [acos(dot(neighbors[:,i] - center,[0,0,1] - center)/(norm(neighbors[:,i] - center)*norm([0,0,1] - 
                     center))) for i=1:size(neighbors,2)]
     θs = [atan(neighbors[2,i]-center[2],neighbors[1,i]-center[1]) for i=1:size(neighbors,2)]
 
-    orderϕ = sortperm(ϕs)
-    orderθ = sortperm(θs)
+    orderϕ = sortperm(ϕs, alg=Base.Sort.DEFAULT_STABLE)
+    orderθ = sortperm(θs, alg=Base.Sort.DEFAULT_STABLE)
     neighbors_per_bin = if dim == 2 def_neighbors_per_bin2D else def_neighbors_per_bin3D end
 
     nbinsθ = round(Int,√(2*num_neighbors/neighbors_per_bin))
@@ -254,7 +283,9 @@ function choose_neighbors3D(simplex,neighborsᵢ,neighbors;num_neighbors=nothing
         for j = 1:nbinsϕ
             ptsᵢ = angle_ran[i][j]
             pts = neighbors[:,ptsᵢ]
-            order = sortperm([minimum([ptface_mindist(pts[:,i],face) for face = faces]) for i=1:size(pts,2)])
+            # Snapped to a multiple of dtol, as in choose_neighbors.
+            order = sortperm(round.([minimum([ptface_mindist(pts[:,i],face) for face = faces])
+                for i=1:size(pts,2)] ./ dtol) .* dtol, alg=Base.Sort.DEFAULT_STABLE)
             angle_ran[i][j] = angle_ran[i][j][order]
         end
     end
@@ -453,16 +484,23 @@ function notbox_simplices(mesh::PyObject)::Vector{Vector{<:Integer}}
     simplicesᵢ = [Vector{Int}(mesh.simplices[i,:]) for i=1:size(mesh.simplices,1)]
     dim = size(mesh.points,2)
     if dim == 2 jend = 4 else jend = 8 end
+    # The first few indices are the corners of a bounding box; a simplex holding
+    # one of them is outside the region of interest.
+    inside = [i for i=1:size(mesh.simplices,1)
+              if !any(j in (mesh.simplices[i,:] .+ 1) for j=1:jend)]
+    sizes = [simplex_size(Matrix(mesh.points[mesh.simplices[i,:] .+ 1,:]')) for i=inside]
+
+    # Degenerate means small compared with the other simplices here, not small
+    # compared with a fixed number. An absolute threshold makes this scale
+    # dependent: every child of a small patch falls under it, they are all
+    # discarded, and the caller is told the patch would not subdivide when in
+    # fact it subdivided and the results were thrown away.
+    ref = isempty(sizes) ? 0.0 : maximum(sizes)
     n = 0
-    for i=1:size(mesh.simplices,1)
-        # The first few indices are the the corners of a bounding box. Only keep
-        # the simplex if it doesn't contain one of these indices.
-        if !any([j in (mesh.simplices[i,:] .+ 1) for j=1:jend])
-            # Only keep the simplex if it has nonzero volume.
-            if !isapprox(simplex_size(Matrix(mesh.points[mesh.simplices[i,:] .+ 1,:]')),0,atol=def_atol)
-                n += 1
-                simplicesᵢ[n] = mesh.simplices[i,:] .+ 1
-            end
+    for (k,i) in enumerate(inside)
+        if ref > 0 && sizes[k] > def_simplex_size_rtol*ref
+            n += 1
+            simplicesᵢ[n] = mesh.simplices[i,:] .+ 1
         end
     end
     simplicesᵢ[1:n]

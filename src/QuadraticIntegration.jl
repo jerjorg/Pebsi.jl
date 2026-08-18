@@ -38,7 +38,18 @@ export BandStructure, init_bandstructure, quadval_vertex, corner_indices,
 # submodules: the surface, area/volume and quadrature routines call each other
 # in a cycle, so they cannot be separated without redesign, and keeping one
 # module leaves every existing import working.
-include("QuadraticIntegration/Surfaces.jl")
+# Layered lowest first. `bezcurve_intersects` sits with the curve primitives
+# rather than with the quadrature routines, which is what makes this a DAG:
+# Quadrature -> AreaVolume -> BezierSurfaces, with no edge back.
+# Real submodules, each depending only on the ones above it. `using` each one
+# re-exports its names from QuadraticIntegration, so `Pebsi.QuadraticIntegration.simpson`
+# and the like keep working exactly as before.
+include("QuadraticIntegration/BezierSurfaces.jl")
+using .BezierSurfaces
+include("QuadraticIntegration/AreaVolume.jl")
+using .AreaVolume
+include("QuadraticIntegration/Quadrature.jl")
+using .Quadrature
 include("QuadraticIntegration/Interpolation.jl")
 include("QuadraticIntegration/FermiLevel.jl")
 include("QuadraticIntegration/Refinement.jl")

@@ -62,9 +62,44 @@ const def_fl_max_iters = 50 # The maximum number root-finding iterations for Fer
 const def_chandrupatla_tol = 1e-2 # Tolerance for Chandrupatla's method when t is close to zero or 1
 const def_min_split = 10 # The minimum number of simplices split per refinement iteration
 const def_allowed_err_ratio = 5 # Cutoff between adding one or three/six sample points in refinement
+# Two candidate neighbours count as the same distance from a simplex when their
+# distances agree to within this fraction of that simplex's shortest edge.
+#
+# A symmetric mesh puts many candidates at the same distance, and which of them
+# get kept then depends on how the sort orders equal values. Comparing at full
+# precision makes that depend on the last bits of the geometry, which a different
+# BLAS will move - the mechanism behind calc_fl differing between Julia versions.
+#
+# The tolerance is relative to the local edge length rather than absolute because
+# adaptive refinement leaves triangles differing in size by orders of magnitude,
+# so no single absolute distance is meaningful across the mesh.
+const def_neighbor_dist_rtol = 1e-9
 const def_max_neighbor_tol = 1.01 # Tolerance for selecting neighbors near the triangle
 const def_inside_neighbors_divs = 5 # The number of points for a uniform grid over a triangle for inside neighbors
 const def_bez_weight_tol = 1e-12 # Smaller tolerance for classifying conic sections
+# A patch this small that `split_bezsurf` could not reduce to two curve
+# intersections is integrated by its sign instead of exactly.
+#
+# The box-padded Delaunay in split_bezsurf1 sometimes cannot subdivide a triangle
+# even though it is well above def_min_simplex_size - every candidate sub-triangle
+# has a corner on the padding box - and the result comes back with three
+# intersections, which two_intersects_area_volume has no formula for. Such a patch
+# contributes at most its own size to the area, and at most its size times its
+# largest coefficient to the volume, so approximating it costs no more than that.
+# Refusing to integrate it costs the entire calculation. Above this size the
+# refusal stands, since a large patch that will not subdivide means something has
+# gone wrong rather than merely become small.
+const def_degenerate_simplex_size = 1e-6
+# A simplex from a triangulation counts as degenerate when its size is below
+# this fraction of the largest simplex in the same triangulation.
+#
+# This test used to be absolute - `isapprox(size, 0, atol=def_atol)` with def_atol
+# at 1e-9 - which silently made the whole splitting algorithm scale dependent.
+# Subdividing a patch below about 1e-8 in area produced perfectly good children,
+# every one of them smaller than 1e-9, so all of them were discarded as
+# "zero volume" and the caller was told the patch could not be subdivided. The
+# geometry was never the problem; the yardstick was.
+const def_simplex_size_rtol = 1e-9
 const def_min_simplex_size = 1e-12 # The smallest triangle that can be split
 const def_rational_bezpt_dist = 1e6 # The maximum size of a component of a rational Bezier point
 const def_weighted = false # Points are not weighted to calculate interval coefficients
