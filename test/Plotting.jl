@@ -14,7 +14,7 @@ using PyPlot: PyObject, subplots, figure, subplot, close
 using Pebsi.Plotting: meshplot, contourplot, bezplot, bezcurve_plot, polygonplot,
     plot_bandstructure, fermicurve_plot, default_colors
 using Pebsi.Mesh: ibz_init₋mesh
-using Pebsi.EPMs: m11
+using Pebsi.EPMs: m11, Al_epm
 
 @testset "Plotting" begin
 
@@ -73,14 +73,12 @@ using Pebsi.EPMs: m11
     end
 
     @testset "plot_bandstructure" begin
-        # Not run: `plot_bandstructure` calls pyimport("seekpath") to build the
-        # high-symmetry path, and nothing installs seekpath. scipy and
-        # matplotlib are only present because QHull and PyPlot pull them in as a
-        # side effect; seekpath has no such sponsor, so this throws
-        # ModuleNotFoundError on any machine that has not installed it by hand.
-        # `Mesh.gmsh_initmesh` has the same problem with pyimport("gmsh").
-        # Enabling this needs seekpath declared and installed somewhere first.
-        @test_skip plot_bandstructure(m11; expansion_size=50, sheets=2,
-                                      kpoint_dist=0.5) isa PyObject
+        # Al_epm rather than m11: seekpath returns high-symmetry points in 3D, so
+        # despite accepting `epm-model2D` this fails on a 2D model with a 2x2
+        # times 3-vector DimensionMismatch. Kept small - the defaults expand 1000
+        # plane waves over 10 sheets.
+        @test plot_bandstructure(Al_epm; expansion_size=50, sheets=2,
+                                 kpoint_dist=0.5) isa PyObject
+        close("all")
     end
 end

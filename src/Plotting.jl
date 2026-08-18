@@ -1,6 +1,7 @@
 module Plotting
 
 using PyPlot: subplots, figure, PyObject, plt, pyimport
+using PyCall: pyimport_conda
 using Statistics: mean
 
 using ..QuadraticIntegration: bandstructure
@@ -510,7 +511,8 @@ function plot_bandstructure(name::String, basis::AbstractMatrix{<:Real},
     convention::String="angular", coordinates::String="Cartesian",
     func::Union{Nothing,Function}=nothing)
 
-    sp=pyimport("seekpath")
+    # Installed on first use: nothing else pulls in seekpath.
+    sp=pyimport_conda("seekpath", "seekpath", "conda-forge")
     rbasis=get_recip_latvecs(basis,convention)
     atompos=[atompos[:,i] for i=1:length(atomtypes)]
 

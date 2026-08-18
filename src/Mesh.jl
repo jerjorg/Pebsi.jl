@@ -6,7 +6,7 @@ using ..Defaults: def_atol, def_mesh_scale, def_max_neighbor_tol,
     def_neighbors_per_bin2D, def_neighbors_per_bin3D, def_num_neighbors2D, 
     def_num_neighbors3D, def_initmesh_kpoint_tol
 using SymmetryReduceBZ.Utilities: unique_points, get_uniquefacets, sortpts2D
-using PyCall: pyimport,PyObject
+using PyCall: pyimport, pyimport_conda, PyObject
 using QHull: Chull
 using Statistics: mean
 using LinearAlgebra: norm, dot, cross
@@ -731,7 +731,9 @@ gmsh_initmesh(ibz,meshsize)
 function gmsh_initmesh(ibz::Chull, meshsize::Real;
     opt_threshold::Real=1.0, mesh_algo::Integer=6, mesh_algo3D::Integer=1,
     opt_algo::Integer=1, opt_iters::Integer=100, atol::Real=def_atol)
-    gmsh = pyimport("gmsh")
+    # Installed on first use: nothing else pulls in the gmsh Python
+    # package, unlike scipy and matplotlib which arrive via QHull and PyPlot.
+    gmsh = pyimport_conda("gmsh", "python-gmsh", "conda-forge")
     spatial = pyimport("scipy.spatial")
     ibzpts = Matrix(ibz.points')
     n = size(ibzpts,2); dim = size(ibzpts,1)
