@@ -50,6 +50,43 @@ const def_neighbor_method = neighbors_surrounding # Select neighbors close and s
 const def_uniform = false # Do adaptive refinement by default
 const def_rtol = 1e-9 # Relative tolerance for floating point comparisons
 const def_atol = 1e-9 # absolute tolerance for floating point comparisons
+# Polynomial coefficients count as zero below this fraction of the largest
+# coefficient in the same polynomial, rather than below a fixed number.
+#
+# These coefficients are eigenvalues measured from the Fermi level, so they are
+# smallest exactly where the Fermi surface crosses a triangle - the triangles
+# that matter most. Comparing them against an absolute 1e-9 discards the level
+# set of any polynomial whose coefficients are small: scaling the coefficients
+# of a test patch by 1e-10, which does not move the zero contour or change the
+# true area at all, made the computed area 3.5 times too large, because no
+# intersections were found and the whole triangle was reported as occupied.
+const def_coeff_rtol = 1e-9
+
+# A coefficient is roundoff rather than merely small when it falls below this
+# many multiples of the working precision, measured against the reference
+# coefficient scale carried down from the patch the calculation started on.
+#
+# Two references are needed because a tolerance relative only to the coefficients
+# present cannot tell a small number from a meaningless one - dividing noise by
+# itself makes the noise look significant. Subdividing a patch whose values are of
+# order one leaves sub-patches whose coefficients are cancellation residue, and
+# judged on their own terms those become a genuine quadratic, so a region that is
+# not there gets integrated.
+#
+# The floor is expressed in multiples of `eps` rather than as a fixed number
+# because it is a property of the arithmetic, not of the problem. The same
+# coefficient that is unrecoverable in Float64 may be perfectly meaningful in
+# higher precision, and taking eps from the coefficient type means the floor
+# drops accordingly - which is what makes computing in BigFloat worth doing here
+# rather than merely slower.
+const def_coeff_noise_eps = 100
+
+# How close a root may come to the ends of its edge before it counts as sitting
+# on the corner. This is a question about a curve parameter, which runs from 0 to
+# 1 whatever the geometry or the coefficients, so it is genuinely absolute - and
+# it is a different question from whether a coefficient is zero, which is why it
+# no longer shares that tolerance.
+const def_root_boundary_atol = 1e-9
 const def_fatten = 2.0 # A parameter for scaling the interval coefficients
 const max_refine_steps = 100 # The maximum number of refinement iterations
 const def_num_neighbors2D = 16 # The desired number of neighbors in 2D interval coefficient calculation

@@ -1,6 +1,6 @@
 module Polynomials
 
-using ..Defaults: def_bez_weight_tol, def_atol
+using ..Defaults: def_bez_weight_tol, def_atol, def_coeff_rtol, def_coeff_noise_eps, def_root_boundary_atol
 using ..Geometry: barytocart, carttobary
 using Base.Iterators: product
 using LinearAlgebra: dot
@@ -265,10 +265,17 @@ function getbez_pts_wts(bezpts::AbstractMatrix{<:Real}, p₀::AbstractVector{<:R
     h₁₁₀ = 2*eval_poly(carttobary((p₀+p₂)/2,triangle),coeffs,2,2)
     cstype = conicsection(bezpts[end,:],atol=atol)    
 
+    # h₀₀₂ is a value of the interpolated quantity, so what counts as zero for it
+    # is set by the coefficients. `arg` below is a ratio of two such values and is
+    # therefore dimensionless, and `d` is a determinant of the geometry, so both
+    # keep the plain tolerance.
+    hscale = maximum(abs, coeffs)
+    htol = hscale == 0 ? atol : atol*hscale
+
     # The weight is negative for a straight line.
     if ((isapprox(d,0,atol=atol) && 
         any(cstype .== ["line","rectangular hyperbola","parallel lines"])) ||
-        isapprox(h₀₀₂,0,atol=atol))
+        isapprox(h₀₀₂,0,atol=htol))
         bezwtsᵣ = [w₀,0,w₂]
         bezptsᵣ = [p₀ (p₀+p₂)/2 p₂]
     else
@@ -379,10 +386,21 @@ function conicsection(coeffs::AbstractVector{<:Real};
     d = b^2 - 4*a*c
     m = -8*(-2*z₀₁₁*z₁₀₁*z₁₁₀+z₀₀₂*z₁₁₀^2+z₀₁₁^2*z₂₀₀+z₀₂₀*(z₁₀₁^2-z₀₀₂*z₂₀₀))
 
-    if all(isapprox.([a,b,c],0,atol=atol))
+    # Each of these is a different degree in the coefficients, so each needs its
+    # own scale: a, b and c are linear, the discriminant d is quadratic, and the
+    # determinant m is cubic. Comparing all three against one fixed number
+    # misclassifies the conic as soon as the coefficients are small - d and m
+    # shrink as the square and cube, so they cross the threshold long before the
+    # geometry is anywhere near degenerate.
+    scale = maximum(abs, coeffs)
+    ltol = scale == 0 ? atol : atol*scale
+    dtol = scale == 0 ? atol : atol*scale^2
+    mtol = scale == 0 ? atol : atol*scale^3
+
+    if all(isapprox.([a,b,c],0,atol=ltol))
         "line"
-    elseif isapprox(m,0,atol=atol)
-        if isapprox(d,0,atol=atol)
+    elseif isapprox(m,0,atol=mtol)
+        if isapprox(d,0,atol=dtol)
             "parallel lines"
         elseif d > 0
             "rectangular hyperbola"
@@ -390,7 +408,7 @@ function conicsection(coeffs::AbstractVector{<:Real};
             "point"
         end
     else
-        if isapprox(d,0,atol=atol)
+        if isapprox(d,0,atol=dtol)
             "parabola"
         elseif d < 0
             "ellipse"
@@ -503,37 +521,66 @@ solve_quadratic(coeffs...)
   1.0
 ```
 """
-function solve_quadratic(a::Real,b::Real,c::Real;atol::Real=def_atol)::Vector{Float64}
+function solve_quadratic(a::Real,b::Real,c::Real;atol::Real=def_atol,
+    coeff_ref::Union{Nothing,Real}=nothing)::Vector{Float64}
 
     sols = Float64[]
-    # Preliminary check for no intersections.
-    if !isapprox(a,0,atol=atol)
+    # What counts as zero here is set by the coefficients themselves. They carry
+    # the units of the quantity being interpolated, so a fixed threshold silently
+    # deletes the roots of any polynomial whose coefficients happen to be small -
+    # and in this package they are smallest exactly where the Fermi surface is.
+    # `ctol` compares coefficients against the largest one present.
+    # Two references, and a coefficient must clear both to count as nonzero. The
+    # local one resolves a polynomial on its own terms, so coefficients that are
+    # legitimately tiny still produce their contour. The inherited one is the
+    # coefficient scale of the patch this calculation began on, and it is what
+    # separates a small coefficient from cancellation residue: subdividing a
+    # patch of order one leaves sub-patches whose coefficients are noise at 1e-17,
+    # and relative-to-self would rebuild a quadratic out of them.
+    scale = max(abs(a), abs(b), abs(c))
+    ref = coeff_ref === nothing ? scale : coeff_ref
+    # The noise floor is a property of the arithmetic, so it is taken from eps of
+    # the coefficient type. In Float64 a coefficient 1e-17 below the reference is
+    # cancellation residue and cannot contribute to the Fermi level whatever it
+    # claims to be; carried out in higher precision the same coefficient may be
+    # entirely real, and the floor drops to match.
+    T = float(promote_type(typeof(a),typeof(b),typeof(c)))
+    noise = def_coeff_noise_eps*eps(T)*abs(ref)
+    ctol = max(scale == 0 ? atol : def_coeff_rtol*scale, noise)
+    dtol = max(scale == 0 ? atol : def_coeff_rtol*scale^2, noise^2)
+
+    # Preliminary check for no intersections. The extremum is a value of the
+    # interpolated quantity, so it carries the coefficients' units and is compared
+    # against the same relative tolerance they are. A parabola whose extremum sits
+    # within ctol of zero is tangent to it, and the resulting double root is the
+    # contour touching the patch - dropping it deletes a real region of the domain.
+    if !isapprox(a,0,atol=ctol)
         maxval = -(b^2/(4*a)) + c
-        if !isapprox(maxval,0,atol=atol)
+        if !isapprox(maxval,0,atol=ctol)
             if (maxval > 0 && a > 0) || (maxval < 0 && a < 0)
                 return sols
             end
         end
     end
 
-    if isapprox(a,0,atol=atol)
-        if isapprox(b,0,atol=atol)
-            if isapprox(c,0,atol=atol)
+    if isapprox(a,0,atol=ctol)
+        if isapprox(b,0,atol=ctol)
+            if isapprox(c,0,atol=ctol)
                 # Case 1: (0,0,0) (infinite solutions in reality)
                 sols = Float64[]
             else
                 # Case 2: (0,0,c)
                 sols = Float64[]
             end
-        elseif isapprox(c,0,atol=atol)
+        elseif isapprox(c,0,atol=ctol)
             # Case 3: (0,b,0)
             sols = [0.0]
         else
             # Case 4: (0,b,c)
             sols = [-c/b]
         end
-    elseif isapprox(b,0,atol=atol)
-        if isapprox(c,0,atol=atol)
+    elseif isapprox(b,0,atol=ctol)
+        if isapprox(c,0,atol=ctol)
             # Case 5: (a,0,0)
             sols = [0.0]
         else
@@ -545,13 +592,19 @@ function solve_quadratic(a::Real,b::Real,c::Real;atol::Real=def_atol)::Vector{Fl
             end
         end
     else
-        if isapprox(c,0,atol=atol)
+        if isapprox(c,0,atol=ctol)
             # Case 7: (a,b,0)
             sols = [0.0,-b/a]
         else
             # Case 8: (a,b,c)
             r = b^2-4*a*c
-            if isapprox(r,0,atol=atol)
+            # Whether this is a tangent point is a question about the roots, not
+            # The discriminant is quadratic in the coefficients, so its
+            # tolerance carries the square of the coefficient scale. A threshold of
+            # the wrong degree is what makes a fixed atol scale-dependent here:
+            # shrink every coefficient by 10 and r shrinks by 100, crossing the
+            # threshold while the geometry is unchanged.
+            if isapprox(r,0,atol=dtol)
                 # Tangent point
                 sols = [-b/(2*a)]
             elseif r < 0

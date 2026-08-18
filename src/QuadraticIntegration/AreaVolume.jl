@@ -137,17 +137,31 @@ two_intersects_area_volume(bezpts,"volume")
 ```
 """
 function two_intersects_area_volume(bezpts::AbstractMatrix{<:Real},
-    quantity::String; atol::Real=def_atol)::Real
+    quantity::String; atol::Real=def_atol,
+    coeff_ref::Union{Nothing,Real}=nothing)::Real
      
     # Calculate the bezier curve and weights, make sure the curve passes through
     # the triangle
     triangle = bezpts[1:end-1,corner_indices]
     coeffs = bezpts[end,:]
-    intersects = simplex_intersects(bezpts,atol=atol)
+    # What counts as zero for a coefficient is set by the coefficients present.
+    # These carry the units of the interpolated quantity - eigenvalues measured
+    # from the Fermi level - so a fixed threshold declares a patch entirely below
+    # zero whenever its values happen to be small, which is exactly the patches
+    # the Fermi surface passes through.
+    cscale = maximum(abs, coeffs)
+    # The reference is inherited when there is one, so a sub-patch made of
+    # roundoff is judged against the scale the calculation started from.
+    cref = coeff_ref === nothing ? cscale : coeff_ref
+    # Same two floors as solve_quadratic: relative to the coefficients present,
+    # but never below what this precision can resolve against the reference.
+    ctol = max(cscale == 0 ? atol : def_coeff_rtol*cscale,
+        def_coeff_noise_eps*eps(float(eltype(coeffs)))*abs(cref))
+    intersects = simplex_intersects(bezpts,atol=atol,coeff_ref=cref)
     # No intersections
     if intersects == [[],[],[]]
         # Case where the sheet is completely above or below 0.    
-        if all(coeffs .< 0) && !any(isapprox.(coeffs,0,atol=atol))
+        if all(coeffs .< 0) && !any(isapprox.(coeffs,0,atol=ctol))
             if quantity == "area"
                 areaₒᵣvolume = simplex_size(triangle)
             elseif quantity == "volume"
@@ -157,7 +171,7 @@ function two_intersects_area_volume(bezpts::AbstractMatrix{<:Real},
             end
             return areaₒᵣvolume
         end
-        if all(coeffs .> 0) && !any(isapprox.(coeffs,0,atol=atol))
+        if all(coeffs .> 0) && !any(isapprox.(coeffs,0,atol=ctol))
             areaₒᵣvolume = 0
             return areaₒᵣvolume
         end
@@ -231,14 +245,14 @@ function two_intersects_area_volume(bezpts::AbstractMatrix{<:Real},
     end
 
     if split
-        bezptsᵤ = [split_bezsurf(b,atol=atol) for b=split_bezsurf₁(bezpts)] |> flatten |> collect
-        return sum([two_intersects_area_volume(b,quantity,atol=atol) for b=bezptsᵤ])
+        bezptsᵤ = [split_bezsurf(b,atol=atol,coeff_ref=cref) for b=split_bezsurf₁(bezpts,coeff_ref=cref)] |> flatten |> collect
+        return sum([two_intersects_area_volume(b,quantity,atol=atol,coeff_ref=cref) for b=bezptsᵤ])
     end
 
     # No intersections, no island, and the coefficients are less or greater than 0.
     if intersects == [[],[],[]]
         v = eval_poly([1/3,1/3,1/3],coeffs,2,2)
-        if v < 0 || isapprox(v,0,atol=atol)
+        if v < 0 || isapprox(v,0,atol=ctol)
             below = true
         else
             below = false
@@ -279,7 +293,7 @@ function two_intersects_area_volume(bezpts::AbstractMatrix{<:Real},
     end
     avept = carttobary(avept,triangle)
     if (eval_poly(avept,coeffs,2,2) < 0 || 
-        isapprox(eval_poly(avept,coeffs,2,2), 0, atol=atol))
+        isapprox(eval_poly(avept,coeffs,2,2), 0, atol=ctol))
         below₀ = true
     else
         below₀ = false
@@ -359,8 +373,11 @@ function quad_area_volume(bezpts::AbstractMatrix{<:Real},
     if size(bezpts,1) == 4
         bezpts = [mapto_xyplane(bezpts[1:3,:]); bezpts[end,:]']
     end
-    sum([two_intersects_area_volume(b,quantity,atol=atol) for 
-        b=split_bezsurf(bezpts,atol=atol)])
+    # The top of the chain sets the reference: every sub-patch below is judged
+    # against the coefficients of the patch actually handed in.
+    cref = maximum(abs, bezpts[end,:])
+    sum([two_intersects_area_volume(b,quantity,atol=atol,coeff_ref=cref) for 
+        b=split_bezsurf(bezpts,atol=atol,coeff_ref=cref)])
 end
 
 end # module AreaVolume

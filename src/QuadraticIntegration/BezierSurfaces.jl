@@ -92,11 +92,11 @@ simplex_intersects(bezpts)
 ```
 """
 function simplex_intersects(bezpts::AbstractMatrix{<:Real};
-    atol::Real=def_atol)::Array
+    atol::Real=def_atol, coeff_ref::Union{Nothing,Real}=nothing)::Array
     intersects = Array{Array,1}([[],[],[]])
     for i=1:3
         edge_bezpts = bezpts[:,edge_indices[i]]
-        edge_ints = bezcurve_intersects(edge_bezpts[end,:];atol=atol)
+        edge_ints = bezcurve_intersects(edge_bezpts[end,:];atol=atol,coeff_ref=coeff_ref)
         if edge_ints != []
             intersects[i] = reduce(hcat,[edge_bezpts[1:end-1,1] .+ 
                 i*(edge_bezpts[1:end-1,end] .- edge_bezpts[1:end-1,1]) for i=edge_ints])
@@ -180,7 +180,8 @@ length(sbezpts)
 6
 ```
 """
-function split_bezsurf₁(bezpts::AbstractMatrix{<:Real}; atol::Real=def_atol)::AbstractArray
+function split_bezsurf₁(bezpts::AbstractMatrix{<:Real}; atol::Real=def_atol,
+    coeff_ref::Union{Nothing,Real}=nothing)::AbstractArray
     spatial = pyimport("scipy.spatial")
     dim = 2; deg = 2; 
     triangle = bezpts[1:end-1,corner_indices]
@@ -190,7 +191,7 @@ function split_bezsurf₁(bezpts::AbstractMatrix{<:Real}; atol::Real=def_atol)::
      
     coeffs = bezpts[end,:]; pts = bezpts[1:end-1,:]
     simplex_bpts = sample_simplex(dim,deg)
-    intersects = simplex_intersects(bezpts,atol=atol)
+    intersects = simplex_intersects(bezpts,atol=atol,coeff_ref=coeff_ref)
     spt = saddlepoint(coeffs)
     allpts = pts
     if insimplex(spt) # Using the default absolute tolerance 1e-12
@@ -254,15 +255,16 @@ split_bezsurf(bezpts)
 ```
 *See `split_bezsurf₁` for a more detailed description.
 """
-function split_bezsurf(bezpts::AbstractMatrix{<:Real};atol=def_atol)::AbstractArray
+function split_bezsurf(bezpts::AbstractMatrix{<:Real};atol=def_atol,
+    coeff_ref::Union{Nothing,Real}=nothing)::AbstractArray
     
-    intersects = simplex_intersects(bezpts,atol=atol)
+    intersects = simplex_intersects(bezpts,atol=atol,coeff_ref=coeff_ref)
     num_intersects = sum([size(i,2) for i=intersects if i!=[]])
     if num_intersects <= 2
         return [bezpts]
     else
-        sub_bezpts = split_bezsurf₁(bezpts)
-        sub_intersects = [simplex_intersects(b,atol=atol) for b=sub_bezpts]
+        sub_bezpts = split_bezsurf₁(bezpts,coeff_ref=coeff_ref)
+        sub_intersects = [simplex_intersects(b,atol=atol,coeff_ref=coeff_ref) for b=sub_bezpts]
         num_intersects = [sum([size(sub_intersects[i][j])[1] == 0 ? 0 : 
             size(sub_intersects[i][j])[2] for j=1:3]) for i=1:length(sub_intersects)]
         while any(num_intersects .> 2)
@@ -274,12 +276,12 @@ function split_bezsurf(bezpts::AbstractMatrix{<:Real};atol=def_atol)::AbstractAr
             split_occurred = false
             for i = length(num_intersects):-1:1
                 if num_intersects[i] <= 2 continue end
-                subs = split_bezsurf₁(sub_bezpts[i])
+                subs = split_bezsurf₁(sub_bezpts[i],coeff_ref=coeff_ref)
                 if length(subs) == 1 continue end
                 split_occurred = true
                 append!(sub_bezpts,subs)
                 deleteat!(sub_bezpts,i)
-                sub_intersects = [simplex_intersects(b,atol=atol) for b=sub_bezpts]
+                sub_intersects = [simplex_intersects(b,atol=atol,coeff_ref=coeff_ref) for b=sub_bezpts]
                 num_intersects = [sum([size(sub_intersects[i][j])[1] == 0 ? 0 :
                     size(sub_intersects[i][j])[2] for j=1:3]) for i=1:length(sub_intersects)]
             end
@@ -352,11 +354,16 @@ bezcurve_intersects(coeffs)
 ```
 """
 function bezcurve_intersects(bezcoeffs::AbstractVector{<:Real};
-    atol::Real=def_atol)::AbstractVector
+    atol::Real=def_atol, coeff_ref::Union{Nothing,Real}=nothing)::AbstractVector
     a,b,c = bezcoeffs
-    solutions = solve_quadratic(a - 2*b + c, 2*(b-a), a)
-    solutions = filter(t -> (t > 0 || isapprox(t,0,atol=atol)) 
-        && (t < 1 && !isapprox(t,1,atol=atol)), solutions)
+    solutions = solve_quadratic(a - 2*b + c, 2*(b-a), a, coeff_ref=coeff_ref)
+    # Whether a root sits on a corner is a question about the curve parameter,
+    # which runs 0 to 1 whatever the geometry and whatever the coefficients. It
+    # gets its own tolerance rather than sharing the one that decides when a
+    # coefficient is zero - those are different questions, and they shared a
+    # number only by accident.
+    solutions = filter(t -> (t > 0 || isapprox(t,0,atol=def_root_boundary_atol))
+        && (t < 1 && !isapprox(t,1,atol=def_root_boundary_atol)), solutions)
     return solutions
 end
 
