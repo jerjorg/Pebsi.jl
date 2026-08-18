@@ -1,4 +1,50 @@
 @doc """
+    sample_new_points(ebs,simplices,splitpos,centerpt,edgepts,err_cutoff)
+
+Choose the points to add within each simplex selected for refinement.
+
+# Arguments
+- `ebs::BandStructure`: the band structure container. Its `sample_method` picks
+    the strategy and, for `sample_adaptive`, its `bandenergy_errors` decide which
+    simplices get edge points.
+- `simplices::AbstractVector`: the simplices of the mesh, corners in the columns
+    of a matrix.
+- `splitpos::AbstractVector{<:Integer}`: the positions in `simplices` being refined.
+- `centerpt::AbstractVector{<:Real}`: the centre of a simplex in barycentric
+    coordinates.
+- `edgepts::AbstractMatrix{<:Real}`: the edge midpoints of a simplex in
+    barycentric coordinates.
+- `err_cutoff::AbstractVector{<:Real}`: the allowed band energy error per simplex.
+
+# Returns
+- `::AbstractMatrix{<:Real}`: the new mesh points, in the columns of a matrix
+    and in Cartesian coordinates. They are not yet deduplicated.
+"""
+function sample_new_points(ebs::BandStructure,simplices::AbstractVector,
+    splitpos::AbstractVector{<:Integer},centerpt::AbstractVector{<:Real},
+    edgepts::AbstractMatrix{<:Real},err_cutoff::AbstractVector{<:Real})
+
+    # A single point at the center of the triangle
+    if ebs.sample_method == sample_center
+        reduce(hcat,[barytocart(centerpt,s) for s=simplices[splitpos]])
+    # Point at the midpoints of all edges of the triangle
+    elseif ebs.sample_method == sample_edge_midpoints
+        reduce(hcat,[barytocart(edgepts,s) for s=simplices[splitpos]])
+    # If the error is 2x greater than the tolerance, split edges. Otherwise,
+    # sample at the center of the triangle.
+    elseif ebs.sample_method == sample_adaptive
+        sample_type = [
+            abs(ebs.bandenergy_errors[i]) > def_allowed_err_ratio*err_cutoff[i] ? 2 : 1 for i=splitpos]
+        reduce(hcat,[sample_type[i] == 1 ?
+        barytocart(centerpt,simplices[splitpos[i]]) :
+        barytocart(edgepts,simplices[splitpos[i]])
+        for i=1:length(splitpos)])
+    else
+        throw(ArgumentError("Unhandled SampleMethod: $(ebs.sample_method)"))
+    end
+end
+
+@doc """
     refine_mesh!(epm,ebs)
 
 Perform one iteration of adaptive refinement. See the composite type
@@ -130,24 +176,7 @@ function refine_mesh!(epm::Union{EPM2D,EPM},ebs::BandStructure)
         edgepts = [1/2 1/2 1/2 0 0 0; 1/2 0 0 1/2 1/2 0; 0 1/2 0 1/2 0 1/2; 0 0 1/2 0 1/2 1/2]
     end
     
-    # A single point at the center of the triangle
-    if ebs.sample_method == sample_center
-        new_meshpts = reduce(hcat,[barytocart(centerpt,s) for s=simplices[splitpos]])
-    # Point at the midpoints of all edges of the triangle
-    elseif ebs.sample_method == sample_edge_midpoints
-        new_meshpts = reduce(hcat,[barytocart(edgepts,s) for s=simplices[splitpos]])
-    # If the error is 2x greater than the tolerance, split edges. Otherwise,
-    # sample at the center of the triangle.
-    elseif ebs.sample_method == sample_adaptive
-        sample_type = [
-            abs(ebs.bandenergy_errors[i]) > def_allowed_err_ratio*err_cutoff[i] ? 2 : 1 for i=splitpos]
-        new_meshpts = reduce(hcat,[sample_type[i] == 1 ? 
-        barytocart(centerpt,simplices[splitpos[i]]) :
-        barytocart(edgepts,simplices[splitpos[i]])
-        for i=1:length(splitpos)])
-    else
-        throw(ArgumentError("Unhandled SampleMethod: $(ebs.sample_method)"))
-    end
+    new_meshpts = sample_new_points(ebs,simplices,splitpos,centerpt,edgepts,err_cutoff)
 
     # Remove duplicates from the new mesh points.
     new_meshpts = unique_points(new_meshpts,rtol=ebs.rtol,atol=ebs.atol)
