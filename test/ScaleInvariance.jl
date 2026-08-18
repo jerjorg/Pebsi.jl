@@ -137,6 +137,18 @@ end
         end
     end
 
+    @testset "vertex component magnitude" begin
+        # The components of the vertices themselves range widely in practice -
+        # lattice vectors of very different lengths - which is a separate question
+        # from the simplex's size or its distance from the origin. Holding the
+        # shape inside the range that works, the magnitude of the components does
+        # not matter over sixteen orders.
+        for p in [-8,-4,0,4,8], d in [-1,0]
+            M = [10.0^p 0.0; 0.0 10.0^(p+d)]
+            @test isapprox(_fraction_under(M), _exact_fraction, rtol=1e-12)
+        end
+    end
+
     @testset "aspect ratio" begin
         # diag(λ,1/λ) preserves the triangle's size exactly and distorts only its
         # shape, so the fraction must not move. The two directions behave very

@@ -32,10 +32,13 @@ independent axes, each with a range we can name and defend:
 
 These rules exist because they each caught a real error in this work.
 
-- **Adjudicate against a closed form where one exists, and never against stored
-  expectations.** Fermi areas and band energies have closed forms, which are the
-  best available answer and should be preferred over any numerical reference. The
-  numerical reference integrator is the fallback for cases without one. Stored
+- **Adjudicate against something independent of the code, and never against
+  stored expectations.** Fermi areas and band energies do have closed forms, but
+  the closed forms *in the code* are the analytic solution of the two-intersection
+  case - so checking the code against them is circular and proves nothing. Two
+  things are genuinely independent: the numerical reference integrator, and a
+  closed form for a hand-constructed case whose geometry is known outside the code
+  (an ellipse's area is πr² whatever the implementation does). Use those. Stored
   values encode whatever the code did when they were written: an intermediate
   version of the tolerance work moved 18 answers and the tests looked merely
   stale, but measuring showed the old answers were right and the change was a
@@ -70,6 +73,7 @@ is tracked as a gap rather than as a pass.
 | Simplex size, isotropic | 1e0 → 1e-80 in tests | measured exact to 1e-160 |
 | Rotation | all angles | |
 | Translation | to 1e3 | |
+| Vertex component magnitude | 1e-8 → 1e8 | exact at every magnitude, holding shape in range; isolates cleanly from size and translation |
 | Aspect ratio, flattening | to 15 | `diag(λ, 1/λ)` |
 | Aspect ratio, upright | to 1.5 | `diag(1/λ, λ)` |
 | Level curve: hyperbola | unit scale | in tests |
@@ -90,9 +94,20 @@ Ordered by how badly each one can corrupt a band energy.
 - [ ] **Upright stretching fails from aspect ratio 2**, while flattening survives
       to 15. The surface is unchanged by an affine map, so this can only come from
       the parts of the integration that reason about the contour in Cartesian
-      coordinates (`getbez_pts_wts`, `conicsection`). The failing patch measures
-      4.7369515e-15 at ratios 2, 3 and 5 alike — a size that does not move with
-      the geometry producing it is what a still-absolute tolerance looks like.
+      coordinates (`getbez_pts_wts`, `conicsection`).
+      The failing sub-patch is always the same *fraction* of its parent - 4.7369e-15,
+      about 21 eps - across sixteen orders of magnitude of vertex component size
+      (4.736951370e-30 of a 1e-15 triangle, 4.736951571e-14 of a 1e+1 one). An
+      earlier note here called that a fixed absolute size and inferred a tolerance
+      that had stopped scaling; that was wrong. It scales proportionally, so the
+      diagnosis is that subdivision never resolves the intersection count and
+      recurses until the sub-patch reaches the relative precision floor.
+- [ ] **Deep enough recursion overflows the stack.** At vertex components around
+      1e8 the upright case raises `StackOverflowError`, and Julia reports that
+      program state may be corrupted. This is the same non-termination as the
+      large-aspect-ratio hang, far enough along to be a memory-safety concern
+      rather than a slow path, so subdivision needs a depth or progress bound
+      regardless of what fixes the underlying geometry problem.
 - [ ] **Flattening degrades silently before it raises**: wrong by about 1% at 20,
       0.2% at 30, 7e-7 at 50, raising past about 70. Non-monotonic, which is
       characteristic of a threshold rather than of conditioning.
@@ -134,11 +149,30 @@ unknowns, which is worse.
       coefficient scaling, simplex geometry including aspect ratio, and quadric
       type. Nothing here should be assumed to carry over from 2D - the splitting
       and the classification are different code.
-- [ ] **Closed forms are not yet used as the adjudicator.** Fermi areas and band
-      energies have them, which would replace the numerical reference for the
-      cases that matter most and remove the accuracy ceiling above. This is
-      probably the highest-leverage item in this section: it upgrades the
-      instrument every other measurement depends on.
+- [ ] **Enumerate the level surfaces and their intersections with a tetrahedron**,
+      as the conic types were enumerated in 2D. The surface types: ellipsoid,
+      hyperboloid of one and of two sheets, elliptic and hyperbolic paraboloid,
+      cone, elliptic/hyperbolic/parabolic cylinder, intersecting planes, parallel
+      planes, single plane, point, empty. The configurations matter as much as the
+      types: cutting off one vertex, cutting off two, entering and leaving through
+      the same face, cutting the tetrahedron into two pieces neither of which
+      contains a vertex, tangent to a face, an edge or a vertex, and lying wholly
+      inside or wholly outside. The 2D failure that matters most - tangency - was
+      found by walking exactly this list one dimension down.
+- [ ] **Raise the numerical reference's accuracy.** It is the instrument every
+      other measurement depends on, and its ~1e-6 ceiling on some geometries is
+      the binding constraint on what can be adjudicated. The closed forms are not
+      a way around this: the ones in the code are the two-intersection case's
+      analytic solution, so measuring the code against them is circular. Fixing
+      the outer quadrature - splitting the integration at the turning points
+      rather than pushing Gauss-Legendre through a square-root kink - is the
+      direct route.
+- [ ] **Build a library of hand-constructed cases with known geometry**, where the
+      answer follows from the construction rather than from any implementation: a
+      circle of known radius entirely inside, a half-plane cutting a known
+      fraction, a region congruent to one whose area is elementary. These are
+      independent of the code in a way the code's own closed forms are not, and
+      they are what anchors the reference integrator itself.
 - [ ] **BigFloat**: the noise floor is written to fall with `eps(T)`, and nothing
       exercises it.
 - [ ] **End-to-end**: no assertion ties a Fermi area error to a band energy error,
