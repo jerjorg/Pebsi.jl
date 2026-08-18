@@ -9,20 +9,15 @@ using Pebsi.Plotting: plot_bandstructure
 
 @testset "KnownLimitations" begin
 
-    @testset "m31 integration" begin
-        # `split_bezsurf` can hand back a surface with three intersections when a
-        # triangle is too small to subdivide - the trigger is an area around 3e-9,
-        # while `def_min_simplex_size` only catches 1e-12. Diagnosed in a comment
-        # at the error site in `two_intersects_area_volume`.
-        #
-        # Not asserted: whether the degenerate triangle arises at all depends on
-        # the platform. It throws on macOS/arm64 under Julia 1.12 and on Linux,
-        # but completes on the x86_64 macOS runner, because a threshold of 3e-9 is
-        # well inside the range where a different BLAS moves the geometry. Gating
-        # CI on a failure that is itself platform-dependent just makes the matrix
-        # flaky, so this records the behaviour without enforcing it.
+    @testset "m31 integrates" begin
+        # m31 used to fail here: `split_bezsurf` handed back a patch it could not
+        # subdivide, with three curve intersections and no formula to integrate
+        # it. Patches that small are now integrated by their sign, so this
+        # completes. Asserted against the true band energy rather than a literal,
+        # since the value moves with the platform.
         ebs = init_bandstructure(m31)
-        @test_skip calc_flbe!(m31, ebs)
+        calc_flbe!(m31, ebs)
+        @test abs(ebs.bandenergy - m31.bandenergy) < 1e-2
     end
 
     @testset "plot_bandstructure needs a 3D model" begin

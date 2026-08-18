@@ -166,17 +166,31 @@ function two_intersects_area_volume(bezpts::AbstractMatrix{<:Real},
     bezptsᵣ = []
     if intersects != [[],[],[]]
         all_intersects = reduce(hcat,[i for i=intersects if i != []])
-        # Known limitation, reachable via the `m31` EPM: `split_bezsurf` can hand
-        # back a surface with three intersections when it cannot subdivide the
-        # triangle any further. The trigger is a triangle of area ~3e-9, where
-        # the box-padded Delaunay triangulation in `split_bezsurf1` produces only
-        # triangles with a corner on the padding box, so `tri_ind` is empty.
-        # `def_min_simplex_size` (1e-12) is far too small to catch this. Deciding
-        # how such a patch should contribute is a question about the integration
-        # method, not a typo, so it is left erroring rather than papered over.
+        # `split_bezsurf` could not reduce this patch to two intersections. That
+        # happens on triangles the box-padded Delaunay in split_bezsurf1 cannot
+        # subdivide - every candidate sub-triangle has a corner on the padding
+        # box - which occurs well above def_min_simplex_size, around 1e-9 in
+        # practice.
+        #
+        # Below def_degenerate_simplex_size the patch is integrated by its sign
+        # rather than exactly. Its whole contribution is bounded by its own size,
+        # so the error introduced is at most that, which is orders below the
+        # accuracy any calculation here is targeting. Above that size the refusal
+        # stands: a large patch that will not subdivide means something has gone
+        # wrong rather than merely become small.
         if size(all_intersects,2) != 2
-            error("Can only calculate the area or volume when the curve intersects
-                the triangle at two points or doesn't intersect the triangle.")
+            tsize = simplex_size(triangle)
+            if tsize < def_degenerate_simplex_size
+                if quantity == "area"
+                    return mean(coeffs) < 0 ? tsize : 0
+                elseif quantity == "volume"
+                    return mean(coeffs) < 0 ? mean(coeffs)*tsize : 0
+                else
+                    throw(ArgumentError("The quantity calculated is either \"area\" or \"volume\"."))
+                end
+            end
+            error("Cannot integrate a patch of size $(tsize) that intersects the "*
+                "triangle at $(size(all_intersects,2)) points and will not subdivide.")
         end
         p₀ = all_intersects[:,1]
         p₂ = all_intersects[:,2]
