@@ -181,30 +181,29 @@ function two_intersects_area_volume(bezpts::AbstractMatrix{<:Real},
     if intersects != [[],[],[]]
         all_intersects = reduce(hcat,[i for i=intersects if i != []])
         # `split_bezsurf` could not reduce this patch to two intersections. That
-        # happens on triangles the box-padded Delaunay in split_bezsurf1 cannot
-        # subdivide - every candidate sub-triangle has a corner on the padding
-        # box - which occurred around 1e-9 in practice, when the deduplication
-        # there still merged every point of a patch narrower than its tolerance.
+        # used to happen on triangles the box-padded Delaunay in split_bezsurf1
+        # could not subdivide, around 1e-9 in practice, because the deduplication
+        # there merged every point of a patch narrower than its fixed tolerance.
+        # With that tolerance made relative it is no longer reachable in any
+        # tested path, including a full refinement of m31, which is what used to
+        # depend on it.
         #
-        # Below def_degenerate_simplex_size the patch is integrated by its sign
-        # rather than exactly. Its whole contribution is bounded by its own size,
-        # so the error introduced is at most that, which is orders below the
-        # accuracy any calculation here is targeting. Above that size the refusal
-        # stands: a large patch that will not subdivide means something has gone
-        # wrong rather than merely become small.
+        # Small patches were once integrated by their sign here instead. That is
+        # no longer done: the whole point of this code is an exact Fermi area, and
+        # an approximation returned silently in a case nothing can now provoke is
+        # a wrong answer nobody would be told about. The size test is kept, but
+        # only to say which kind of failure this is.
         if size(all_intersects,2) != 2
             tsize = simplex_size(triangle)
-            if tsize < def_degenerate_simplex_size
-                if quantity == "area"
-                    return mean(coeffs) < 0 ? tsize : 0
-                elseif quantity == "volume"
-                    return mean(coeffs) < 0 ? mean(coeffs)*tsize : 0
-                else
-                    throw(ArgumentError("The quantity calculated is either \"area\" or \"volume\"."))
-                end
-            end
+            detail = tsize < def_degenerate_simplex_size ?
+                "The patch is smaller than def_degenerate_simplex_size "*
+                "($(def_degenerate_simplex_size)), so the likely cause is a tolerance "*
+                "that has stopped scaling with it rather than the geometry itself." :
+                "The patch is not small, so this indicates a genuine problem with the "*
+                "geometry or the coefficients rather than a limit of precision."
             error("Cannot integrate a patch of size $(tsize) that intersects the "*
-                "triangle at $(size(all_intersects,2)) points and will not subdivide.")
+                "triangle at $(size(all_intersects,2)) points and will not subdivide. "*
+                detail)
         end
         p₀ = all_intersects[:,1]
         p₂ = all_intersects[:,2]

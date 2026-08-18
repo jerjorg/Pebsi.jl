@@ -114,18 +114,15 @@ const def_neighbor_dist_rtol = 1e-9
 const def_max_neighbor_tol = 1.01 # Tolerance for selecting neighbors near the triangle
 const def_inside_neighbors_divs = 5 # The number of points for a uniform grid over a triangle for inside neighbors
 const def_bez_weight_tol = 1e-12 # Smaller tolerance for classifying conic sections
-# A patch this small that `split_bezsurf` could not reduce to two curve
-# intersections is integrated by its sign instead of exactly.
+# Divides the two ways integration can fail on a patch `split_bezsurf` could not
+# reduce to two curve intersections. It selects the wording of the error only -
+# both sides raise.
 #
-# The box-padded Delaunay in split_bezsurf1 sometimes cannot subdivide a triangle
-# even though it is not small - every candidate sub-triangle
-# has a corner on the padding box - and the result comes back with three
-# intersections, which two_intersects_area_volume has no formula for. Such a patch
-# contributes at most its own size to the area, and at most its size times its
-# largest coefficient to the volume, so approximating it costs no more than that.
-# Refusing to integrate it costs the entire calculation. Above this size the
-# refusal stands, since a large patch that will not subdivide means something has
-# gone wrong rather than merely become small.
+# A patch below this size that will not subdivide points at a tolerance which has
+# stopped scaling with the geometry, the failure mode that produced every such
+# case seen so far. One above it points at the geometry or the coefficients
+# themselves. Saying which shortens the diagnosis considerably, since the two
+# have nothing in common but the symptom.
 const def_degenerate_simplex_size = 1e-6
 # A simplex from a triangulation counts as degenerate when its size is below
 # this fraction of the largest simplex in the same triangulation.
