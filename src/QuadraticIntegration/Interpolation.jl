@@ -261,6 +261,55 @@ function init_bandstructure(
 end   
 
 @doc """
+    select_neighbors(neighborsᵢ,simplex,ext_mesh,dim,num_neighbors,neighbor_method,epm)
+
+Narrow the candidate neighbours of a simplex to the ones used when fitting.
+
+# Arguments
+- `neighborsᵢ::AbstractVector{<:Integer}`: the candidate neighbours, as indices
+    into `ext_mesh`.
+- `simplex::AbstractMatrix{<:Real}`: the corners of the simplex in the columns of
+    a matrix.
+- `ext_mesh::PyObject`: a triangulation of the region within and around the IBZ.
+- `dim::Integer`: the number of dimensions.
+- `num_neighbors::Integer`: how many neighbours to keep.
+- `neighbor_method::NeighborMethod`: which selection strategy to use.
+- `epm`: an empirical pseudopotential, required only by `neighbors_inside`.
+
+# Returns
+- `::AbstractVector`: the indices of the neighbours to use. Empty for
+    `neighbors_inside`, where the points come from a grid inside the simplex
+    instead and the caller samples them directly.
+"""
+function select_neighbors(neighborsᵢ::AbstractVector,simplex::AbstractMatrix{<:Real},
+    ext_mesh::PyObject,dim::Integer,num_neighbors::Integer,
+    neighbor_method::NeighborMethod,epm)
+
+    # Select neighbors that are closest to the triangle.
+    if neighbor_method == neighbors_closest
+        dist = [minimum([norm(ext_mesh.points[i,:] - simplex[:,j]) for j=1:dim+1]) for i=neighborsᵢ]
+        neighborsᵢ[sortperm(dist)][1:num_neighbors]
+    # Select neighbors that surround the triangle and are close to the triangle.
+    elseif neighbor_method == neighbors_surrounding
+        neighbors = Matrix(ext_mesh.points[neighborsᵢ,:]')
+        if dim == 2
+            choose_neighbors(simplex,neighborsᵢ,neighbors; num_neighbors=num_neighbors)
+        else
+            choose_neighbors3D(simplex,neighborsᵢ,neighbors; num_neighbors=num_neighbors)
+        end
+    # Neighbors are taken from a uniform grid within the triangle, so none of the
+    # candidates are kept; the caller samples the interior instead.
+    elseif neighbor_method == neighbors_inside
+        if epm == nothing
+            error("Must provide an EPM when computing neighbors within the triangle.")
+        end
+        []
+    else
+        error("Unhandled NeighborMethod: $(neighbor_method)")
+    end
+end
+
+@doc """
     get_intercoeffs(index, mesh, ext_mesh, sym_unique, eigenvals, simplicesᵢ, degree,
         fatten, num_near_neigh; sigma, epm, neighbor_method, num_neighbors, weighted,
         constrained, atol)
@@ -345,28 +394,8 @@ function get_intercoeffs(index::Integer; mesh::PyObject, ext_mesh::PyObject,
     end
     if length(neighborsᵢ) < num_neighbors num_neighbors = length(neighborsᵢ) end
 
-    # Select neighbors that are closest to the triangle.
-    if neighbor_method == neighbors_closest
-        neighbors = ext_mesh.points[neighborsᵢ,:]'
-        dist = [minimum([norm(ext_mesh.points[i,:] - simplex[:,j]) for j=1:dim+1]) for i=neighborsᵢ]
-        neighborsᵢ = neighborsᵢ[sortperm(dist)][1:num_neighbors]
-    # Select neighbors that surround the triangle and are close to the triangle.
-    elseif neighbor_method == neighbors_surrounding
-        neighbors = Matrix(ext_mesh.points[neighborsᵢ,:]')
-        if dim == 2
-            neighborsᵢ = choose_neighbors(simplex,neighborsᵢ,neighbors; num_neighbors=num_neighbors)
-        else
-            neighborsᵢ = choose_neighbors3D(simplex,neighborsᵢ,neighbors; num_neighbors=num_neighbors)
-        end
-    # Neighbors are taken from a uniform grid within the triangle.
-    elseif neighbor_method == neighbors_inside
-        neighborsᵢ = []
-        if epm == nothing
-            error("Must provide an EPM when computing neighbors within the triangle.")
-        end
-    else
-        error("Unhandled NeighborMethod: $(neighbor_method)")
-    end
+    neighborsᵢ = select_neighbors(neighborsᵢ,simplex,ext_mesh,dim,num_neighbors,
+        neighbor_method,epm)
 
     if neighbor_method == neighbors_inside
         n = def_inside_neighbors_divs # Number of points for the uniform sampling of the triangle
