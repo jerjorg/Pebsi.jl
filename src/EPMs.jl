@@ -635,23 +635,23 @@ m5bandenergy3 = 5.65179242276863
 A container for information about the 2D empirical pseudopotential models (EPM).
 
 # Arguments
-- `energy_conv::Real`: A energy conversion factor energy eigenvalues of EPM.
-- `sheets::Integer`: the number of sheets or eigenvalues included in computations.
-- `atom_types::Vector{<:Integer}`: a list of atom types as integers in the same 
+- `energy_conv::Float64`: A energy conversion factor energy eigenvalues of EPM.
+- `sheets::Int`: the number of sheets or eigenvalues included in computations.
+- `atom_types::Vector{Int}`: a list of atom types as integers in the same 
     order as `atom_pos`.
-- `atom_pos::Matrix{<:Real}`: the positions of atoms as columns of a matrix.
+- `atom_pos::Matrix{Float64}`: the positions of atoms as columns of a matrix.
 - `coordinates::String`: the coordinates in which the atoms are specified in 
     `atom_pos`. Options include "Cartesian" and "lattice".
 - `convention::String`: the convention for going between real and reciprocal space.
     Options include "ordinary" and "angular".
-- `real_latvecs::Matrix{<:Real}`: the real lattice vectors in Cartesian coordinates
+- `real_latvecs::Matrix{Float64}`: the real lattice vectors in Cartesian coordinates
     as columns of a matrix.
-- `recip_latvecs::Matrix{<:Real}`: the reciprocal lattice vectors in Cartesian
+- `recip_latvecs::Matrix{Float64}`: the reciprocal lattice vectors in Cartesian
     coorinates as columns of a matrix.
-- `bz::Chull{<:Real}`: the Brillouin zone of the EPM as a convex hull object from
+- `bz::Chull{Float64}`: the Brillouin zone of the EPM as a convex hull object from
     the Julia package QHull. This can be calculated with the Julia package 
     `SymmetryReduceBZ`.
-- `ibz::Chull{<:Real}`: the irreducible Brillouin zone of the EPM.
+- `ibz::Chull{Float64}`: the irreducible Brillouin zone of the EPM.
 - `pointgroup::Vector{Matrix{Float64}}`: the point group of the real-space crystal.
 - `frac_trans::Vector{Vector{Float64}}`: the fractional translations from the space
     group of the crystal.
@@ -660,43 +660,43 @@ A container for information about the 2D empirical pseudopotential models (EPM).
     contains the corresponding pseudopotential form factors.
 - `rules::Vector{Pair{Float64, Float64}}`: another format for the distances and 
     form factors for the EPM.
-- `cutoff::Real`: the cutoff distance for the Fourier expansion for the EPM. The
+- `cutoff::Float64`: the cutoff distance for the Fourier expansion for the EPM. The
    number of terms kept in the Fourier expansion is the same as the number of 
    lattice points for the reciprocal lattice of the EPM that fit within a circle
     of radius `cutoff`.
 - `rlat_type::String`: the lattice of type of the reciprocal lattice.
 
 - `name::String`: the name of the EPM.
-- `electrons::Real`: the number of electrons for the EPM.
-- `fermiarea::Real`: the Fermi area of the EPM or the area of the shadows of the 
+- `electrons::Int`: the number of electrons for the EPM.
+- `fermiarea::Float64`: the Fermi area of the EPM or the area of the shadows of the 
     occupied sheets.
-- `fermilevel::Real`: the true Fermi level for the EPM.
-- `bandenergy::Real`: the true band energy for the EPM.
+- `fermilevel::Float64`: the true Fermi level for the EPM.
+- `bandenergy::Float64`: the true band energy for the EPM.
 """
 mutable struct EPM2D
-    energy_conv::Real
-    sheets::Integer 
-    atom_types::Vector{<:Integer}
-    atom_pos::Matrix{<:Real}
+    energy_conv::Float64
+    sheets::Int
+    atom_types::Vector{Int}
+    atom_pos::Matrix{Float64}
     coordinates::String
     convention::String
 
-    real_latvecs::Matrix{<:Real}
-    recip_latvecs::Matrix{<:Real}
-    bz::Chull{<:Real}
-    ibz::Chull{<:Real}
+    real_latvecs::Matrix{Float64}
+    recip_latvecs::Matrix{Float64}
+    bz::Chull{Float64}
+    ibz::Chull{Float64}
     pointgroup::Vector{Matrix{Float64}}
     frac_trans::Vector{Vector{Float64}}
     dist_ff::Vector{Vector{Float64}}
     rules::Vector{Pair{Float64, Float64}}
-    cutoff::Real
+    cutoff::Float64
     rlat_type::String
     
     name::String
-    electrons::Real
-    fermiarea::Real
-    fermilevel::Real
-    bandenergy::Real
+    electrons::Int
+    fermiarea::Float64
+    fermilevel::Float64
+    bandenergy::Float64
 end
 
 m1name1 = "m11"; m1name2 = "m12"; m1name3 = "m13"
@@ -790,82 +790,82 @@ mf = EPM2D(energy_conv, sheets, atom_types, atom_pos, coordinates, convention,
 
 A container for all the information about the empirical pseudopotential models.
 
-- `energy_conv::Real`: A energy conversion factor energy eigenvalues of EPM.
-- `sym_offset::Vector{<:Real}`: a symmetry preserving offset for a regular *k*-point
+- `energy_conv::Float64`: A energy conversion factor energy eigenvalues of EPM.
+- `sym_offset::Vector{Float64}`: a symmetry preserving offset for a regular *k*-point
     grid.
-- `atom_types::Vector{<:Integer}`: a list of atom types as integers in the same 
+- `atom_types::Vector{Int}`: a list of atom types as integers in the same 
     order as `atom_pos`.
-- `atom_pos::Matrix{<:Real}`: the positions of atoms as columns of a matrix.
+- `atom_pos::Matrix{Float64}`: the positions of atoms as columns of a matrix.
 - `coordinates::String`: the coordinates in which the atoms are specified in 
     `atom_pos`. Options include "Cartesian" and "lattice".
 - `convention::String`: the convention for going between real and reciprocal space.
     Options include "ordinary" and "angular".
-- `sheets::Integer`: the number of sheets or eigenvalues included in computations.
+- `sheets::Int`: the number of sheets or eigenvalues included in computations.
 - `name::String`: the name of the EPM.
 - `lat_type::String`: the lattice type for the real-space lattice.
-- `lat_constants::Vector{<:Real}`: the lattice constants for the real-space lattice
+- `lat_constants::Vector{Float64}`: the lattice constants for the real-space lattice
     and the conventional unit cell.
-- `lat_angles::Vector{<:Real}`: the lattice angles for the real-space lattice and 
+- `lat_angles::Vector{Float64}`: the lattice angles for the real-space lattice and 
     conventional unit cell.
-- `real_latvecs::Matrix{<:Real}`: the real lattice vectors in Cartesian coordinates
+- `real_latvecs::Matrix{Float64}`: the real lattice vectors in Cartesian coordinates
     as columns of a matrix.
 - `rlat_type::String`: the lattice of type of the reciprocal lattice.
-- `recip_latvecs::Matrix{<:Real}`: the reciprocal lattice vectors in Cartesian
+- `recip_latvecs::Matrix{Float64}`: the reciprocal lattice vectors in Cartesian
     coorinates as columns of a matrix.
 - `pointgroup::Vector{Matrix{Float64}}`: the point group of the real-space crystal.
 - `frac_trans::Vector{Vector{Float64}}`: the fractional translations from the space
     group of the crystal.
-- `bz::Chull{<:Real}`: the Brillouin zone of the EPM as a convex hull object from
+- `bz::Chull{Float64}`: the Brillouin zone of the EPM as a convex hull object from
     the Julia package QHull. This can be calculated with the Julia package 
     `SymmetryReduceBZ`.
-- `ibz::Chull{<:Real}`: the irreducible Brillouin zone of the EPM.
+- `ibz::Chull{Float64}`: the irreducible Brillouin zone of the EPM.
 - `dist_ff::Vector{Vector{Float64}}`: the distances and form factors for the EPM.
     The list array of the nested array contains the distances and the second array
     contains the corresponding pseudopotential form factors.
 - `rules::Vector{Pair{Float64, Float64}}`: another format for the distances and 
     form factors for the EPM.
-- `electrons::Real`: the number of electrons for the EPM.
-- `cutoff::Real`: the cutoff distance for the Fourier expansion for the EPM. The
+- `electrons::Int`: the number of electrons for the EPM.
+- `cutoff::Float64`: the cutoff distance for the Fourier expansion for the EPM. The
     number of terms kept in the Fourier expansion is the same as the number of 
     lattice points for the reciprocal lattice of the EPM that fit within a circle
     of radius `cutoff`.
-- `fermiarea::Real`: the Fermi area of the EPM or the area of the shadows of the 
+- `fermiarea::Float64`: the Fermi area of the EPM or the area of the shadows of the 
     occupied sheets.
-- `fermilevel::Real`: the true Fermi level for the EPM.
-- `fl_error::Real`: the estimated error in the true Fermi level.
-- `bandenergy::Real`: the true band energy for the EPM.
-- `be_error::Real`: the estimated error in the true band energy.
+- `fermilevel::Float64`: the true Fermi level for the EPM.
+- `fl_error::Float64`: the estimated error in the true Fermi level.
+- `bandenergy::Float64`: the true band energy for the EPM.
+- `be_error::Float64`: the estimated error in the true band energy.
 """
 mutable struct EPM
-    energy_conv::Real 
-    sym_offset::Vector{<:Real}
-    atom_types::Vector{<:Int}
-    atom_pos::Matrix{<:Real}
+    energy_conv::Float64
+    sym_offset::Vector{Float64}
+    atom_types::Vector{Int}
+    atom_pos::Matrix{Float64}
     coordinates::String
     convention::String
 
     sheets::Int
     name::String
     lat_type::String
-    lat_constants::Vector{<:Real}
-    lat_angles::Vector{<:Real}
-    real_latvecs::Matrix{<:Real}
+    lat_constants::Vector{Float64}
+    lat_angles::Vector{Float64}
+    real_latvecs::Matrix{Float64}
     rlat_type::String
-    recip_latvecs::Matrix{<:Real}
+    recip_latvecs::Matrix{Float64}
     pointgroup::Vector{Matrix{Float64}}
     frac_trans::Vector{Vector{Float64}}
     
-    bz::Chull{<:Real}
-    ibz::Chull{<:Real}    
+    bz::Chull{Float64}
+    ibz::Chull{Float64}
     dist_ff::Vector{Vector{Float64}}
     rules::Vector{Pair{Float64, Float64}}
-    electrons::Real
-    cutoff::Real
-    fermiarea::Real
-    fermilevel::Real
-    fl_error::Real
-    bandenergy::Real
-    be_error::Real
+    electrons::Int
+    cutoff::Float64
+    fermiarea::Float64
+    fermilevel::Float64
+    fl_error::Float64
+    bandenergy::Float64
+    be_error::Float64
 end
 
 energy_conv = RytoeV
@@ -1005,8 +1005,8 @@ Evaluate an empirical pseudopotential model (EPM) at a k-point.
 - `rules`: a vector of pairs where the first elements of the pairs are distances
     between reciprocal lattice points rounded to two decimals places and second
     elements are the empirical pseudopotential form factors.
-- `cutoff::Real`: the Fourier expansion cutoff.
-- `sheets::Integer`: the number of eigenenergies returned.
+- `cutoff::Float64`: the Fourier expansion cutoff.
+- `sheets::Int`: the number of eigenenergies returned.
 - `energy_conversion_factor::Real=RytoeV`: converts the energy eigenvalue units
     from the energy unit for `rules` to an alternative energy unit.
 - `rtol::Real=sqrt(eps(float(maximum(rbasis))))`: a relative tolerance for

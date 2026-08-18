@@ -39,18 +39,18 @@ export BandStructure, init_bandstructure, quadval_vertex, corner_indices,
 A container for all variables related to the band structure.
 
 # Arguments
-- `init_msize::Integer`: the initial size of the mesh over the IBZ. The number
+- `init_msize::Int`: the initial size of the mesh over the IBZ. The number
     of points is approximately proportional to init_msize^2/2.
-- `num_near_neigh::Integer`: the number of nearest neighbors to consider when 
+- `num_near_neigh::Int`: the number of nearest neighbors to consider when 
     calculating interval coefficients. For example, a value of 1 will include 
     neighbors that are a distance of 1 away or are connected by an edge with the
     corners of the simplex.
-- `num_neighbors::Integer`: the minimum number of neighbors to include in the 
+- `num_neighbors::Int`: the minimum number of neighbors to include in the 
     calculation of interval coefficients. 
-- `fermiarea_eps::Real`: a tolerance used during the bisection algorithm that 
+- `fermiarea_eps::Float64`: a tolerance used during the bisection algorithm that 
     determines how close the midpoints of the Fermi area interval is to the true
     Fermi area.
-- `target_accuracy::Real`: the accuracy desired for the band energy at the end 
+- `target_accuracy::Float64`: the accuracy desired for the band energy at the end 
     of the computation.
 - `fermilevel_method::FermiLevelMethod`: the root-finding method for computing the
     Fermi level: `fl_bisection` or `fl_chandrupatla`.
@@ -63,8 +63,8 @@ A container for all variables related to the band structure.
 - `neighbor_method::NeighborMethod`: the method for selecting neighboring points
     in the calculation of interval coefficients: `neighbors_closest`,
     `neighbors_surrounding` or `neighbors_inside`.
-- `rtol::Real`: a relative tolerance for floating point comparisons.
-- `atol::Real`: an absolute tolerance for floating point comparisons.
+- `rtol::Float64`: a relative tolerance for floating point comparisons.
+- `atol::Float64`: an absolute tolerance for floating point comparisons.
 - `mesh::PyObject`: a Delaunay triangulation of points over the IBZ.
 - `simplicesᵢ::Vector{Vector{Integer}}`: the indices of points at the corners of the 
     tile for all tiles in the triangulation.
@@ -74,7 +74,7 @@ A container for all variables related to the band structure.
     in the mesh.
 - `eigenvals::AbstractMatrix{<:Real}`: the eigenvalues at each of the points unique
     by symmetry.
-- `fatten::Real` a variable that scales the size of the interval coefficients.
+- `fatten::Float64` a variable that scales the size of the interval coefficients.
 - `mesh_intcoeffs::Vector{Vector{Matrix{Float64}}}`:the interval Bezier 
     coefficients for all tiles and sheets.
 - `mesh_bezcoeffs::Vector{Vector{Vector{Float64}}}`: the least-squares Bezier
@@ -114,50 +114,50 @@ A container for all variables related to the band structure.
       Fermi level.
     `stop_kpoint_target`: The number of k-points is close to, or greater than, the
       desired number of k-points.
-- `target_kpoints::Integer`: the desired number of k-points for the calculation.
+- `target_kpoints::Int`: the desired number of k-points for the calculation.
     This may be ignored depending on `stop_criterion`.
 - `exactfit::Bool`: the polynomial fit goes through the eigenvalues if true.
-- `polydegree::Integer`: the degree of the polynomial
+- `polydegree::Int`: the degree of the polynomial
 """
 mutable struct BandStructure
-    init_msize::Integer
-    num_near_neigh::Integer
-    num_neighbors::Integer
-    fermiarea_eps::Real
-    target_accuracy::Real
+    init_msize::Int
+    num_near_neigh::Int
+    num_neighbors::Int
+    fermiarea_eps::Float64
+    target_accuracy::Float64
     fermilevel_method::FermiLevelMethod
     refine_method::RefineMethod
     sample_method::SampleMethod
     neighbor_method::NeighborMethod
-    rtol::Real
-    atol::Real
+    rtol::Float64
+    atol::Float64
     mesh::PyObject
-    points::Matrix{<:Real}
+    points::Matrix{Float64}
     simplicesᵢ::Vector{Vector{Integer}}
     ext_mesh::PyObject
-    sym_unique::AbstractVector{<:Integer}
-    eigenvals::AbstractMatrix{<:Real}
-    fatten::Real
+    sym_unique::Vector{Int}
+    eigenvals::Matrix{Float64}
+    fatten::Float64
     mesh_intcoeffs::Vector{Vector{Matrix{Float64}}}
     mesh_bezcoeffs::Vector{Vector{Vector{Float64}}}
-    fermiarea_interval::AbstractVector{<:Real}
-    fermilevel_interval::AbstractVector{<:Real}
-    bandenergy_interval::AbstractVector{<:Real}
-    fermilevel::Real
-    bandenergy::Real
-    sigma_bandenergy::Vector{<:Real}
-    partial_bandenergy::Vector
+    fermiarea_interval::Vector{Float64}
+    fermilevel_interval::Vector{Float64}
+    bandenergy_interval::Vector{Float64}
+    fermilevel::Float64
+    bandenergy::Float64
+    sigma_bandenergy::Vector{Float64}
+    partial_bandenergy::Vector{Vector{Float64}}
     partially_occupied::Vector{Vector{Int64}}
-    bandenergy_errors::Vector{<:Real}
-    bandenergy_sigma_errors::Vector{<:Real}
-    bandenergy_partial_errors::Vector
-    fermiarea_errors::Vector{<:Real}
+    bandenergy_errors::Vector{Float64}
+    bandenergy_sigma_errors::Vector{Float64}
+    bandenergy_partial_errors::Vector{Vector{Float64}}
+    fermiarea_errors::Vector{Float64}
     weighted::Bool
     constrained::Bool
     stop_criterion::StopCriterion
-    target_kpoints::Integer
+    target_kpoints::Int
     exactfit::Bool
-    polydegree::Integer
+    polydegree::Int
 end
 
 @doc """
@@ -3182,7 +3182,7 @@ Calculate the polynomial coefficients for an exact fit, among other quantities.
 # Arguments
 - `epm::Union{EPM,EPM2D}`: an empirical pseudopotential object.
 - `num_kpoints::Integer`: the number of k-points in the mesh.
-- `polydegree::Integer`: the degree of the polynomial.
+- `polydegree::Int`: the degree of the polynomial.
 
 # Returns
 - `unique_pts::Matrix{<:Real}`: a matrix with the unique k-points as columns (but not rotationally unique).
