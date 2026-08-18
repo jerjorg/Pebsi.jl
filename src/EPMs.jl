@@ -18,7 +18,7 @@ using QHull: chull, Chull
 using LinearAlgebra: Symmetric, eigvals
 using Distances: SqEuclidean, pairwise!
 
-export epm_names, epm_names2D, eval_epm, EPMModel2D, EPMModel, free, free_fl,
+export epm_names, epm_names2D, eval_epm, EPM2D, EPM, free, free_fl,
     free_be, free2D, free_fl2D, free_be2D, epms, epms2D, RytoeV, eVtoRy,
     free_epm, mf
 
@@ -628,7 +628,7 @@ m5fermilevel3 = 1.4883818861326563
 m5bandenergy3 = 5.65179242276863
 
 @doc """
-    EPMModel2D(energy_conv, sheets, atom_types, atom_pos, coordinates, convention,
+    EPM2D(energy_conv, sheets, atom_types, atom_pos, coordinates, convention,
         real_latvecs, recip_latvecs, bz, ibz, pointgroup, frac_trans, dist_ff, rules,
         cutoff, rlat_type, name, electrons, fermiarea, fermilevel, bandenergy)
 
@@ -673,7 +673,7 @@ A container for information about the 2D empirical pseudopotential models (EPM).
 - `fermilevel::Real`: the true Fermi level for the EPM.
 - `bandenergy::Real`: the true band energy for the EPM.
 """
-mutable struct EPMModel2D
+mutable struct EPM2D
     energy_conv::Real
     sheets::Integer 
     atom_types::Vector{<:Integer}
@@ -724,7 +724,7 @@ for i=1:5
     for j=1:3
         [v[var] = ("m"*string(i)*var*string(j) |> Symbol |> eval) for var=vars₂]
         name = "m"*string(i)*string(j)        
-        @eval $(Symbol(name)) = EPMModel2D([v[var] for var=[vars₀; vars₁; vars₂]]...)
+        @eval $(Symbol(name)) = EPM2D([v[var] for var=[vars₀; vars₁; vars₂]]...)
         push!(epms2D, @eval $(Symbol(name)))
     end
 end
@@ -776,14 +776,14 @@ free2Dfermilevel = free_fl2D(free2Delectrons)
 free2Dbandenergy = free_be2D(free2Delectrons)
 
 # Free electron 2D model
-mf = EPMModel2D(energy_conv, sheets, atom_types, atom_pos, coordinates, convention,
+mf = EPM2D(energy_conv, sheets, atom_types, atom_pos, coordinates, convention,
     free2Dreal_latvecs, free2Drecip_latvecs, free2Dbz, free2Dibz, free2Dpointgroup,
     free2Dfrac_trans, free2Ddist_ff, free2Drules, free2Dcutoff, "square",
     "free electron model", free2Delectrons, free2Dfermiarea, free2Dfermilevel,
     free2Dbandenergy)
 
 @doc """
-    EPMModel(energy_conv, sym_offset, atom_types, atom_pos, coordinates, convention,
+    EPM(energy_conv, sym_offset, atom_types, atom_pos, coordinates, convention,
         sheets, name, lat_type, lat_constants, lat_angles, real_latvecs, rlat_type, 
         recip_latvecs, pointgroup, frac_trans, bz, ibz, dist_ff, rules, electrons, 
         cutoff, fermiarea, fermilevel, fl_error, bandenergy, be_error)
@@ -836,7 +836,7 @@ A container for all the information about the empirical pseudopotential models.
 - `bandenergy::Real`: the true band energy for the EPM.
 - `be_error::Real`: the estimated error in the true band energy.
 """
-mutable struct EPMModel
+mutable struct EPM
     energy_conv::Real 
     sym_offset::Vector{<:Real}
     atom_types::Vector{<:Int}
@@ -884,7 +884,7 @@ for m=epm_names
     offset = sym_offset[eval(Symbol(m,"_rtype"))]
     [v[var] = eval(Symbol(var)) for var=vars₀]
     [v[var] = eval(Symbol(m,"_",var)) for var=vars₁]
-    @eval $(Symbol(m,"_epm")) = EPMModel([v[var] for var=[vars₀;vars₁]]...)
+    @eval $(Symbol(m,"_epm")) = EPM([v[var] for var=[vars₀;vars₁]]...)
     push!(epms, @eval $(Symbol(m,"_epm")))
 end
 
@@ -963,7 +963,7 @@ free_fermiarea = free_electrons/2
 free_fermilevel = free_fl(free_electrons)
 free_bandenergy = free_be(free_electrons)
 
-free_epm = EPMModel(energy_conv, freesym_offset, atom_types, atom_pos, coordinates,
+free_epm = EPM(energy_conv, freesym_offset, atom_types, atom_pos, coordinates,
     convention, sheets, "free electron model", free_lat_type, free_lat_constants,
     free_lat_angles, free_real_latvecs, free_rlat_type, free_recip_latvecs,
     free_pointgroup, free_frac_trans, free_bz, free_ibz, free_dist_ff, free_rules,
@@ -1097,7 +1097,7 @@ Calculate the eigenvalues of an empirical pseudopotential at a *k*-point.
 # Arguments
 - `kpoint::AbstractVector{<:Real}`: a *k*-point in Cartesian coordinates at 
     which to evaluate the EPM.
-- `epm::Union{EPMModel2D,EPMModel}`: an empirical pseudopotential.
+- `epm::Union{EPM2D,EPM}`: an empirical pseudopotential.
 - `rtol::Real=sqrt(eps(float(maximum(epm.recip_latvecs))))`: a relative tolerance
     for finite-precision comparisons. In this case, the tolerance identifies points
     that are close to being within a sphere or circle in the Fourier expansion.
@@ -1122,7 +1122,7 @@ eval_epm([0,0,0],Al_epm)
 ```
 """
 function eval_epm(kpoint::AbstractVector{<:Real},
-    epm::Union{EPMModel2D,EPMModel};
+    epm::Union{EPM2D,EPM};
     rtol::Real=sqrt(eps(float(maximum(epm.recip_latvecs)))),
     atol::Real=def_atol, sheets::Integer=0, 
     func::Union{Nothing,Function}=nothing)::AbstractVector{<:Real}
@@ -1139,7 +1139,7 @@ Evaluate an EPM an many *k*-points.
 
 # Arguments
 - `kpoints::AbstractMatrix{<:Real}`: a matrix whose columns are *k*-point points.
-- `epm::Union{EPMModel2D,EPMModel}`: an EPM model.
+- `epm::Union{EPM2D,EPM}`: an EPM model.
 - `rtol::Real=sqrt(eps(float(maximum(epm.recip_latvecs))))`: a relative tolerance.
 - `atol::Real=def_atol`: an absolute tolerance.
 - `sheets::Integer=0`: the number of sheets for the *k*-point independent EPM.
@@ -1160,7 +1160,7 @@ size(eigvals)
 ```
 """
 function eval_epm(kpoints::AbstractMatrix{<:Real},
-    epm::Union{EPMModel2D,EPMModel};
+    epm::Union{EPM2D,EPM};
     rtol::Real=sqrt(eps(float(maximum(epm.recip_latvecs)))),
     atol=def_atol,sheets::Integer=0,
     func::Union{Nothing,Function}=nothing)::AbstractMatrix{<:Real}

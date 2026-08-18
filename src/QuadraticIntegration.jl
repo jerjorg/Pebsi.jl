@@ -6,7 +6,7 @@ using SymmetryReduceBZ.Symmetry: calc_spacegroup
 
 using ..Polynomials: eval_poly,getpoly_coeffs,getbez_pts_wts,eval_bezcurve,
     conicsection, evalpoly1D, get_1Dquad_coeffs, solve_quadratic, bernstein_basis
-using ..EPMs: eval_epm, EPMModel, EPMModel2D
+using ..EPMs: eval_epm, EPM, EPM2D
 using ..Mesh: get_neighbors, notbox_simplices, get_cvpts, ibz_init_mesh, 
     get_extmesh, choose_neighbors, choose_neighbors3D, trimesh, ntripts, ntetpts,
     get_sym_unique!, simplex_cornerpts, ibz_initmesh, ibz_borders,
@@ -169,7 +169,7 @@ end
 Initialize a band structure container.
 
 # Arguments
-- `epm::Union{EPMModel,EPMModel2D}`: an empirical pseudopotential.
+- `epm::Union{EPM,EPM2D}`: an empirical pseudopotential.
 
 See the documentation for `BandStructure` for a description of the remaining arguments.
 
@@ -187,7 +187,7 @@ BandStructure
 ```
 """
 function init_bandstructure(
-    epm::Union{EPMModel,EPMModel2D,EPMModel};
+    epm::Union{EPM,EPM2D,EPM};
     init_msize::Integer=def_init_msize,
     init_num_kpoints::Integer=def_num_kpoints,
     num_near_neigh::Integer=def_num_near_neigh,
@@ -936,7 +936,7 @@ Calculate the interval Bezier points for all sheets.
 - `fatten::Real=def_fatten`: scale the interval coefficients by this amount.
 - `num_near_neigh::Integer=def_num_near_neigh`: how many nearest neighbors to include.
 - `sigma::Integer=0`: the number of sheets summed and then interpolated, if any.
-- `epm::Union{Nothing,EPMModel2D,EPMModel}=nothing`: an empirical pseudopotential.
+- `epm::Union{Nothing,EPM2D,EPM}=nothing`: an empirical pseudopotential.
 - `neighbor_method::NeighborMethod=def_neighbor_method`: the method for calculating neighbors
     to include in the calculation.
 - `num_neighbors::Union{Nothing,Integer}=nothing`: the minimum number of neighbors
@@ -980,7 +980,7 @@ function get_intercoeffs(index::Integer; mesh::PyObject, ext_mesh::PyObject,
     sym_unique::AbstractVector{<:Real}, eigenvals::AbstractMatrix{<:Real}, 
     simplicesᵢ::AbstractVector, degree::Integer, fatten::Real=def_fatten, 
     num_near_neigh::Integer=def_num_near_neigh, sigma::Real=0, 
-    epm::Union{Nothing,EPMModel2D,EPMModel}=nothing,
+    epm::Union{Nothing,EPM2D,EPM}=nothing,
     neighbor_method::NeighborMethod=def_neighbor_method, 
     num_neighbors::Union{Nothing,Integer}=nothing,
     weighted::Bool=false,constrained::Bool=true,atol::Real=def_atol)
@@ -1138,7 +1138,7 @@ end
 Calculate the Fermi level for a representation of the band structure.
 
 # Arguments
-- `epm::Union{EPMModel,EPMModel2D}`: an empirical pseudopotential 
+- `epm::Union{EPM,EPM2D}`: an empirical pseudopotential 
 - `ebs::BandStructure`: a `BandStructure` data structure.
 - `num_slices::Int=10`: the number of slices for integration in 3D.
 - `window::Union{Nothing,Vector{<:Real}}=ebs.fermilevel_interval`: an energy window
@@ -1165,7 +1165,7 @@ calc_fl(epm,ebs)
 0.061318649613692225
 ```
 """
-function calc_fl(epm::Union{EPMModel,EPMModel2D},ebs::BandStructure; 
+function calc_fl(epm::Union{EPM,EPM2D},ebs::BandStructure; 
     num_slices::Int=def_num_slices, window::Vector{<:Real}=ebs.fermilevel_interval, 
         ctype::String="mean", fermi_area::Real=epm.fermiarea/length(epm.pointgroup),
         test::Bool=false)
@@ -1277,7 +1277,7 @@ end
 Calculate the Fermi level and band energy for a given rep. of the band struct.
 
 # Arguments
-- `epm::Union{EPMModel2D,EPMModel}`: an empirical pseudopotential.
+- `epm::Union{EPM2D,EPM}`: an empirical pseudopotential.
 - `ebs::BandStructure`: the band structure container.
 - `num_slices::Integer=def_num_slices`: the number of slices when integrating in 3D.
 - `flerrors::Bool=true`: if true, band energy errors include effects from Fermi 
@@ -1300,7 +1300,7 @@ ebs.bandenergy
 0.007513770523596364
 ```
 """
-function calc_flbe!(epm::Union{EPMModel2D,EPMModel},ebs::BandStructure;
+function calc_flbe!(epm::Union{EPM2D,EPM},ebs::BandStructure;
     num_slices::Integer=def_num_slices, flerrors::Bool=true)::BandStructure
      
     # The number of point operators
@@ -1529,7 +1529,7 @@ Perform one iteration of adaptive refinement. See the composite type
 `BandStructure` for refinement options.
 
 # Arguments
-- `epm::Union{EPMModel2D,EPMModel}`: an empirical pseudopotential.
+- `epm::Union{EPM2D,EPM}`: an empirical pseudopotential.
 - `ebs::BandStructure`: a quadratic approximation of the band structure.
 
 # Returns
@@ -1550,7 +1550,7 @@ abs(ebs.bandenergy - epm.bandenergy) < 1e-2
 true
 ```
 """
-function refine_mesh!(epm::Union{EPMModel2D,EPMModel},ebs::BandStructure)
+function refine_mesh!(epm::Union{EPM2D,EPM},ebs::BandStructure)
     spatial = pyimport("scipy.spatial")
     simplices = [Matrix(ebs.mesh.points[s,:]') for s=ebs.simplicesᵢ]
     err_cutoff = [simplex_size(s)/epm.ibz.volume for s=simplices]*ebs.target_accuracy
@@ -1771,7 +1771,7 @@ end
 Calculate the Fermi level and Fermi area tolerances.
 
 # Arguments
-- `epm::Union{EPMModel2D,EPMModel}`: an empirical pseudopotential.
+- `epm::Union{EPM2D,EPM}`: an empirical pseudopotential.
 - `ebs::BandStructure`: a quadratic approximation of the band structure.
 
 # Returns
@@ -1831,7 +1831,7 @@ end
 Select a condition that determines if refinement may stop.
 
 # Arguments
-- `epm::Union{EPMModel,EPMModel2D}`: a empirical pseudopotential model.
+- `epm::Union{EPM,EPM2D}`: a empirical pseudopotential model.
 - `ebs::BandStructure`: a band structure object
 
 # Returns
@@ -1846,7 +1846,7 @@ calc_flbe!(epm,ebs)
 stop_refinement!(ebs)
 ```
 """
-function stop_refinement!(epm::Union{EPMModel,EPMModel2D},ebs::BandStructure,
+function stop_refinement!(epm::Union{EPM,EPM2D},ebs::BandStructure,
     prevbe)::Bool
     stop = false
     if ebs.stop_criterion == stop_total_error
@@ -1874,7 +1874,7 @@ end
 Calculate the band energy using uniform or adaptive quadratic integation.
 
 # Arguments
-- `epm::Union{EPMModel2D,EPMModel}`: an empirical pseudopotential
+- `epm::Union{EPM2D,EPM}`: an empirical pseudopotential
 
 See the documentation for `BandStructure` for descriptions of the optional arguments.
 
@@ -1890,7 +1890,7 @@ ebs = quadratic_method(epm,target_accuracy=1e-2)
 abs(ebs.bandenergy - epm.bandenergy) < 1e-1
 ```
 """
-function quadratic_method(epm::Union{EPMModel2D,EPMModel};
+function quadratic_method(epm::Union{EPM2D,EPM};
     init_msize::Int=def_init_msize, num_near_neigh::Int=def_num_near_neigh,
     num_neighbors::Union{Nothing,Int}=nothing,
     fermiarea_eps::Real=def_fermiarea_eps,
@@ -1962,7 +1962,7 @@ Calculate (roughly) the true band energy error for each quadratic triangle.
 
 # Arguments
 - `epm::BandStructure`: a quadratic approximation of the band structure
-- `ebs::EPMModel2D`: an empirical pseudopotential
+- `ebs::EPM2D`: an empirical pseudopotential
 - `ndivs::Integer`: the number of divisions of triangles when computing the band
     energy component within each triangle using the rectangular method with a triangular
     base.
@@ -1984,7 +1984,7 @@ ebs = calc_flbe!(epm,ebs)
 sigma_be,part_be = truebe(epm,ebs,10)
 ```
 """
-function truebe(epm::EPMModel2D,ebs::BandStructure,ndivs::Integer;
+function truebe(epm::EPM2D,ebs::BandStructure,ndivs::Integer;
     num_cores::Integer=1,triangles::Union{Nothing,Integer}=nothing)
     dim = 2
     deg = 2
@@ -2687,7 +2687,7 @@ end
 Calculate the containment percentage of a quadratic interval representation of the BandStructure.
 
 # Arguments
-- `epm::Union{EPMModel,EPMModel2D}`: an empirical pseudopotential model.
+- `epm::Union{EPM,EPM2D}`: an empirical pseudopotential model.
 - `ebs::BandStructure`: a `BandStructure` data structure.
 - `divs::Integer`: the number of divisions of a triangle when sampling quadratic surfaces
 - `atol::Real=1e-6`: an absolute tolerance. Eigenvalues closer than `atol` to the
@@ -2707,7 +2707,7 @@ divs = 3
 containment_percentage(epm,ebs,divs)
 ```
 """
-function containment_percentage(epm::Union{EPMModel,EPMModel2D},
+function containment_percentage(epm::Union{EPM,EPM2D},
     ebs::BandStructure,divs::Integer,atol::Real=1e-6)
     dim = size(epm.recip_latvecs,1); deg = 2
     simplex_bpts = sample_simplex(dim,deg)
@@ -3180,7 +3180,7 @@ end
 Calculate the polynomial coefficients for an exact fit, among other quantities.
 
 # Arguments
-- `epm::Union{EPMModel,EPMModel2D}`: an empirical pseudopotential object.
+- `epm::Union{EPM,EPM2D}`: an empirical pseudopotential object.
 - `num_kpoints::Integer`: the number of k-points in the mesh.
 - `polydegree::Integer`: the degree of the polynomial.
 
@@ -3200,7 +3200,7 @@ using Pebsi.EPMs, Pebsi.QuadraticIntegration
 init_exactfit(m11,init_msize=3,polydegree=1)
 ```
 """
-function init_exactfit(epm::Union{EPMModel,EPMModel2D}; num_kpoints::Integer, polydegree::Integer,
+function init_exactfit(epm::Union{EPM,EPM2D}; num_kpoints::Integer, polydegree::Integer,
     atol::Real=def_atol,rtol::Real=def_rtol)
     dim = size(epm.recip_latvecs,1)
     mesh,simplicesᵢ = ibz_initmesh(epm.ibz,num_kpoints)
@@ -3264,7 +3264,7 @@ end
 Calculate the k-points weights for a give approximation of the band structure.
 
 # Arguments
-- `epm::Union{EPMModel,EPMModel2D,EPMModel}`: the empirical pseudopotential.
+- `epm::Union{EPM,EPM2D,EPM}`: the empirical pseudopotential.
 - `ebs::BandStructure`: the band structure
 - `num_slices::Integer=def_num_slices)`: the number of slices for integration.
 
@@ -3279,7 +3279,7 @@ using Pebsi.EPMs, Pebsi.QuadraticIntegration
 ebs = init_bandstructure(m11)
 kpoint_weights(epm,ebs)
 """
-function kpoint_weights(epm::Union{EPMModel,EPMModel2D,EPMModel},
+function kpoint_weights(epm::Union{EPM,EPM2D,EPM},
         ebs::BandStructure; num_slices::Integer=def_num_slices)
     dim = size(epm.recip_latvecs,1)
     npg = length(epm.pointgroup)

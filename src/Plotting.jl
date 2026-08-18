@@ -5,7 +5,7 @@ using PyCall: pyimport_conda
 using Statistics: mean
 
 using ..QuadraticIntegration: BandStructure
-using ..EPMs: EPMModel2D, EPMModel, eval_epm
+using ..EPMs: EPM2D, EPM, eval_epm
 using ..RectangularMethod: sample_unitcell
 using ..Polynomials: eval_poly, eval_bezcurve
 using ..Geometry: carttobary, barytocart, simplex_size, sample_simplex
@@ -586,7 +586,7 @@ end
 Plot the band structure of an empirical pseudopotential.
 
 # Arguments
-- `epm::Union{EPMModel2D,EPMModel}`: an empirical pseudopotential.
+- `epm::Union{EPM2D,EPM}`: an empirical pseudopotential.
 - `ax::Union{PyObject,Nothing}=nothing`: an axes object from PyPlot.
 - `kpoint_dist::Real`: the distance between k-points in the band plot.
 - `expansion_size::Integer`: the desired number of terms in the Fourier
@@ -603,7 +603,7 @@ using Pebsi.Plotting: plot_bandstructure
 plot_bandstructure(Al_epm)
 ```
 """
-function plot_bandstructure(epm::Union{EPMModel2D,EPMModel},
+function plot_bandstructure(epm::Union{EPM2D,EPM},
     ax::Union{PyObject,Nothing}=nothing; kpoint_dist::Real=0.1,
     expansion_size::Integer=1000, sheets::Integer=epm.sheets)
     plot_bandstructure(epm.name, epm.real_latvecs, epm.atom_types, epm.atom_pos,
