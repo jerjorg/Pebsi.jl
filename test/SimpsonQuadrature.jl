@@ -11,12 +11,14 @@ using Pebsi.Geometry: sample_simplex, barytocart
     @test bezcurve_intersects(coeffs) == []
     
     # Case 2: [0,0,c]
-    # Returns Real[0]: the curve is zero at the start point, and the current
-    # implementation reports that endpoint root as an intersection. Whether a
-    # root exactly at an endpoint counts is a semantic question about the
-    # method, so this is recorded rather than silently adjusted.
+    # 0.1t^2 is tangent to zero at t=0: it touches zero without changing sign.
+    # The root is still reported. `bezcurve_intersects` returns every root in
+    # [0,1) rather than only sign changes, because `simplex_intersects` needs
+    # tangencies - they are genuine points where a level curve meets a triangle
+    # edge. `getdomain` tests the sign of each subinterval, so the extra split
+    # point is absorbed there and does not affect any integral.
     coeffs = [0,0,0.1]
-    @test_broken bezcurve_intersects(coeffs) == []
+    @test bezcurve_intersects(coeffs) == [0]
     
     # Case 3: [0,b,0]
     coeffs = [0,0.1,0]
@@ -69,10 +71,10 @@ using Pebsi.Geometry: sample_simplex, barytocart
     coeffs = [2,4,8]
     @test bezcurve_intersects(coeffs) == []
     
-    # Returns Real[0.25]. Same open question as the [0,0,c] case above: this is
-    # a tangency the implementation counts and the test does not.
+    # (1-4t)^2 is tangent to zero at t=0.25. Reported for the same reason as the
+    # [0,0,c] case above.
     coeffs = [1,-3,9]
-    @test_broken bezcurve_intersects(coeffs) == []
+    @test bezcurve_intersects(coeffs) == [0.25]
     
     coeffs = [1,-3,3]
     @test bezcurve_intersects(coeffs) ≈ [0.15505102572168222,0.6449489742783179]
