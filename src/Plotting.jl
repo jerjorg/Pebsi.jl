@@ -4,8 +4,8 @@ using PyPlot: subplots, figure, PyObject, plt, pyimport
 using PyCall: pyimport_conda
 using Statistics: mean
 
-using ..QuadraticIntegration: bandstructure
-using ..EPMs: epm_model2D, epm_model, eval_epm
+using ..QuadraticIntegration: BandStructure
+using ..EPMs: EPMModel2D, EPMModel, eval_epm
 using ..RectangularMethod: sample_unitcell
 using ..Polynomials: eval_poly, eval_bezcurve
 using ..Geometry: carttobary, barytocart, simplex_size, sample_simplex
@@ -233,7 +233,7 @@ end
 Plot the triangles shaded by error and approx. Fermi curve of an approx. of the band structure.
 
 # Arguments
-- `ebs::bandstructure`: a container for the band structure approximation.
+- `ebs::BandStructure`: a container for the band structure approximation.
 - `ax::Union{PyObject,Nothing}=nothing`: an axes object from `PyPlot`.
 - `sort::Bool=false`: if true, sort the vertices the triangles.
 - `linewidth::Real=0.5`: widths of edges of triangles  
@@ -248,7 +248,7 @@ Plot the triangles shaded by error and approx. Fermi curve of an approx. of the 
 # Returns
 - `ax::PyObject`: a `PyPlot` axes object. 
 """
-function contourplot(ebs::bandstructure, ax::Union{PyObject,Nothing}=nothing;
+function contourplot(ebs::BandStructure, ax::Union{PyObject,Nothing}=nothing;
     sort::Bool=false, linewidth::Real=0.5, edgecolor::String="black",
     filled::Bool=false, ndiv::Integer=100,
     colors::AbstractVector{String}=["black","white"], alpha_curve::Real=1,
@@ -586,7 +586,7 @@ end
 Plot the band structure of an empirical pseudopotential.
 
 # Arguments
-- `epm::Union{epm_model2D,epm_model}`: an empirical pseudopotential.
+- `epm::Union{EPMModel2D,EPMModel}`: an empirical pseudopotential.
 - `ax::Union{PyObject,Nothing}=nothing`: an axes object from PyPlot.
 - `kpoint_dist::Real`: the distance between k-points in the band plot.
 - `expansion_size::Integer`: the desired number of terms in the Fourier
@@ -603,7 +603,7 @@ using Pebsi.Plotting: plot_bandstructure
 plot_bandstructure(Al_epm)
 ```
 """
-function plot_bandstructure(epm::Union{epm_model2D,epm_model},
+function plot_bandstructure(epm::Union{EPMModel2D,EPMModel},
     ax::Union{PyObject,Nothing}=nothing; kpoint_dist::Real=0.1,
     expansion_size::Integer=1000, sheets::Integer=epm.sheets)
     plot_bandstructure(epm.name, epm.real_latvecs, epm.atom_types, epm.atom_pos,
