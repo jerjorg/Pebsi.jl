@@ -4,7 +4,7 @@ using ..Geometry: simplex_size, barytocart, lineseg_pt_dist, ptface_mindist,
     sample_simplex
 using ..Defaults: def_atol, def_mesh_scale, def_max_neighbor_tol,
     def_neighbors_per_bin2D, def_neighbors_per_bin3D, def_num_neighbors2D, 
-    def_num_neighbors3D, def_initmesh_kpoint_tol
+    def_num_neighbors3D, def_initmesh_kpoint_tol, def_neighbor_dist_sigdigits
 using SymmetryReduceBZ.Utilities: unique_points, get_uniquefacets, sortpts2D
 using PyCall: pyimport, pyimport_conda, PyObject
 using QHull: Chull
@@ -137,8 +137,12 @@ function choose_neighbors(simplex::AbstractMatrix{<:Real},
 
     for p=1:nbins
         # Order the points in each bin by distance
-        distances = [minimum([lineseg_pt_dist(
-            neighbors[:,j],simplex[:,[i,mod1(i+1,3)]]) for i=1:3]) for j=angle_ran[p]]
+        # Rounded before sorting: see def_neighbor_dist_sigdigits. Equidistant
+        # neighbours stay equidistant under a different BLAS, so the tie-break
+        # below decides between them rather than the last bits of the geometry.
+        distances = round.([minimum([lineseg_pt_dist(
+            neighbors[:,j],simplex[:,[i,mod1(i+1,3)]]) for i=1:3]) for j=angle_ran[p]],
+            sigdigits=def_neighbor_dist_sigdigits)
         dorder = sortperm(distances, alg=Base.Sort.DEFAULT_STABLE)
         angle_ran[p] = neighborsᵢ[angle_ran[p][dorder]]
     end
@@ -254,7 +258,9 @@ function choose_neighbors3D(simplex,neighborsᵢ,neighbors;num_neighbors=nothing
         for j = 1:nbinsϕ
             ptsᵢ = angle_ran[i][j]
             pts = neighbors[:,ptsᵢ]
-            order = sortperm([minimum([ptface_mindist(pts[:,i],face) for face = faces]) for i=1:size(pts,2)], alg=Base.Sort.DEFAULT_STABLE)
+            order = sortperm(round.([minimum([ptface_mindist(pts[:,i],face) for face = faces])
+                for i=1:size(pts,2)], sigdigits=def_neighbor_dist_sigdigits),
+                alg=Base.Sort.DEFAULT_STABLE)
             angle_ran[i][j] = angle_ran[i][j][order]
         end
     end

@@ -62,6 +62,15 @@ const def_fl_max_iters = 50 # The maximum number root-finding iterations for Fer
 const def_chandrupatla_tol = 1e-2 # Tolerance for Chandrupatla's method when t is close to zero or 1
 const def_min_split = 10 # The minimum number of simplices split per refinement iteration
 const def_allowed_err_ratio = 5 # Cutoff between adding one or three/six sample points in refinement
+# Neighbour distances are rounded to this many significant digits before they are
+# sorted. A symmetric mesh puts many candidate neighbours at the same distance
+# from a simplex, and which of them get kept then depends on how the sort orders
+# equal values. Without rounding, a different BLAS moving the geometry by an ulp
+# makes those distances merely near-equal rather than equal, the sort orders them
+# by those last bits, and a different set of neighbours feeds the fit. Twelve
+# digits is far below the precision the geometry is meaningful to and far above
+# the scale of that noise.
+const def_neighbor_dist_sigdigits = 12
 const def_max_neighbor_tol = 1.01 # Tolerance for selecting neighbors near the triangle
 const def_inside_neighbors_divs = 5 # The number of points for a uniform grid over a triangle for inside neighbors
 const def_bez_weight_tol = 1e-12 # Smaller tolerance for classifying conic sections
