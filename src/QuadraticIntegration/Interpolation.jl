@@ -288,7 +288,7 @@ function select_neighbors(neighborsᵢ::AbstractVector,simplex::AbstractMatrix{<
     # Select neighbors that are closest to the triangle.
     if neighbor_method == neighbors_closest
         dist = [minimum([norm(ext_mesh.points[i,:] - simplex[:,j]) for j=1:dim+1]) for i=neighborsᵢ]
-        neighborsᵢ[sortperm(dist)][1:num_neighbors]
+        neighborsᵢ[sortperm(dist, alg=Base.Sort.DEFAULT_STABLE)][1:num_neighbors]
     # Select neighbors that surround the triangle and are close to the triangle.
     elseif neighbor_method == neighbors_surrounding
         neighbors = Matrix(ext_mesh.points[neighborsᵢ,:]')

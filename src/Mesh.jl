@@ -115,7 +115,7 @@ function choose_neighbors(simplex::AbstractMatrix{<:Real},
 
     center = vec(mean(simplex,dims=2)) # Measure angles from the center of the triangle
     angles = [atan(neighbors[2,i]-center[2],neighbors[1,i]-center[1]) for i=1:size(neighbors,2)]
-    order = sortperm(angles); neighbors = neighbors[:,order]; angles = angles[order]
+    order = sortperm(angles, alg=Base.Sort.DEFAULT_STABLE); neighbors = neighbors[:,order]; angles = angles[order]
     neighborsᵢ = neighborsᵢ[order]
     distances = [minimum([
         lineseg_pt_dist(neighbors[:,j],simplex[:,[i,mod1(i+1,3)]]) for i=1:3]) for j=1:size(neighbors,2)]
@@ -139,7 +139,7 @@ function choose_neighbors(simplex::AbstractMatrix{<:Real},
         # Order the points in each bin by distance
         distances = [minimum([lineseg_pt_dist(
             neighbors[:,j],simplex[:,[i,mod1(i+1,3)]]) for i=1:3]) for j=angle_ran[p]]
-        dorder = sortperm(distances)
+        dorder = sortperm(distances, alg=Base.Sort.DEFAULT_STABLE)
         angle_ran[p] = neighborsᵢ[angle_ran[p][dorder]]
     end
     
@@ -209,8 +209,8 @@ function choose_neighbors3D(simplex,neighborsᵢ,neighbors;num_neighbors=nothing
                     center))) for i=1:size(neighbors,2)]
     θs = [atan(neighbors[2,i]-center[2],neighbors[1,i]-center[1]) for i=1:size(neighbors,2)]
 
-    orderϕ = sortperm(ϕs)
-    orderθ = sortperm(θs)
+    orderϕ = sortperm(ϕs, alg=Base.Sort.DEFAULT_STABLE)
+    orderθ = sortperm(θs, alg=Base.Sort.DEFAULT_STABLE)
     neighbors_per_bin = if dim == 2 def_neighbors_per_bin2D else def_neighbors_per_bin3D end
 
     nbinsθ = round(Int,√(2*num_neighbors/neighbors_per_bin))
@@ -254,7 +254,7 @@ function choose_neighbors3D(simplex,neighborsᵢ,neighbors;num_neighbors=nothing
         for j = 1:nbinsϕ
             ptsᵢ = angle_ran[i][j]
             pts = neighbors[:,ptsᵢ]
-            order = sortperm([minimum([ptface_mindist(pts[:,i],face) for face = faces]) for i=1:size(pts,2)])
+            order = sortperm([minimum([ptface_mindist(pts[:,i],face) for face = faces]) for i=1:size(pts,2)], alg=Base.Sort.DEFAULT_STABLE)
             angle_ran[i][j] = angle_ran[i][j][order]
         end
     end
