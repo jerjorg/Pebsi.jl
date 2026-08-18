@@ -4,7 +4,7 @@ using ..Geometry: simplex_size, barytocart, lineseg_pt_dist, ptface_mindist,
     sample_simplex
 using ..Defaults: def_atol, def_mesh_scale, def_max_neighbor_tol,
     def_neighbors_per_bin2D, def_neighbors_per_bin3D, def_num_neighbors2D, 
-    def_num_neighbors3D, def_initmesh_kpoint_tol, def_neighbor_dist_rtol
+    def_num_neighbors3D, def_initmesh_kpoint_tol, def_neighbor_dist_rtol, def_simplex_size_rtol
 using SymmetryReduceBZ.Utilities: unique_points, get_uniquefacets, sortpts2D
 using PyCall: pyimport, pyimport_conda, PyObject
 using QHull: Chull
@@ -484,16 +484,23 @@ function notbox_simplices(mesh::PyObject)::Vector{Vector{<:Integer}}
     simplicesᵢ = [Vector{Int}(mesh.simplices[i,:]) for i=1:size(mesh.simplices,1)]
     dim = size(mesh.points,2)
     if dim == 2 jend = 4 else jend = 8 end
+    # The first few indices are the corners of a bounding box; a simplex holding
+    # one of them is outside the region of interest.
+    inside = [i for i=1:size(mesh.simplices,1)
+              if !any(j in (mesh.simplices[i,:] .+ 1) for j=1:jend)]
+    sizes = [simplex_size(Matrix(mesh.points[mesh.simplices[i,:] .+ 1,:]')) for i=inside]
+
+    # Degenerate means small compared with the other simplices here, not small
+    # compared with a fixed number. An absolute threshold makes this scale
+    # dependent: every child of a small patch falls under it, they are all
+    # discarded, and the caller is told the patch would not subdivide when in
+    # fact it subdivided and the results were thrown away.
+    ref = isempty(sizes) ? 0.0 : maximum(sizes)
     n = 0
-    for i=1:size(mesh.simplices,1)
-        # The first few indices are the the corners of a bounding box. Only keep
-        # the simplex if it doesn't contain one of these indices.
-        if !any([j in (mesh.simplices[i,:] .+ 1) for j=1:jend])
-            # Only keep the simplex if it has nonzero volume.
-            if !isapprox(simplex_size(Matrix(mesh.points[mesh.simplices[i,:] .+ 1,:]')),0,atol=def_atol)
-                n += 1
-                simplicesᵢ[n] = mesh.simplices[i,:] .+ 1
-            end
+    for (k,i) in enumerate(inside)
+        if ref > 0 && sizes[k] > def_simplex_size_rtol*ref
+            n += 1
+            simplicesᵢ[n] = mesh.simplices[i,:] .+ 1
         end
     end
     simplicesᵢ[1:n]

@@ -90,6 +90,16 @@ const def_bez_weight_tol = 1e-12 # Smaller tolerance for classifying conic secti
 # refusal stands, since a large patch that will not subdivide means something has
 # gone wrong rather than merely become small.
 const def_degenerate_simplex_size = 1e-6
+# A simplex from a triangulation counts as degenerate when its size is below
+# this fraction of the largest simplex in the same triangulation.
+#
+# This test used to be absolute - `isapprox(size, 0, atol=def_atol)` with def_atol
+# at 1e-9 - which silently made the whole splitting algorithm scale dependent.
+# Subdividing a patch below about 1e-8 in area produced perfectly good children,
+# every one of them smaller than 1e-9, so all of them were discarded as
+# "zero volume" and the caller was told the patch could not be subdivided. The
+# geometry was never the problem; the yardstick was.
+const def_simplex_size_rtol = 1e-9
 const def_min_simplex_size = 1e-12 # The smallest triangle that can be split
 const def_rational_bezpt_dist = 1e6 # The maximum size of a component of a rational Bezier point
 const def_weighted = false # Points are not weighted to calculate interval coefficients
