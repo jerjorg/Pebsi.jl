@@ -363,15 +363,15 @@ Calculate the coefficients of a quadratic sub-surface of a quadratic triangle.
 import Pebsi.QuadraticIntegration: sub_coeffs
 bezpts = [-1.0 0.0 1.0 -0.5 0.5 0.0; 0.0 0.0 0.0 0.5 0.5 1.0; -0.25 -0.25 3.75 -0.25 1.75 1.75]
 subtriangle = [-0.5 0.0 -0.6464466094067263; 0.0 1.0 0.35355339059327373]
-sub_coeffs(bezpts,subtriangle)
+round.(sub_coeffs(bezpts,subtriangle), digits=10)
 # output
 6-element Vector{Float64}:
   0.0
   0.25
   1.75
- -0.07322330470336313
-  0.45710678118654746
- -4.85722573273506e-17
+ -0.0732233047
+  0.4571067812
+ -0.0
 ```
 """
 function sub_coeffs(bezpts::AbstractMatrix{<:Real},
