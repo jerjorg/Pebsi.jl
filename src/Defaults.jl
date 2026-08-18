@@ -1,15 +1,52 @@
 module Defaults
 
+# Strategy selectors. These were bare integers compared against literals at 21
+# sites, with the meaning of each number recorded only in a comment here. The
+# numeric values are kept so the mapping to the published work is unchanged.
+@enum FermiLevelMethod begin
+    fl_bisection = 1
+    fl_chandrupatla = 2
+end
+
+@enum RefineMethod begin
+    refine_most_error = 1              # the tiles with the most error
+    refine_above_allowed = 2           # tiles with too much error for their size
+    refine_fraction_above_allowed = 3  # a fraction of the tiles with too much error
+    refine_fermiarea_above_allowed = 4 # by Fermi area error, scaled to band energy
+    refine_fermiarea_largest = 5       # largest Fermi area errors, no allowance
+    refine_partially_occupied = 6      # a fraction of the partially occupied tiles
+    refine_largest_fraction = 7        # a fraction of the largest errors, capped
+end
+
+@enum SampleMethod begin
+    sample_center = 1          # one point at the centre of the triangle
+    sample_edge_midpoints = 2  # points at the midpoints of every edge
+    sample_adaptive = 3        # edges when the error is large, otherwise centre
+end
+
+@enum NeighborMethod begin
+    neighbors_closest = 1      # the neighbours nearest the triangle
+    neighbors_surrounding = 2  # near the triangle and spread around it
+    neighbors_inside = 3       # from a uniform grid within the triangle
+end
+
+@enum StopCriterion begin
+    stop_total_error = 1     # summed band energy error below the target
+    stop_energy_change = 2   # change in band energy below the target
+    stop_interval = 3        # Fermi area interval below the target
+    stop_kpoint_target = 4   # k-point count close enough to the target
+end
+
 # Default values, tolerances, and hyperparameter constants
 const def_init_msize = 3 # The initial size of the mesh
 const def_num_near_neigh = 2 # the number of nearest neighbors included in neighbor calculations
 const def_fermiarea_eps = 1e-10 # The convergence tolerance for the Fermi area
 const def_target_accuracy = 1e-4 # The target accuracy for the band energy
-const def_fermilevel_method = 2 # Chandrupatla's root finding algorithm
-const def_refine_method = 7 # Split a fraction of triangles with more than allowed error
+const def_fermilevel_method = fl_chandrupatla # Chandrupatla's root finding algorithm
+const def_refine_method = refine_largest_fraction # Split a fraction of triangles with more than allowed error
 const def_frac_refined = 0.2 # The fraction of triangles refined
-const def_sample_method = 2 # Add sample points at midpoints of edges
-const def_neighbor_method = 2 # Select neighbors close and surrounding the triangle
+const def_sample_method = sample_edge_midpoints # Add sample points at midpoints of edges
+const def_neighbor_method = neighbors_surrounding # Select neighbors close and surrounding the triangle
 const def_uniform = false # Do adaptive refinement by default
 const def_rtol = 1e-9 # Relative tolerance for floating point comparisons
 const def_atol = 1e-9 # absolute tolerance for floating point comparisons
@@ -32,7 +69,7 @@ const def_min_simplex_size = 1e-12 # The smallest triangle that can be split
 const def_rational_bezpt_dist = 1e6 # The maximum size of a component of a rational Bezier point
 const def_weighted = false # Points are not weighted to calculate interval coefficients
 const def_constrained = true # Band structure interpolated with constrained least squares
-const def_stop_criterion = 4 # The default method used to determine if AMR may stop
+const def_stop_criterion = stop_kpoint_target # The default method used to determine if AMR may stop
 const def_target_kpoints = 100 # The default number of k-points for stop_criterion = 4
 const def_stop_kpoint_tol = 0.05 # AMR may stop when the k-point count is within this fraction of the target
 const def_deriv_step = 1e-4 # The step size for numerical derivatives

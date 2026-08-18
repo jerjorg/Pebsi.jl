@@ -52,16 +52,17 @@ A container for all variables related to the band structure.
     Fermi area.
 - `target_accuracy::Real`: the accuracy desired for the band energy at the end 
     of the computation.
-- `fermilevel_method::Integer`: the root-finding method for computing the Fermi 
-    level. 1- bisection, 2-Chandrupatla.
-- `refine_method::Integer`: the method of refinement. 1-refine the tile with the
-    most error. 2-refine the tiles with too much error while taking into account 
-    the sizes of the simplices.
-- `sample_method::Integer`: the method of sampling a tile with too much error.
-    1-add a single point at the center of the triangle. 2-add points at the 
-    midpoints of all edges.
-- `neighbor_method::Integer`: the method for selecting neighboring points in the 
-    calculion of interval coefficients.
+- `fermilevel_method::FermiLevelMethod`: the root-finding method for computing the
+    Fermi level: `fl_bisection` or `fl_chandrupatla`.
+- `refine_method::RefineMethod`: the method of refinement: `refine_most_error`,
+    `refine_above_allowed`, `refine_fraction_above_allowed`,
+    `refine_fermiarea_above_allowed`, `refine_fermiarea_largest`,
+    `refine_partially_occupied` or `refine_largest_fraction`.
+- `sample_method::SampleMethod`: the method of sampling a tile with too much
+    error: `sample_center`, `sample_edge_midpoints` or `sample_adaptive`.
+- `neighbor_method::NeighborMethod`: the method for selecting neighboring points
+    in the calculation of interval coefficients: `neighbors_closest`,
+    `neighbors_surrounding` or `neighbors_inside`.
 - `rtol::Real`: a relative tolerance for floating point comparisons.
 - `atol::Real`: an absolute tolerance for floating point comparisons.
 - `mesh::PyObject`: a Delaunay triangulation of points over the IBZ.
@@ -102,15 +103,17 @@ A container for all variables related to the band structure.
     if true.
 - `constrained::bool`: calculate the interval coefficients with constrained least
     squares if true.
-- `stop_criterion::Integer`: determines the criterion used to stop adaptive refinement.
-    1: The sum of the estimated band energy errors.
-    2: The difference in band energy between two AMR iterations is less the band
-      energy accuracy goal.
-    3: db/da*Δl is less than the band energy accuracy where db is the derivative of
+- `stop_criterion::StopCriterion`: determines the criterion used to stop adaptive
+    refinement.
+    `stop_total_error`: The sum of the estimated band energy errors.
+    `stop_energy_change`: The difference in band energy between two AMR iterations
+      is less than the band energy accuracy goal.
+    `stop_interval`: db/da*Δl is less than the band energy accuracy where db is the derivative of
       the band energy with respect to the Fermi level, da is the derivative of the 
       Fermi area with respect to the Fermi level, and Δl is the uncertainty of the
       Fermi level.
-    4 - The number of k-points is greater than the desired number of k-points.
+    `stop_kpoint_target`: The number of k-points is close to, or greater than, the
+      desired number of k-points.
 - `target_kpoints::Integer`: the desired number of k-points for the calculation.
     This may be ignored depending on `stop_criterion`.
 - `exactfit::Bool`: the polynomial fit goes through the eigenvalues if true.
@@ -122,10 +125,10 @@ mutable struct bandstructure
     num_neighbors::Integer
     fermiarea_eps::Real
     target_accuracy::Real
-    fermilevel_method::Integer
-    refine_method::Integer
-    sample_method::Integer
-    neighbor_method::Integer
+    fermilevel_method::FermiLevelMethod
+    refine_method::RefineMethod
+    sample_method::SampleMethod
+    neighbor_method::NeighborMethod
     rtol::Real
     atol::Real
     mesh::PyObject
@@ -151,7 +154,7 @@ mutable struct bandstructure
     fermiarea_errors::Vector{<:Real}
     weighted::Bool
     constrained::Bool
-    stop_criterion::Integer
+    stop_criterion::StopCriterion
     target_kpoints::Integer
     exactfit::Bool
     polydegree::Integer
@@ -191,14 +194,14 @@ function init_bandstructure(
     num_neighbors::Union{Nothing,Integer}=nothing,
     fermiarea_eps::Real=def_fermiarea_eps,
     target_accuracy::Real=def_target_accuracy,
-    fermilevel_method::Integer=def_fermilevel_method,
-    refine_method::Integer=def_refine_method,
-    sample_method::Integer=def_sample_method,
-    neighbor_method::Integer=def_neighbor_method,
+    fermilevel_method::FermiLevelMethod=def_fermilevel_method,
+    refine_method::RefineMethod=def_refine_method,
+    sample_method::SampleMethod=def_sample_method,
+    neighbor_method::NeighborMethod=def_neighbor_method,
     fatten::Real=def_fatten,
     weighted::Bool=def_weighted,
     constrained::Bool=def_constrained,
-    stop_criterion::Integer=def_stop_criterion,
+    stop_criterion::StopCriterion=def_stop_criterion,
     target_kpoints::Integer=def_target_kpoints,
     exactfit::Bool=false, 
     polydegree::Integer=2,
@@ -934,7 +937,7 @@ Calculate the interval Bezier points for all sheets.
 - `num_near_neigh::Integer=def_num_near_neigh`: how many nearest neighbors to include.
 - `sigma::Integer=0`: the number of sheets summed and then interpolated, if any.
 - `epm::Union{Nothing,epm₋model2D,epm₋model}=nothing`: an empirical pseudopotential.
-- `neighbor_method::Integer=def_neighbor_method`: the method for calculating neighbors
+- `neighbor_method::NeighborMethod=def_neighbor_method`: the method for calculating neighbors
     to include in the calculation.
 - `num_neighbors::Union{Nothing,Integer}=nothing`: the minimum number of neighbors
     included in the calculation of interval coefficients.
@@ -978,7 +981,7 @@ function get_intercoeffs(index::Integer; mesh::PyObject, ext_mesh::PyObject,
     simplicesᵢ::AbstractVector, degree::Integer, fatten::Real=def_fatten, 
     num_near_neigh::Integer=def_num_near_neigh, sigma::Real=0, 
     epm::Union{Nothing,epm₋model2D,epm₋model}=nothing,
-    neighbor_method::Integer=def_neighbor_method, 
+    neighbor_method::NeighborMethod=def_neighbor_method, 
     num_neighbors::Union{Nothing,Integer}=nothing,
     weighted::Bool=false,constrained::Bool=true,atol::Real=def_atol)
 
@@ -999,12 +1002,12 @@ function get_intercoeffs(index::Integer; mesh::PyObject, ext_mesh::PyObject,
     if length(neighborsᵢ) < num_neighbors num_neighbors = length(neighborsᵢ) end
 
     # Select neighbors that are closest to the triangle.
-    if neighbor_method == 1
+    if neighbor_method == neighbors_closest
         neighbors = ext_mesh.points[neighborsᵢ,:]'
         dist = [minimum([norm(ext_mesh.points[i,:] - simplex[:,j]) for j=1:dim+1]) for i=neighborsᵢ]
         neighborsᵢ = neighborsᵢ[sortperm(dist)][1:num_neighbors]
     # Select neighbors that surround the triangle and are close to the triangle.
-    elseif neighbor_method == 2
+    elseif neighbor_method == neighbors_surrounding
         neighbors = Matrix(ext_mesh.points[neighborsᵢ,:]')
         if dim == 2
             neighborsᵢ = choose_neighbors(simplex,neighborsᵢ,neighbors; num_neighbors=num_neighbors)
@@ -1012,16 +1015,16 @@ function get_intercoeffs(index::Integer; mesh::PyObject, ext_mesh::PyObject,
             neighborsᵢ = choose_neighbors3D(simplex,neighborsᵢ,neighbors; num_neighbors=num_neighbors)
         end
     # Neighbors are taken from a uniform grid within the triangle.
-    elseif neighbor_method == 3
+    elseif neighbor_method == neighbors_inside
         neighborsᵢ = []
         if epm == nothing
             error("Must provide an EPM when computing neighbors within the triangle.")
         end
     else
-        error("Only 1, 2, and 3 are valid values of the flag for the method of selecting neighbors.")
+        error("Unhandled NeighborMethod: $(neighbor_method)")
     end
 
-    if neighbor_method == 3
+    if neighbor_method == neighbors_inside
         n = def_inside_neighbors_divs # Number of points for the uniform sampling of the triangle
         b = sample_simplex(dim,n)
         b = b[:,setdiff(1:size(b,2),[1,n+1,size(b,2)])]
@@ -1239,10 +1242,10 @@ function calc_fl(epm::Union{epm₋model,epm₋model2D},ebs::bandstructure;
         end
 
         # Bisection method
-        if ebs.fermilevel_method == 1
+        if ebs.fermilevel_method == fl_bisection
             t = 0.5
         # Chandrupatla method
-        elseif ebs.fermilevel_method == 2            
+        elseif ebs.fermilevel_method == fl_chandrupatla            
             ϕ₁ = (f₁ - f₂)/(f₃ - f₂)
             ξ₁ = (E₁ - E₂)/(E₃ - E₂)
             if 1 - √(1 - ξ₁) < ϕ₁ && ϕ₁ < √ξ₁
@@ -1555,16 +1558,16 @@ function refine_mesh!(epm::Union{epm₋model2D,epm₋model},ebs::bandstructure)
      
     n = def_min_split
     # Refine the tiles with the most error
-    if ebs.refine_method == 1
+    if ebs.refine_method == refine_most_error
         splitpos = sortperm(abs.(ebs.bandenergy_errors),rev=true)
         if length(splitpos) > n splitpos = splitpos[1:n] end
 
     # Refine the tiles with too much error (given the tiles' sizes).
-    elseif ebs.refine_method == 2
+    elseif ebs.refine_method == refine_above_allowed
         splitpos = filter(x -> x > 0,[abs(ebs.bandenergy_errors[i]) > err_cutoff[i] ? i : 0 for i=1:length(err_cutoff)])
 
     # Refine a fraction of the number of tiles that have too much error.
-    elseif ebs.refine_method == 3
+    elseif ebs.refine_method == refine_fraction_above_allowed
         splitpos = filter(x -> x>0,[abs(ebs.bandenergy_errors[i]) > err_cutoff[i] ? i : 0 for i=1:length(err_cutoff)])
         if length(splitpos) > n
             order = sortperm(abs.(ebs.bandenergy_errors[splitpos]),rev=true)
@@ -1572,7 +1575,7 @@ function refine_mesh!(epm::Union{epm₋model2D,epm₋model},ebs::bandstructure)
         end 
     # Refine where the Fermi area errors are too much. Scale Fermi area errors
     # by Fermi level to get errors in terms of band energy
-    elseif ebs.refine_method == 4
+    elseif ebs.refine_method == refine_fermiarea_above_allowed
         bandenergy_err = 2*sum(ebs.fermiarea_errors)*ebs.fermilevel_interval[2]
         splitpos = filter(x -> x>0,[2*ebs.fermiarea_errors[i]*ebs.fermilevel_interval[2] > err_cutoff[i] ? i : 0 for i=1:length(err_cutoff)])
         if length(splitpos) == 0 || bandenergy_err < ebs.target_accuracy
@@ -1585,7 +1588,7 @@ function refine_mesh!(epm::Union{epm₋model2D,epm₋model},ebs::bandstructure)
         end
     # Refine any triangles with large Fermi area errors. There is no comparison 
     # against an allowed error. 
-    elseif ebs.refine_method == 5
+    elseif ebs.refine_method == refine_fermiarea_largest
         if sum(ebs.fermiarea_errors) < ebs.fermiarea_eps
             println("Switching to band energy refinement.")
             ebs.refine_method = 6
@@ -1600,7 +1603,7 @@ function refine_mesh!(epm::Union{epm₋model2D,epm₋model},ebs::bandstructure)
         end
     # Refine a fraction of triangles where the band energy errors are large. No 
     # comparison against an allowed error is performed.  
-    elseif ebs.refine_method == 6
+    elseif ebs.refine_method == refine_partially_occupied
         # Only split triangles that are partially occupied
         splitpos = sort(unique([any(x->x==1,po) ? i : 0 for (i,po) in 
             enumerate(ebs.partially_occupied)]))[2:end]
@@ -1610,7 +1613,7 @@ function refine_mesh!(epm::Union{epm₋model2D,epm₋model},ebs::bandstructure)
         else
             splitpos = splitpos[order]
         end
-    elseif ebs.refine_method == 7
+    elseif ebs.refine_method == refine_largest_fraction
         order = sortperm(abs.(ebs.bandenergy_errors),rev=true)
         if length(order) > n/def_frac_refined
             numsplit = round(Int,length(order)*def_frac_refined)
@@ -1621,11 +1624,11 @@ function refine_mesh!(epm::Union{epm₋model2D,epm₋model},ebs::bandstructure)
             splitpos = order
         end        
     else
-        ArgumentError("The refinement method has to be an integer 1,...,7.")
+        ArgumentError("Unhandled RefineMethod: $(ebs.refine_method)")
     end
 
     # Split fewer simplices if too many k-points are added.
-    if ebs.stop_criterion == 4
+    if ebs.stop_criterion == stop_kpoint_target
         dim = size(epm.recip_latvecs,1)
         p = if dim == 2 3 else 6 end
         nkpts = size(ebs.eigenvals,2) - 2^dim
@@ -1652,14 +1655,14 @@ function refine_mesh!(epm::Union{epm₋model2D,epm₋model},ebs::bandstructure)
     end
     
     # A single point at the center of the triangle
-    if ebs.sample_method == 1
+    if ebs.sample_method == sample_center
         new_meshpts = reduce(hcat,[barytocart(centerpt,s) for s=simplices[splitpos]])
     # Point at the midpoints of all edges of the triangle
-    elseif ebs.sample_method == 2
+    elseif ebs.sample_method == sample_edge_midpoints
         new_meshpts = reduce(hcat,[barytocart(edgepts,s) for s=simplices[splitpos]])
     # If the error is 2x greater than the tolerance, split edges. Otherwise,
     # sample at the center of the triangle.
-    elseif ebs.sample_method == 3
+    elseif ebs.sample_method == sample_adaptive
         sample_type = [
             abs(ebs.bandenergy_errors[i]) > def_allowed_err_ratio*err_cutoff[i] ? 2 : 1 for i=splitpos]
         new_meshpts = reduce(hcat,[sample_type[i] == 1 ? 
@@ -1667,7 +1670,7 @@ function refine_mesh!(epm::Union{epm₋model2D,epm₋model},ebs::bandstructure)
         barytocart(edgepts,simplices[splitpos[i]])
         for i=1:length(splitpos)])
     else
-        ArgumentError("The sample method for refinement has to be an integer with a value of 1,...,3.")
+        ArgumentError("Unhandled SampleMethod: $(ebs.sample_method)")
     end
 
     # Remove duplicates from the new mesh points.
@@ -1846,19 +1849,19 @@ stop_refinement!(ebs)
 function stop_refinement!(epm::Union{epm₋model,epm₋model2D},ebs::bandstructure,
     prevbe)::Bool
     stop = false
-    if ebs.stop_criterion == 1
+    if ebs.stop_criterion == stop_total_error
         stop = abs(sum(ebs.bandenergy_errors)) < ebs.target_accuracy
-    elseif ebs.stop_criterion == 2
+    elseif ebs.stop_criterion == stop_energy_change
         stop = abs(ebs.bandenergy - prevbe) < ebs.target_accuracy
-    elseif ebs.stop_criterion == 3
+    elseif ebs.stop_criterion == stop_interval
         db,da,dltol,datol = get_tolerances(epm,ebs)
         ebs.fermiarea_eps = datol
         stop = db/da*diff(ebs.fermiarea_interval)[1]/2 < ebs.target_accuracy
-    elseif ebs.stop_criterion == 4 
+    elseif ebs.stop_criterion == stop_kpoint_target 
         nkpts = size(ebs.eigenvals,2) - 2^size(epm.recip_latvecs,1)
         stop = ((ebs.target_kpoints - nkpts) < def_stop_kpoint_tol*nkpts) || (nkpts >  ebs.target_kpoints)
     else
-        error("Valid values of stop_criterion are integers 1,...,4")
+        error("Unhandled StopCriterion: $(ebs.stop_criterion)")
     end
     stop
 end
@@ -1892,13 +1895,13 @@ function quadratic_method(epm::Union{epm₋model2D,epm₋model};
     num_neighbors::Union{Nothing,Int}=nothing,
     fermiarea_eps::Real=def_fermiarea_eps,
     target_accuracy::Real=def_target_accuracy,
-    fermilevel_method::Integer=def_fermilevel_method, 
-    refine_method::Integer=def_refine_method,
-    sample_method::Integer=def_sample_method, 
-    neighbor_method::Integer=def_neighbor_method,
+    fermilevel_method::FermiLevelMethod=def_fermilevel_method, 
+    refine_method::RefineMethod=def_refine_method,
+    sample_method::SampleMethod=def_sample_method, 
+    neighbor_method::NeighborMethod=def_neighbor_method,
     fatten::Real=def_fatten, rtol::Real=def_rtol, atol::Real=def_atol,
     uniform::Bool=def_uniform, weighted::Bool=def_weighted,
-    constrained::Bool=def_constrained, stop_criterion::Integer=def_stop_criterion,
+    constrained::Bool=def_constrained, stop_criterion::StopCriterion=def_stop_criterion,
     target_kpoints::Integer=def_target_kpoints)::bandstructure
 
     dim = size(epm.recip_latvecs,1)
