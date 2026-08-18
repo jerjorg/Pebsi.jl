@@ -1,6 +1,6 @@
 module Polynomials
 
-using ..Defaults: def_bez_weight_tol, def_atol, def_coeff_rtol, def_coeff_noise_eps, def_root_boundary_atol
+using ..Defaults: def_bez_weight_tol, def_atol, def_coeff_rtol, def_coeff_noise_eps
 using ..Geometry: barytocart, carttobary
 using Base.Iterators: product
 using LinearAlgebra: dot

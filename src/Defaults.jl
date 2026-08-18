@@ -85,8 +85,6 @@ const def_coeff_noise_eps = 100
 # on the corner. This is a question about a curve parameter, which runs from 0 to
 # 1 whatever the geometry or the coefficients, so it is genuinely absolute - and
 # it is a different question from whether a coefficient is zero, which is why it
-# no longer shares that tolerance.
-const def_root_boundary_atol = 1e-9
 const def_fatten = 2.0 # A parameter for scaling the interval coefficients
 const max_refine_steps = 100 # The maximum number of refinement iterations
 const def_num_neighbors2D = 16 # The desired number of neighbors in 2D interval coefficient calculation

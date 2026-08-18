@@ -361,12 +361,12 @@ function bezcurve_intersects(bezcoeffs::AbstractVector{<:Real};
     a,b,c = bezcoeffs
     solutions = solve_quadratic(a - 2*b + c, 2*(b-a), a, coeff_ref=coeff_ref)
     # Whether a root sits on a corner is a question about the curve parameter,
-    # which runs 0 to 1 whatever the geometry and whatever the coefficients. It
-    # gets its own tolerance rather than sharing the one that decides when a
-    # coefficient is zero - those are different questions, and they shared a
-    # number only by accident.
-    solutions = filter(t -> (t > 0 || isapprox(t,0,atol=def_root_boundary_atol))
-        && (t < 1 && !isapprox(t,1,atol=def_root_boundary_atol)), solutions)
+    # which runs 0 to 1 whatever the geometry and whatever the coefficients, so an
+    # absolute tolerance is already relative to the only scale there is. This is
+    # the sole use of atol in this function, which makes atol exactly that
+    # tolerance and leaves it under the caller's control.
+    solutions = filter(t -> (t > 0 || isapprox(t,0,atol=atol))
+        && (t < 1 && !isapprox(t,1,atol=atol)), solutions)
     return solutions
 end
 
