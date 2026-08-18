@@ -31,7 +31,7 @@ A container for all variables related to the band structure.
 - `rtol::Float64`: a relative tolerance for floating point comparisons.
 - `atol::Float64`: an absolute tolerance for floating point comparisons.
 - `mesh::PyObject`: a Delaunay triangulation of points over the IBZ.
-- `simplicesᵢ::Vector{Vector{Integer}}`: the indices of points at the corners of the 
+- `simplicesᵢ::Vector{Vector{Int}}`: the indices of points at the corners of the 
     tile for all tiles in the triangulation.
 - `ext_mesh::PyObject`: a Delaunay triangulation of points within and around the 
     IBZ. The number of points outside is determined by `num_near_neigh`.
@@ -98,7 +98,7 @@ mutable struct BandStructure
     atol::Float64
     mesh::PyObject
     points::Matrix{Float64}
-    simplicesᵢ::Vector{Vector{Integer}}
+    simplicesᵢ::Vector{Vector{Int}}
     ext_mesh::PyObject
     sym_unique::Vector{Int}
     eigenvals::Matrix{Float64}

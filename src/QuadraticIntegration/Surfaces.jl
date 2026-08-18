@@ -638,7 +638,7 @@ using Pebsi.QuadraticIntegration: bezcurve_intersects
 coeffs = [0,1,-1]
 bezcurve_intersects(coeffs)
 # output
-2-element Vector{Real}:
+2-element Vector{Float64}:
  0.0
  0.6666666666666666
 ```
@@ -672,7 +672,7 @@ getdomain(coeffs)
 # output
 2-element Vector{Any}:
  0.6666666666666666
- 1
+ 1.0
 ```
 """
 function getdomain(bezcoeffs::AbstractVector{<:Real};

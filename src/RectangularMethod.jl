@@ -468,7 +468,7 @@ Calculate the indices of points in an array as columns.
 function kpoint_index(points::AbstractMatrix{<:Real},
         offset::AbstractVector{<:Real}, invK::AbstractMatrix{<:Real},
         A::AbstractMatrix{<:Real},
-        snf_diag::AbstractVector{<:Real})::AbstractArray{Integer,1}
+        snf_diag::AbstractVector{<:Real})::AbstractVector{<:Integer}
 
     [kpoint_index(points[:,i],offset,invK,A,snf_diag) for i=1:size(points,2)]
 end
