@@ -287,9 +287,12 @@ function select_neighbors(neighborsᵢ::AbstractVector,simplex::AbstractMatrix{<
 
     # Select neighbors that are closest to the triangle.
     if neighbor_method == neighbors_closest
-        # Rounded before sorting: see def_neighbor_dist_sigdigits.
+        # Snapped to a multiple of the tolerance, as in choose_neighbors.
+        edge = minimum([norm(simplex[:,i] - simplex[:,j])
+            for i=1:size(simplex,2) for j=1:size(simplex,2) if i < j])
+        dtol = def_neighbor_dist_rtol*edge
         dist = round.([minimum([norm(ext_mesh.points[i,:] - simplex[:,j]) for j=1:dim+1])
-            for i=neighborsᵢ], sigdigits=def_neighbor_dist_sigdigits)
+            for i=neighborsᵢ] ./ dtol) .* dtol
         neighborsᵢ[sortperm(dist, alg=Base.Sort.DEFAULT_STABLE)][1:num_neighbors]
     # Select neighbors that surround the triangle and are close to the triangle.
     elseif neighbor_method == neighbors_surrounding

@@ -4,7 +4,7 @@ using ..Geometry: simplex_size, barytocart, lineseg_pt_dist, ptface_mindist,
     sample_simplex
 using ..Defaults: def_atol, def_mesh_scale, def_max_neighbor_tol,
     def_neighbors_per_bin2D, def_neighbors_per_bin3D, def_num_neighbors2D, 
-    def_num_neighbors3D, def_initmesh_kpoint_tol, def_neighbor_dist_sigdigits
+    def_num_neighbors3D, def_initmesh_kpoint_tol, def_neighbor_dist_rtol
 using SymmetryReduceBZ.Utilities: unique_points, get_uniquefacets, sortpts2D
 using PyCall: pyimport, pyimport_conda, PyObject
 using QHull: Chull
@@ -119,6 +119,15 @@ function choose_neighbors(simplex::AbstractMatrix{<:Real},
     neighborsᵢ = neighborsᵢ[order]
     distances = [minimum([
         lineseg_pt_dist(neighbors[:,j],simplex[:,[i,mod1(i+1,3)]]) for i=1:3]) for j=1:size(neighbors,2)]
+
+    # Two neighbours count as the same distance away when they agree to within
+    # this much. Scaled by the simplex's shortest edge so it means the same thing
+    # on a coarse triangle and on a refined one.
+    edge = minimum([norm(simplex[:,i] - simplex[:,j])
+        for i=1:size(simplex,2) for j=1:size(simplex,2) if i < j])
+    dtol = def_neighbor_dist_rtol*edge
+    # Distance of each candidate, by its index in the mesh, for the tie sweep below.
+    dist_by_id = Dict(neighborsᵢ[j] => distances[j] for j=1:length(neighborsᵢ))
     
     # Group neighboring points by angle ranges
     nbins = round(Int,num_neighbors/neighbors_per_bin)
@@ -137,13 +146,12 @@ function choose_neighbors(simplex::AbstractMatrix{<:Real},
 
     for p=1:nbins
         # Order the points in each bin by distance
-        # Rounded before sorting: see def_neighbor_dist_sigdigits. Equidistant
-        # neighbours stay equidistant under a different BLAS, so the tie-break
-        # below decides between them rather than the last bits of the geometry.
-        distances = round.([minimum([lineseg_pt_dist(
-            neighbors[:,j],simplex[:,[i,mod1(i+1,3)]]) for i=1:3]) for j=angle_ran[p]],
-            sigdigits=def_neighbor_dist_sigdigits)
-        dorder = sortperm(distances, alg=Base.Sort.DEFAULT_STABLE)
+        # Snapped to a multiple of dtol before sorting, so neighbours that are
+        # equidistant on one machine are equidistant on all of them and the
+        # stable sort's index tie-break is what decides between them.
+        bindist = round.([minimum([lineseg_pt_dist(
+            neighbors[:,j],simplex[:,[i,mod1(i+1,3)]]) for i=1:3]) for j=angle_ran[p]] ./ dtol) .* dtol
+        dorder = sortperm(bindist, alg=Base.Sort.DEFAULT_STABLE)
         angle_ran[p] = neighborsᵢ[angle_ran[p][dorder]]
     end
     
@@ -160,6 +168,20 @@ function choose_neighbors(simplex::AbstractMatrix{<:Real},
                 push!(neighᵢ,angle_ran[i][c])            
             end
         end    
+    end
+    # Keep every remaining candidate that is the same distance away as the
+    # furthest one already kept. Choosing a subset of an equidistant group means
+    # choosing arbitrarily among symmetry-related points, which biases the fit in
+    # a direction nothing physical picked out; and the choice is exactly what was
+    # sensitive to the last bits of the geometry. Taking all of them leaves
+    # nothing to be sensitive to.
+    if !isempty(neighᵢ)
+        dmax = maximum(dist_by_id[i] for i=neighᵢ)
+        for id in neighborsᵢ
+            if !(id in neighᵢ) && dist_by_id[id] <= dmax + dtol
+                push!(neighᵢ,id)
+            end
+        end
     end
     neighᵢ
 end
@@ -208,6 +230,9 @@ function choose_neighbors3D(simplex,neighborsᵢ,neighbors;num_neighbors=nothing
         return neighborsᵢ
     end
 
+    edge = minimum([norm(simplex[:,i] - simplex[:,j])
+        for i=1:size(simplex,2) for j=1:size(simplex,2) if i < j])
+    dtol = def_neighbor_dist_rtol*edge
     center = vec(mean(simplex,dims=2)) # Measure angles from the center of the triangle
     ϕs = [acos(dot(neighbors[:,i] - center,[0,0,1] - center)/(norm(neighbors[:,i] - center)*norm([0,0,1] - 
                     center))) for i=1:size(neighbors,2)]
@@ -258,9 +283,9 @@ function choose_neighbors3D(simplex,neighborsᵢ,neighbors;num_neighbors=nothing
         for j = 1:nbinsϕ
             ptsᵢ = angle_ran[i][j]
             pts = neighbors[:,ptsᵢ]
+            # Snapped to a multiple of dtol, as in choose_neighbors.
             order = sortperm(round.([minimum([ptface_mindist(pts[:,i],face) for face = faces])
-                for i=1:size(pts,2)], sigdigits=def_neighbor_dist_sigdigits),
-                alg=Base.Sort.DEFAULT_STABLE)
+                for i=1:size(pts,2)] ./ dtol) .* dtol, alg=Base.Sort.DEFAULT_STABLE)
             angle_ran[i][j] = angle_ran[i][j][order]
         end
     end
