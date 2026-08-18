@@ -27,7 +27,7 @@ export bandstructure, init_bandstructure, quadval_vertex, corner_indices,
     split_bezsurf, analytic_area, analytic_volume, sub₋coeffs,
     two₋intersects_area₋volume, quad_area₋volume, get_intercoeffs, calc_fl,
     calc_flbe!, refine_mesh!, get_tolerances, quadratic_method, truebe, 
-    bezcurve_intersects, getdomain, analytic_area1D, simpson, simpson2D, 
+    bezcurve_intersects, getdomain, analytic_area1D, simpson, 
     linept_dist, tetface_areas, simpson3D, quadslice_tanpt, containment_percentage,
     stop_refinement!, calc_fabe, quadlin_esterr, length_area1D, area_volume2D,
     volume_hypvol3D, init_exactfit, cubequad_esterr, kpoint_weights

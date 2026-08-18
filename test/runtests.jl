@@ -1,3 +1,4 @@
+include("aqua.jl")
 include("RectangularMethod.jl")
 include("Polynomials.jl")
 include("Geometry.jl")
