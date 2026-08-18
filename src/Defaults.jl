@@ -118,7 +118,7 @@ const def_bez_weight_tol = 1e-12 # Smaller tolerance for classifying conic secti
 # intersections is integrated by its sign instead of exactly.
 #
 # The box-padded Delaunay in split_bezsurf1 sometimes cannot subdivide a triangle
-# even though it is well above def_min_simplex_size - every candidate sub-triangle
+# even though it is not small - every candidate sub-triangle
 # has a corner on the padding box - and the result comes back with three
 # intersections, which two_intersects_area_volume has no formula for. Such a patch
 # contributes at most its own size to the area, and at most its size times its
@@ -137,7 +137,6 @@ const def_degenerate_simplex_size = 1e-6
 # "zero volume" and the caller was told the patch could not be subdivided. The
 # geometry was never the problem; the yardstick was.
 const def_simplex_size_rtol = 1e-9
-const def_min_simplex_size = 1e-12 # The smallest triangle that can be split
 const def_rational_bezpt_dist = 1e6 # The maximum size of a component of a rational Bezier point
 const def_weighted = false # Points are not weighted to calculate interval coefficients
 const def_constrained = true # Band structure interpolated with constrained least squares

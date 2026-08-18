@@ -185,10 +185,7 @@ function split_bezsurf₁(bezpts::AbstractMatrix{<:Real}; atol::Real=def_atol,
     spatial = pyimport("scipy.spatial")
     dim = 2; deg = 2; 
     triangle = bezpts[1:end-1,corner_indices]
-    if simplex_size(triangle) < def_min_simplex_size
-        return [bezpts]
-    end
-     
+
     coeffs = bezpts[end,:]; pts = bezpts[1:end-1,:]
     simplex_bpts = sample_simplex(dim,deg)
     intersects = simplex_intersects(bezpts,atol=atol,coeff_ref=coeff_ref)
@@ -201,7 +198,13 @@ function split_bezsurf₁(bezpts::AbstractMatrix{<:Real}; atol::Real=def_atol,
         allintersects = reduce(hcat,[i for i=intersects if i!=[]])
         allpts = [allpts allintersects]
     end
-    allpts = unique_points(allpts,atol=atol)
+    # Deduplication happens in coordinate space, so the tolerance carries the
+    # patch's units. Held fixed it stops being a test for coincident points and
+    # becomes a floor on patch size: once the patch is narrower than atol every
+    # point in it looks like every other, the six collapse to one, and the
+    # Delaunay below has nothing to triangulate.
+    extent = maximum(maximum(allpts,dims=2) - minimum(allpts,dims=2))
+    allpts = unique_points(allpts,atol=(extent > 0 ? atol*extent : atol))
     # Had to add box points to prevent collinear triangles.
     xmax,ymax = maximum(bezpts[1:2,:],dims=2)
     xmin,ymin = minimum(bezpts[1:2,:],dims=2)

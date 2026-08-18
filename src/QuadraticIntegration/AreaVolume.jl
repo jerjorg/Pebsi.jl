@@ -183,8 +183,8 @@ function two_intersects_area_volume(bezpts::AbstractMatrix{<:Real},
         # `split_bezsurf` could not reduce this patch to two intersections. That
         # happens on triangles the box-padded Delaunay in split_bezsurf1 cannot
         # subdivide - every candidate sub-triangle has a corner on the padding
-        # box - which occurs well above def_min_simplex_size, around 1e-9 in
-        # practice.
+        # box - which occurred around 1e-9 in practice, when the deduplication
+        # there still merged every point of a patch narrower than its tolerance.
         #
         # Below def_degenerate_simplex_size the patch is integrated by its sign
         # rather than exactly. Its whole contribution is bounded by its own size,
