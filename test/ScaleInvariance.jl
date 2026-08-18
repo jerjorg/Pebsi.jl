@@ -174,7 +174,13 @@ end
             @test_broken isapprox(_fraction_under([λ 0.0; 0.0 1/λ]),
                 _exact_fraction, rtol=1e-10)
         end
-        @test_throws ErrorException _fraction_under([100.0 0.0; 0.0 0.01])
+        # Past about 70 it stops being silent, but not portably: at 100 it raises
+        # on Linux, macOS and 1.12, and returns a value on Windows under 1.10.
+        # Asserting which of those happens would be testing the platform, so the
+        # invariant is what is recorded - broken covers a wrong value and an
+        # exception alike, and stays true of both.
+        @test_broken isapprox(_fraction_under([100.0 0.0; 0.0 0.01]),
+            _exact_fraction, rtol=1e-10)
         # Ratios of 1e3 and beyond do not raise but fail to terminate in any
         # reasonable time, so they are left out entirely rather than parked here.
     end
