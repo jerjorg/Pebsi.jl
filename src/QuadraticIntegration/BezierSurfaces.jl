@@ -1,3 +1,33 @@
+module BezierSurfaces
+
+using SymmetryReduceBZ.Utilities
+using SymmetryReduceBZ.Utilities: unique_points, shoelace, remove_duplicates, get_uniquefacets
+using SymmetryReduceBZ.Symmetry: calc_spacegroup
+
+using ...Polynomials: eval_poly,getpoly_coeffs,getbez_pts_wts,eval_bezcurve,
+    conicsection, evalpoly1D, get_1Dquad_coeffs, solve_quadratic, bernstein_basis
+using ...EPMs: eval_epm, EPM, EPM2D
+using ...Mesh: get_neighbors, notbox_simplices, get_cvpts, ibz_init_mesh, 
+    get_extmesh, choose_neighbors, choose_neighbors3D, trimesh, ntripts, ntetpts,
+    get_sym_unique!, simplex_cornerpts, ibz_initmesh, ibz_borders,
+    bz_translations
+using ...Geometry: order_vertices!, simplex_size, insimplex, barytocart,
+    carttobary, sample_simplex, lineseg_pt_dist, mapto_xyplane, ptface_mindist
+using ...Defaults
+
+using QHull: chull, Chull
+using LinearAlgebra: cross, norm, dot, I, diagm, pinv, det
+using Statistics: mean
+using Base.Iterators: flatten
+using PyCall: PyObject, pyimport
+using Distributed: pmap
+using FastGaussQuadrature: gausslegendre
+
+
+export quadval_vertex, simplex_intersects, saddlepoint, split_bezsurf₁,
+    split_bezsurf, sub_coeffs, bezcurve_intersects, corner_indices,
+    edge_indices
+
 @doc """
     quadval_vertex(bezcoeffs)
 
@@ -329,3 +359,5 @@ function bezcurve_intersects(bezcoeffs::AbstractVector{<:Real};
         && (t < 1 && !isapprox(t,1,atol=atol)), solutions)
     return solutions
 end
+
+end # module BezierSurfaces

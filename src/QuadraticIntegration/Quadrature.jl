@@ -1,3 +1,38 @@
+module Quadrature
+
+using SymmetryReduceBZ.Utilities
+using SymmetryReduceBZ.Utilities: unique_points, shoelace, remove_duplicates, get_uniquefacets
+using SymmetryReduceBZ.Symmetry: calc_spacegroup
+
+using ...Polynomials: eval_poly,getpoly_coeffs,getbez_pts_wts,eval_bezcurve,
+    conicsection, evalpoly1D, get_1Dquad_coeffs, solve_quadratic, bernstein_basis
+using ...EPMs: eval_epm, EPM, EPM2D
+using ...Mesh: get_neighbors, notbox_simplices, get_cvpts, ibz_init_mesh, 
+    get_extmesh, choose_neighbors, choose_neighbors3D, trimesh, ntripts, ntetpts,
+    get_sym_unique!, simplex_cornerpts, ibz_initmesh, ibz_borders,
+    bz_translations
+using ...Geometry: order_vertices!, simplex_size, insimplex, barytocart,
+    carttobary, sample_simplex, lineseg_pt_dist, mapto_xyplane, ptface_mindist
+using ...Defaults
+
+using QHull: chull, Chull
+using LinearAlgebra: cross, norm, dot, I, diagm, pinv, det
+using Statistics: mean
+using Base.Iterators: flatten
+using PyCall: PyObject, pyimport
+using Distributed: pmap
+using FastGaussQuadrature: gausslegendre
+
+using ..BezierSurfaces
+using ..AreaVolume
+
+export getdomain, analytic_area1D, simpson, linept_dist,
+    tetface_areas, simpson3D, quadslice_tanpt, length_area1D,
+    area_volume2D, volume_hypvol3D, face_ind, corner_ind,
+    slice_order1, slice_order2, slice_order3, slice_order4,
+    coeff_order1, coeff_order2, coeff_order3, coeff_order4,
+    vert_order1, vert_order2, vert_order3, vert_order4
+
 @doc """
     getdomain(bezcoeffs;atol)
 
@@ -888,3 +923,5 @@ function volume_hypvol3D(bezpts::Matrix{<:Real}, quantity::String;
         simpson(intvals,d)
     end        
 end
+
+end # module Quadrature

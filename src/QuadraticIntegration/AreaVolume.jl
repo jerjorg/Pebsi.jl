@@ -1,3 +1,32 @@
+module AreaVolume
+
+using SymmetryReduceBZ.Utilities
+using SymmetryReduceBZ.Utilities: unique_points, shoelace, remove_duplicates, get_uniquefacets
+using SymmetryReduceBZ.Symmetry: calc_spacegroup
+
+using ...Polynomials: eval_poly,getpoly_coeffs,getbez_pts_wts,eval_bezcurve,
+    conicsection, evalpoly1D, get_1Dquad_coeffs, solve_quadratic, bernstein_basis
+using ...EPMs: eval_epm, EPM, EPM2D
+using ...Mesh: get_neighbors, notbox_simplices, get_cvpts, ibz_init_mesh, 
+    get_extmesh, choose_neighbors, choose_neighbors3D, trimesh, ntripts, ntetpts,
+    get_sym_unique!, simplex_cornerpts, ibz_initmesh, ibz_borders,
+    bz_translations
+using ...Geometry: order_vertices!, simplex_size, insimplex, barytocart,
+    carttobary, sample_simplex, lineseg_pt_dist, mapto_xyplane, ptface_mindist
+using ...Defaults
+
+using QHull: chull, Chull
+using LinearAlgebra: cross, norm, dot, I, diagm, pinv, det
+using Statistics: mean
+using Base.Iterators: flatten
+using PyCall: PyObject, pyimport
+using Distributed: pmap
+using FastGaussQuadrature: gausslegendre
+
+using ..BezierSurfaces
+
+export analytic_area, analytic_volume, two_intersects_area_volume, quad_area_volume
+
 @doc """
     analytic_area(w::Real)
 
@@ -319,3 +348,5 @@ function quad_area_volume(bezpts::AbstractMatrix{<:Real},
     sum([two_intersects_area_volume(b,quantity,atol=atol) for 
         b=split_bezsurf(bezpts,atol=atol)])
 end
+
+end # module AreaVolume
