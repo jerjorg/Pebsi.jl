@@ -1290,14 +1290,14 @@ Calculate the Fermi level and band energy for a given rep. of the band struct.
 
 # Examples
 ```jldoctest
-using Pebsi.EPMs: m31
+using Pebsi.EPMs: m21
 using Pebsi.QuadraticIntegration: init_bandstructure, calc_flbe!
-epm = m31
+epm = m21
 ebs = init_bandstructure(epm);
 calc_flbe!(epm,ebs)
 ebs.bandenergy
 # output
-0.007513770523596364
+-0.859021038647244
 ```
 """
 function calc_flbe!(epm::Union{EPM2D,EPM},ebs::BandStructure;
@@ -1539,9 +1539,9 @@ Perform one iteration of adaptive refinement. See the composite type
 # Examples
 ```jldoctest
 using Suppressor
-using Pebsi.EPMs: m31
+using Pebsi.EPMs: m21
 using Pebsi.QuadraticIntegration: init_bandstructure, calc_flbe!, refine_mesh!
-epm = m31
+epm = m21
 ebs = init_bandstructure(epm);
 @suppress calc_flbe!(epm,ebs)
 @suppress refine_mesh!(epm,ebs)
