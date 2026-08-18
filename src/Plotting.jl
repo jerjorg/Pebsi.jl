@@ -16,18 +16,24 @@ using SymmetryReduceBZ.Lattices: get_recip_latvecs
 export meshplot, contourplot, bezplot, bezcurve_plot, polygonplot, 
     plot_bandstructure, fermicurve_plot
 
-# The default matplotlib color cycle. This has to be populated in `__init__`
-# rather than at module scope: PyPlot binds `plt` in its own `__init__`, so at
-# precompilation time it is still a NULL PyObject and indexing it throws.
+# The default matplotlib color cycle, fetched on first use and then cached.
+#
+# It cannot be read at module scope, nor in `__init__`. PyPlot binds `plt` in its
+# own `__init__` and skips Python initialisation while output is being generated,
+# so `plt` is still a NULL PyObject whenever this module is loaded as part of
+# precompiling something else. Reading it then throws and makes Pebsi
+# unprecompilable as a dependency. Fetching lazily avoids that entirely.
 #
 # The element type is deliberately `Any`: depending on the matplotlib version and
 # active style, the cycle comes back either as hex strings ("#1f77b4") or as RGB
 # tuples. Both are accepted wherever these values are handed back to matplotlib.
-const colors = Any[]
+const _default_colors = Any[]
 
-function __init__()
-    prop_cycle = plt.rcParams["axes.prop_cycle"]
-    append!(colors, prop_cycle.by_key()["color"])
+function default_colors()
+    if isempty(_default_colors)
+        append!(_default_colors, plt.rcParams["axes.prop_cycle"].by_key()["color"])
+    end
+    _default_colors
 end
 
 @doc """
@@ -561,7 +567,7 @@ function plot_bandstructure(name::String, basis::AbstractMatrix{<:Real},
 
     if ax == nothing fig,ax=subplots() end
     for i=1:sheets
-        ax.plot(λ,evals[i,:],".",ms=0.5,c=colors[i])
+        ax.plot(λ,evals[i,:],".",ms=0.5,c=default_colors()[i])
     end
     ax.set_xticklabels(tick_labels)
     ax.set_xticks(λ[sympts_pos])
