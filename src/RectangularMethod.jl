@@ -98,9 +98,9 @@ Calculate the fermi level and band energy of an EPM with the rectangular method.
 ```jldoctest
 import Pebsi.EPMs: m11
 import Pebsi.RectangularMethod: rectangular_method
-rectangular_method(m11,3)
+(n,fl,be) = rectangular_method(m11,3); (n, round(fl,digits=10), round(be,digits=10))
 # output
-(3, 0.6898935531209407, 2.0212677615661567)
+(3, 0.6898935531, 2.0212677616)
 ```
 """
 function rectangular_method(epm::Union{EPM2D,EPM},
@@ -468,7 +468,7 @@ Calculate the indices of points in an array as columns.
 function kpoint_index(points::AbstractMatrix{<:Real},
         offset::AbstractVector{<:Real}, invK::AbstractMatrix{<:Real},
         A::AbstractMatrix{<:Real},
-        snf_diag::AbstractVector{<:Real})::AbstractArray{Integer,1}
+        snf_diag::AbstractVector{<:Real})::AbstractVector{<:Integer}
 
     [kpoint_index(points[:,i],offset,invK,A,snf_diag) for i=1:size(points,2)]
 end

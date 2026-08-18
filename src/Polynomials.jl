@@ -116,14 +116,14 @@ import Pebsi.Polynomials: getpoly_coeffs
 simplex_bpts = [1.0 0.5 0.0 0.5 0.0 0.0; 0.0 0.5 1.0 0.0 0.5 0.0; 0.0 0.0 0.0 0.5 0.5 1.0]
 values = [0.4, 0.5, 0.3, -0.4, -0.1, -0.2]
 dim = 2; deg = 2
-getpoly_coeffs(values,simplex_bpts,dim,deg)
+round.(getpoly_coeffs(values,simplex_bpts,dim,deg), digits=10)
 # output
 6-element Vector{Float64}:
   0.4
   0.65
   0.3
  -0.9
- -0.24999999999999997
+ -0.25
  -0.2
 ```
 """
@@ -498,14 +498,14 @@ using Pebsi.Polynomials: solve_quadratic
 coeffs = [-1,0,1]
 solve_quadratic(coeffs...)
 # output
-2-element Vector{Real}:
+2-element Vector{Float64}:
  -1.0
   1.0
 ```
 """
-function solve_quadratic(a::Real,b::Real,c::Real;atol::Real=def_atol)::Vector{Real}
+function solve_quadratic(a::Real,b::Real,c::Real;atol::Real=def_atol)::Vector{Float64}
 
-    sols = Vector{Real}(undef,0)
+    sols = Float64[]
     # Preliminary check for no intersections.
     if !isapprox(a,0,atol=atol)
         maxval = -(b^2/(4*a)) + c
@@ -520,14 +520,14 @@ function solve_quadratic(a::Real,b::Real,c::Real;atol::Real=def_atol)::Vector{Re
         if isapprox(b,0,atol=atol)
             if isapprox(c,0,atol=atol)
                 # Case 1: (0,0,0) (infinite solutions in reality)
-                sols = []
+                sols = Float64[]
             else
                 # Case 2: (0,0,c)
-                sols = []
+                sols = Float64[]
             end
         elseif isapprox(c,0,atol=atol)
             # Case 3: (0,b,0)
-            sols = [0]
+            sols = [0.0]
         else
             # Case 4: (0,b,c)
             sols = [-c/b]
@@ -535,11 +535,11 @@ function solve_quadratic(a::Real,b::Real,c::Real;atol::Real=def_atol)::Vector{Re
     elseif isapprox(b,0,atol=atol)
         if isapprox(c,0,atol=atol)
             # Case 5: (a,0,0)
-            sols = [0]
+            sols = [0.0]
         else
             # Case 6: (a,0,c) (ignore complex solutions)
             if sign(a*c) == 1
-                sols = []
+                sols = Float64[]
             else
                 sols = [-√(-c/a),√(-c/a)]
             end
@@ -547,7 +547,7 @@ function solve_quadratic(a::Real,b::Real,c::Real;atol::Real=def_atol)::Vector{Re
     else
         if isapprox(c,0,atol=atol)
             # Case 7: (a,b,0)
-            sols = [0,-b/a]
+            sols = [0.0,-b/a]
         else
             # Case 8: (a,b,c)
             r = b^2-4*a*c
@@ -555,13 +555,13 @@ function solve_quadratic(a::Real,b::Real,c::Real;atol::Real=def_atol)::Vector{Re
                 # Tangent point
                 sols = [-b/(2*a)]
             elseif r < 0
-                sols = []
+                sols = Float64[]
             else
                 sols = [-b - √r, -b + √r]/(2*a)
             end
         end
     end
-    Vector{Real}(sols)
+    Vector{Float64}(sols)
 end
 
 end # module

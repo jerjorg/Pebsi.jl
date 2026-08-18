@@ -96,7 +96,7 @@ neighbors = [-1. -1. 0. 1. 2. 0.; 0. 1. 2. 2. 3. 4.]
 num_neighbors = 4
 choose_neighbors(triangle,neighborsᵢ,neighbors,num_neighbors=num_neighbors)
 # output
-4-element Vector{Integer}:
+4-element Vector{Int64}:
  5
  8
  7
@@ -145,7 +145,7 @@ function choose_neighbors(simplex::AbstractMatrix{<:Real},
     
     # Select the points within the angle ranges that are closest to the sample points of the triangle.
     c = 0
-    neighᵢ = Vector{Integer}(undef,0)
+    neighᵢ = Int[]
     while length(neighᵢ) < num_neighbors
         c += 1
         for i=1:nbins
