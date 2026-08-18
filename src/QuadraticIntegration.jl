@@ -9,7 +9,8 @@ using ..Polynomials: eval_poly,getpoly_coeffs,getbez_pts₋wts,eval_bezcurve,
 using ..EPMs: eval_epm, epm₋model, epm₋model2D
 using ..Mesh: get_neighbors, notbox_simplices, get_cvpts, ibz_init₋mesh, 
     get_extmesh, choose_neighbors, choose_neighbors3D, trimesh, ntripts, ntetpts,
-    get_sym₋unique!, simplex_cornerpts, ibz_initmesh
+    get_sym₋unique!, simplex_cornerpts, ibz_initmesh, ibz_borders,
+    bz_translations
 using ..Geometry: order_vertices!, simplex_size, insimplex, barytocart,
     carttobary, sample_simplex, lineseg₋pt_dist, mapto_xyplane, ptface_mindist
 using ..Defaults
@@ -1689,18 +1690,8 @@ function refine_mesh!(epm::Union{epm₋model2D,epm₋model},ebs::bandstructure)
         reduce(vcat,[[norm(ebs.mesh.points[i,:] - ebs.mesh.points[j,:]) 
                     for j=get_neighbors(i,ebs.mesh,ebs.num_near_neigh)] for i=cv_pointsᵢ]))
 
-    if dim == 2
-        # The Line segments that bound the IBZ.
-        borders = [Matrix(epm.ibz.points[i,:]') for i=eachrow(epm.ibz.simplices)]
-        distfun = lineseg₋pt_dist
-        # Translations that need to be considered when calculating points outside the IBZ.
-        # Assumes the reciprocal latice vectors are Minkowski reduced.
-        bztrans = [[[i,j] for i=-1:1,j=-1:1]...]
-    else
-        borders = [Matrix(epm.ibz.points[f,:]') for f=get_uniquefacets(epm.ibz)]
-        distfun = ptface_mindist
-        bztrans = [[[i,j,k] for i=-1:1,j=-1:1,k=-1:1]...]
-    end
+    borders,distfun = ibz_borders(epm.ibz)
+    bztrans = bz_translations(dim)
      
     # The number of points in the mesh before adding new points.
     s = size(ebs.mesh.points,1)

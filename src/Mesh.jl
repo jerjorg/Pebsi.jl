@@ -12,7 +12,8 @@ using Statistics: mean
 using LinearAlgebra: norm, dot, cross
 using Suppressor
 
-export get_neighbors, choose_neighbors, choose_neighbors3D, ibz_init₋mesh, 
+export get_neighbors, choose_neighbors, choose_neighbors3D, ibz_init₋mesh,
+    ibz_borders, bz_translations, 
     get_sym₋unique!, notbox_simplices, get_cvpts, get_extmesh, trimesh, ntripts,
     ntetpts, simplex_cornerpts, gmsh_initmesh, ibz_initmesh
 
@@ -468,6 +469,75 @@ function notbox_simplices(mesh::PyObject)::Vector{Vector{<:Integer}}
 end
 
 @doc """
+    ibz_borders(ibz)
+
+The boundaries of an irreducible Brillouin zone and the distance function that
+measures a point against them.
+
+The two dimensions need different treatment. In 2D the boundaries are the line
+segments in `ibz.simplices`, which is a `Matrix`, so it has to be iterated by row:
+a comprehension over the matrix itself walks it element by element and yields
+single vertex indices instead of pairs. In 3D the boundaries are the facets from
+`get_uniquefacets`.
+
+# Arguments
+- `ibz::Chull`: the irreducible Brillouin zone.
+
+# Returns
+- `borders::AbstractVector`: the boundaries, each as coordinates in the columns
+    of a matrix.
+- `distfun`: the function that measures the distance from a point to one border.
+
+# Examples
+```jldoctest
+using Pebsi.EPMs: m11
+using Pebsi.Mesh: ibz_borders
+borders,distfun = ibz_borders(m11.ibz)
+length(borders) == size(m11.ibz.simplices,1)
+# output
+true
+```
+"""
+function ibz_borders(ibz::Chull)
+    # Taken from the hull itself rather than passed in, so the borders and the
+    # distance function cannot disagree about the dimension.
+    if size(ibz.points,2) == 2
+        [Matrix(ibz.points[i,:]') for i=eachrow(ibz.simplices)], lineseg₋pt_dist
+    else
+        [Matrix(ibz.points[f,:]') for f=get_uniquefacets(ibz)], ptface_mindist
+    end
+end
+
+@doc """
+    bz_translations(dim)
+
+The translations to consider when looking for points outside the IBZ.
+
+Assumes the reciprocal lattice vectors are Minkowski reduced.
+
+# Arguments
+- `dim::Integer`: the number of dimensions, 2 or 3.
+
+# Returns
+- `::AbstractVector`: the translations, as vectors of `dim` components.
+
+# Examples
+```jldoctest
+using Pebsi.Mesh: bz_translations
+length(bz_translations(2)), length(bz_translations(3))
+# output
+(9, 27)
+```
+"""
+function bz_translations(dim::Integer)
+    if dim == 2
+        [[[i,j] for i=-1:1,j=-1:1]...]
+    else
+        [[[i,j,k] for i=-1:1,j=-1:1,k=-1:1]...]
+    end
+end
+
+@doc """
     get_cvpts(points,ibz,atol)
 
 Determine which points are on the boundary of the IBZ (or any convex hull).
@@ -503,14 +573,7 @@ get_cvpts(Matrix(mesh.points'),ibz)
 ```
 """
 function get_cvpts(points::Matrix{<:Real},ibz::Chull;atol::Real=def_atol)::AbstractVector{<:Integer}
-    dim = size(points,1)
-    if dim == 2
-        borders = [Matrix(ibz.points[i,:]') for i=eachrow(ibz.simplices)]
-        distfun = lineseg₋pt_dist
-    else
-        borders = [Matrix(ibz.points[f,:]') for f=get_uniquefacets(ibz)]
-        distfun = ptface_mindist
-    end
+    borders,distfun = ibz_borders(ibz)
     cv_pointsᵢ = [0 for i=1:size(points,2)]
     n = 0
     for i=1:size(points,2)
@@ -571,15 +634,8 @@ function get_extmesh(ibz::Chull,mesh::PyObject,pointgroup::Vector{Matrix{Float64
         reduce(vcat,[[norm(mesh.points[i,:] - mesh.points[j,:]) 
                     for j=get_neighbors(i,mesh,near_neigh)] for i=cv_pointsᵢ]))
 
-    if dim == 2
-        borders = [Matrix(ibz.points[i,:]') for i=eachrow(ibz.simplices)]
-        distfun = lineseg₋pt_dist
-        bztrans = [[[i,j] for i=-1:1,j=-1:1]...]
-    else
-        borders = [Matrix(ibz.points[f,:]') for f=get_uniquefacets(ibz)]
-        distfun = ptface_mindist
-        bztrans = [[[i,j,k] for i=-1:1,j=-1:1,k=-1:1]...]
-    end
+    borders,distfun = ibz_borders(ibz)
+    bztrans = bz_translations(dim)
 
     neighborsᵢ = reduce(vcat,[get_neighbors(i,mesh,near_neigh) for i=cv_pointsᵢ]) |> unique
     neighbors = zeros(Float64,dim,length(neighborsᵢ)*length(pointgroup)*length(bztrans));
