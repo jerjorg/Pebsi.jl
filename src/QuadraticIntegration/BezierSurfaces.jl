@@ -266,10 +266,16 @@ function split_bezsurf(bezpts::AbstractMatrix{<:Real};atol=def_atol,
     if num_intersects <= 2
         return [bezpts]
     else
+        # Splitting one patch cannot change how many times the level set crosses
+        # any other, so the counts are carried alongside the patches and only the
+        # new pieces are measured. Recounting all of them after every split made
+        # the work quadratic in the number of pieces, which is what made the
+        # degenerate conics - the ones that split most - slow out of proportion to
+        # their difficulty.
+        ncrossings(b) = (ints = simplex_intersects(b,atol=atol,coeff_ref=coeff_ref);
+            sum([size(i,2) for i=ints if i != []], init=0))
         sub_bezpts = split_bezsurf₁(bezpts,coeff_ref=coeff_ref)
-        sub_intersects = [simplex_intersects(b,atol=atol,coeff_ref=coeff_ref) for b=sub_bezpts]
-        num_intersects = [sum([size(sub_intersects[i][j])[1] == 0 ? 0 : 
-            size(sub_intersects[i][j])[2] for j=1:3]) for i=1:length(sub_intersects)]
+        num_intersects = [ncrossings(b) for b=sub_bezpts]
         while any(num_intersects .> 2)
             # `split_bezsurf₁` returns its input unchanged when the surface
             # cannot be subdivided any further (a degenerate or very small
@@ -282,11 +288,11 @@ function split_bezsurf(bezpts::AbstractMatrix{<:Real};atol=def_atol,
                 subs = split_bezsurf₁(sub_bezpts[i],coeff_ref=coeff_ref)
                 if length(subs) == 1 continue end
                 split_occurred = true
-                append!(sub_bezpts,subs)
-                deleteat!(sub_bezpts,i)
-                sub_intersects = [simplex_intersects(b,atol=atol,coeff_ref=coeff_ref) for b=sub_bezpts]
-                num_intersects = [sum([size(sub_intersects[i][j])[1] == 0 ? 0 :
-                    size(sub_intersects[i][j])[2] for j=1:3]) for i=1:length(sub_intersects)]
+                # Deleting at i leaves every index below it alone, so the downward
+                # sweep stays valid, and the new pieces go on the end where this
+                # pass will not reach them - they are examined on the next.
+                deleteat!(sub_bezpts,i); deleteat!(num_intersects,i)
+                append!(sub_bezpts,subs); append!(num_intersects,[ncrossings(b) for b=subs])
             end
             if !split_occurred break end
         end
