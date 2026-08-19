@@ -77,6 +77,7 @@ is tracked as a gap rather than as a pass.
 | Aspect ratio, flattening | to 15 | `diag(λ, 1/λ)` |
 | Aspect ratio, upright | to 1.5 | `diag(1/λ, λ)` |
 | Level curve: hyperbola | unit scale | in tests |
+| Level curve: tangent, one-signed, circle wholly inside | unit scale | in tests; circle anchored on pi*r^2 |
 | Level curve: parallel lines, single line, all-positive, all-negative | unit scale | measured, not yet in tests |
 | Level curve: ellipse, parabola, intersecting lines | — | measured but **unadjudicated**: the differences are ~1e-6, which is the reference integrator's own error |
 | Any level surface, any tetrahedron | — | not measured |
@@ -85,12 +86,6 @@ is tracked as a gap rather than as a pass.
 
 Ordered by how badly each one can corrupt a band energy.
 
-- [ ] **Tangent level curve returns half the triangle.** `f = x²` touches zero
-      along a line and is never negative, so the area below zero is 0; the code
-      returns 0.5. Coefficients are `[1,-1,1,0,0,0]` at unit scale, so this is not
-      a scale effect. It is also discontinuous: `x² + 1e-3` gives 0 correctly and
-      `x² - 1e-3` gives 0.062 correctly, but exactly at tangency it jumps to 0.5.
-      Worst of the open items — silent, large, and reachable at ordinary scales.
 - [ ] **Upright stretching fails from aspect ratio 2**, while flattening survives
       to 15. The surface is unchanged by an affine map, so this can only come from
       the parts of the integration that reason about the contour in Cartesian
@@ -137,9 +132,12 @@ Ordered by how badly each one can corrupt a band energy.
 What we are not yet testing at all. These are not known failures; they are
 unknowns, which is worse.
 
-- [ ] **Level-curve type is not an axis in the suite.** Every assertion in
-      `ScaleInvariance.jl` uses one hyperbola. `conicsection` distinguishes seven
-      cases and the interesting failures live at the boundaries between them.
+- [ ] **Level-curve type is only partly an axis in the suite.** Tangency,
+      one-signed surfaces and a circle wholly inside are covered; the ellipse
+      crossing an edge, the parabola and the intersecting-lines cases are still
+      unadjudicated, waiting on the reference integrator's accuracy. The
+      degenerate-conic cases are also slow enough at unit scale - tens of seconds
+      - to be worth a look on their own account.
 - [ ] **Degenerate intersections**: roots exactly on a vertex, roots on an edge,
       curve entering and leaving through the same edge, double roots.
 - [ ] **Combined stress**: small triangle *and* anisotropic *and* small
@@ -205,4 +203,6 @@ duplicates are not. Current state worth watching:
 | `4370ec3` | Point deduplication scaled to the patch; `def_min_simplex_size` removed |
 | `7ca375b` | Unsplittable patches raise instead of being approximated by sign |
 | `ab5b0a1` | `test/ScaleInvariance.jl`: affine-invariance harness |
-| pending | `def_root_boundary_atol` removed as a duplicate of the `atol` already threaded into `bezcurve_intersects` |
+| `45bbfee` | `def_root_boundary_atol` removed as a duplicate of the `atol` already threaded into `bezcurve_intersects` |
+| `2c72a6c` | Vertex component magnitude measured and covered; two tracker claims corrected |
+| pending | Tangency fixed: the range over the simplex is computed exactly and settles the one-signed cases before the intersection logic runs |

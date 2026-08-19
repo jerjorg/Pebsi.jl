@@ -113,6 +113,44 @@ function analytic_volume(coeffs::AbstractVector{<:Real},w::Real)::Real
 end
 
 @doc """
+    simplex_extrema(coeffs;atol)
+
+Return the exact minimum and maximum of a quadratic over its simplex.
+
+A quadratic attains its extrema over a simplex either at a vertex, at a
+stationary point of its restriction to an edge, or at its interior stationary
+point, and all three are closed form. Sampling the interior instead - the
+centroid, say - answers a different question, and gets it wrong exactly where the
+level set passes through the point sampled.
+
+# Arguments
+- `coeffs::AbstractVector{<:Real}`: the Bezier coefficients of the quadratic.
+- `atol::Real`: a tolerance for placing a stationary point inside the simplex.
+
+# Returns
+- `Tuple{Real,Real}`: the minimum and maximum over the simplex.
+"""
+function simplex_extrema(coeffs::AbstractVector{<:Real};
+    atol::Real=def_atol)::Tuple{Real,Real}
+    lo = minimum(coeffs[corner_indices]); hi = maximum(coeffs[corner_indices])
+    for idx = ([1,2,3],[3,5,6],[6,4,1])
+        c0,c1,c2 = coeffs[idx]
+        A = c0 - 2*c1 + c2
+        A == 0 && continue
+        t = (c0 - c1)/A
+        0 < t < 1 || continue
+        v = (1-t)^2*c0 + 2*t*(1-t)*c1 + t^2*c2
+        lo = min(lo,v); hi = max(hi,v)
+    end
+    stat = saddlepoint(coeffs,atol=atol)
+    if all(isfinite,stat) && insimplex(stat)
+        v = eval_poly(stat,coeffs,2,2)
+        lo = min(lo,v); hi = max(hi,v)
+    end
+    lo,hi
+end
+
+@doc """
     two_intersects_area_volume(bezpts,quantity;atol)
 
 Calculate the area or volume within a quadratic curve and triangle.
@@ -157,6 +195,27 @@ function two_intersects_area_volume(bezpts::AbstractMatrix{<:Real},
     # but never below what this precision can resolve against the reference.
     ctol = max(cscale == 0 ? atol : def_coeff_rtol*cscale,
         def_coeff_noise_eps*eps(float(eltype(coeffs)))*abs(cref))
+    # Whether the surface is one-signed over the whole simplex is a question about
+    # its range, and the range is exact. Asking it first settles the cases the
+    # intersection machinery cannot: a level set tangent to the simplex touches it
+    # without enclosing anything, so the curve is found, two touch points are
+    # collected, and a chord is drawn across a region that does not exist.
+    #
+    # It has to be the range and not a sample. The centroid of a surface tangent
+    # along a line through it reads exactly zero, which says the simplex lies
+    # below the level set when nothing does. It also has to be the range and not
+    # the coefficients: those bound the surface without attaining it, so a
+    # non-negative surface can still have a negative coefficient - x^2 over a
+    # triangle has coefficients [1,-1,1,0,0,0] - and testing them alone reports a
+    # region that is not there.
+    lo,hi = simplex_extrema(coeffs,atol=atol)
+    if lo >= -ctol
+        return 0
+    elseif hi <= ctol
+        return quantity == "area" ? simplex_size(triangle) :
+            quantity == "volume" ? mean(coeffs)*simplex_size(triangle) :
+            throw(ArgumentError("The quantity calculated is either \"area\" or \"volume\"."))
+    end
     intersects = simplex_intersects(bezpts,atol=atol,coeff_ref=cref)
     # No intersections
     if intersects == [[],[],[]]

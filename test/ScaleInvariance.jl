@@ -2,6 +2,7 @@ using Test
 using Pebsi.Geometry: sample_simplex, barytocart, order_vertices!, simplex_size
 using Pebsi.Polynomials: getpoly_coeffs, eval_poly
 using Pebsi.QuadraticIntegration: quad_area_volume
+using Pebsi.Geometry: simplex_size
 using FastGaussQuadrature: gausslegendre
 
 # A patch's coefficients are barycentric, so the fraction of the triangle lying
@@ -135,6 +136,33 @@ end
             @test_broken isapprox(quad_area_volume([pts; _coeffs'],"area")/
                 simplex_size(pts[:,[1,3,6]]), _exact_fraction, rtol=1e-9)
         end
+    end
+
+    @testset "level curve type" begin
+        # The level curve's type is an axis in its own right, and the failure it
+        # exposed was not a matter of scale: a curve tangent to the level set
+        # returned half the triangle at unit scale with the coefficients
+        # [1,-1,1,0,0,0]. Anchored on constructions whose answers are known
+        # outside the code rather than on stored output.
+        frac(f) = (co = getpoly_coeffs([f(p...) for p = eachcol(_pts)],_sb,2,2);
+            quad_area_volume([_pts; co'],"area")/simplex_size(_pts[:,[1,3,6]]))
+
+        # x^2 touches zero along a line and is negative nowhere, so nothing lies
+        # below the level set. Bracketed either side: lifted clear of zero it is
+        # still nothing, dropped below it is a thin strip.
+        @test frac((x,y) -> x^2) == 0
+        @test frac((x,y) -> x^2 + 1e-3) == 0
+        @test frac((x,y) -> x^2 - 1e-3) > 0
+        # One-signed surfaces, where the level set misses the triangle entirely.
+        @test frac((x,y) -> x^2 + y^2 + 1) == 0
+        @test isapprox(frac((x,y) -> -x^2 - y^2 - 1), 1, rtol=1e-12)
+        # A circle of radius 0.2 lying wholly inside: its area is pi*r^2 whatever
+        # the implementation does, which is what makes it an anchor rather than a
+        # stored number.
+        @test isapprox(frac((x,y) -> x^2 + (y-0.3)^2 - 0.04)*simplex_size(_pts[:,[1,3,6]]),
+            pi*0.04, rtol=1e-8)
+        # A hyperbola cutting off exactly a third.
+        @test isapprox(frac((x,y) -> x^2 - (y-1/3)^2), 1/3, rtol=1e-10)
     end
 
     @testset "vertex component magnitude" begin
