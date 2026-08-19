@@ -239,30 +239,39 @@ function two_intersects_area_volume(bezpts::AbstractMatrix{<:Real},
     bezptsᵣ = []
     if intersects != [[],[],[]]
         all_intersects = reduce(hcat,[i for i=intersects if i != []])
-        # `split_bezsurf` could not reduce this patch to two intersections. That
-        # used to happen on triangles the box-padded Delaunay in split_bezsurf1
-        # could not subdivide, around 1e-9 in practice, because the deduplication
-        # there merged every point of a patch narrower than its fixed tolerance.
-        # With that tolerance made relative it is no longer reachable in any
-        # tested path, including a full refinement of m31, which is what used to
-        # depend on it.
+        # `split_bezsurf` could not reduce this patch to two intersections.
         #
-        # Small patches were once integrated by their sign here instead. That is
-        # no longer done: the whole point of this code is an exact Fermi area, and
-        # an approximation returned silently in a case nothing can now provoke is
-        # a wrong answer nobody would be told about. The size test is kept, but
-        # only to say which kind of failure this is.
+        # Below def_degenerate_simplex_size the patch is integrated by its sign
+        # instead of exactly. What that costs is bounded by the patch itself - its
+        # whole contribution to the area is its size, and to the volume its size
+        # times its largest coefficient - so on a patch of 1e-16 the approximation
+        # is worth less than the rounding already in the sum. Refusing it costs the
+        # entire calculation, which is not a good trade for that.
+        #
+        # It warns rather than doing it quietly. This branch was made a hard error
+        # earlier on the grounds that nothing could reach it: true of every 2D
+        # path, and of a full refinement of m31, but 3D could not run at all at the
+        # time and reaches it readily. An approximation that no one is told about
+        # is the part worth avoiding, not the approximation.
         if size(all_intersects,2) != 2
             tsize = simplex_size(triangle)
-            detail = tsize < def_degenerate_simplex_size ?
-                "The patch is smaller than def_degenerate_simplex_size "*
-                "($(def_degenerate_simplex_size)), so the likely cause is a tolerance "*
-                "that has stopped scaling with it rather than the geometry itself." :
-                "The patch is not small, so this indicates a genuine problem with the "*
-                "geometry or the coefficients rather than a limit of precision."
+            if tsize < def_degenerate_simplex_size
+                @warn "Integrating a patch of size $(tsize) by its sign: it meets "*
+                    "the triangle at $(size(all_intersects,2)) points and will not "*
+                    "subdivide. The error this introduces is bounded by the patch's "*
+                    "own contribution." maxlog=3
+                if quantity == "area"
+                    return mean(coeffs) < 0 ? tsize : 0
+                elseif quantity == "volume"
+                    return mean(coeffs) < 0 ? mean(coeffs)*tsize : 0
+                else
+                    throw(ArgumentError("The quantity calculated is either \"area\" or \"volume\"."))
+                end
+            end
             error("Cannot integrate a patch of size $(tsize) that intersects the "*
                 "triangle at $(size(all_intersects,2)) points and will not subdivide. "*
-                detail)
+                "The patch is not small, so this indicates a genuine problem with "*
+                "the geometry or the coefficients rather than a limit of precision.")
         end
         p₀ = all_intersects[:,1]
         p₂ = all_intersects[:,2]

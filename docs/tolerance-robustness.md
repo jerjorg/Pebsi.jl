@@ -46,6 +46,11 @@ These rules exist because they each caught a real error in this work.
 - **Prefer invariants to stored numbers.** Coefficients are barycentric, so
   `area / simplex_size` is invariant under every affine map of the triangle. A
   remaining absolute tolerance breaks that and nothing else.
+- **Check an invariant is one before relying on it.** A parity check on the
+  crossing count was proposed here on the grounds that a closed curve meets a
+  boundary an even number of times. The level set of a quadratic is not always a
+  closed curve - a hyperbola's branches are unbounded - so odd counts are ordinary
+  geometry, and the check would have discarded good patches.
 - **Anchor the reference itself** against closed forms before trusting it. See
   the open item on its accuracy below — it is currently the weakest link on some
   geometries.
@@ -75,7 +80,7 @@ is tracked as a gap rather than as a pass.
 | Translation | to 1e3 | |
 | Vertex component magnitude | 1e-8 → 1e8 | exact at every magnitude, holding shape in range; isolates cleanly from size and translation |
 | Aspect ratio, flattening | to 15 | `diag(λ, 1/λ)` |
-| Aspect ratio, upright | to 1.5 portably, 3 on some platforms | `diag(1/λ, λ)`; 2 and 3 depend on the scipy version |
+| Aspect ratio, upright | exact to 1.5; to 15 at ~1e-11 | beyond 1.5 the answer comes through sign-integrated patches, and whether it comes at all depends on the scipy version |
 | Level curve: hyperbola | unit scale | in tests |
 | Level curve: tangent, one-signed, circle wholly inside | unit scale | in tests; circle anchored on pi*r^2 |
 | Level curve: parallel lines, single line, all-positive, all-negative | unit scale | measured, not yet in tests |
@@ -102,8 +107,12 @@ Ordered by how badly each one can corrupt a band energy.
       This wants looking at before any more tolerance work, because it is the
       thing that decides whether the rest of it matters.
 
-- [ ] **Upright stretching fails from aspect ratio 5**, while flattening survives
-      to 15. Was 2, until the test for the curve's midpoint lying on an edge was
+- [ ] **Upright stretching is approximate beyond 1.5**, and flattening is wrong
+      between 20 and 50. Upright now returns answers out to 15, but from 2 onward
+      they come through patches too small to subdivide that are integrated by
+      their sign: right to about 1e-11 rather than exactly, and accompanied by a
+      warning. That is a usable answer, not a correct one, and the underlying
+      subdivision failure is unchanged. Was 2, until the test for the curve's midpoint lying on an edge was
       scaled to the triangle: it compared a distance in coordinate space against a
       fixed 1e-9, which on a patch of extent 1e-7 is a hundredth of the whole
       patch, so points well inside were called "on the edge" and their
@@ -122,7 +131,14 @@ Ordered by how badly each one can corrupt a band energy.
       double-counted or a degenerate shape. Four crossings is a real
       configuration - the level set entering and leaving through one edge - that
       the two-intersection formula cannot take and the splitting has to break up.
-      A count of 3, being odd, is a miscount somewhere on top of that.
+      A count of 3 is not a miscount: the level set of a quadratic is not
+      always a closed curve. A hyperbola has two unbounded branches, so the region
+      below it can meet the triangle's boundary an odd number of times - one
+      branch crossing while the other touches, or clips a corner. The patches that
+      stick here are classified `hyperbola`, and their three crossings are all
+      genuine sign changes. So the work is to integrate 3- and 4-crossing
+      configurations, or to subdivide them successfully, rather than to explain
+      the count away.
 - [ ] **The padding box in `split_bezsurf1` is asymmetric, and load-bearing.**
       `xmin` is derived from the already-enlarged `xmax`, so the patch is padded by
       100 widths on one side and 10100 on the other. That is plainly not the
