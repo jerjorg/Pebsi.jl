@@ -50,6 +50,41 @@ const def_neighbor_method = neighbors_surrounding # Select neighbors close and s
 const def_uniform = false # Do adaptive refinement by default
 const def_rtol = 1e-9 # Relative tolerance for floating point comparisons
 const def_atol = 1e-9 # absolute tolerance for floating point comparisons
+# Polynomial coefficients count as zero below this fraction of the largest
+# coefficient in the same polynomial, rather than below a fixed number.
+#
+# These coefficients are eigenvalues measured from the Fermi level, so they are
+# smallest exactly where the Fermi surface crosses a triangle - the triangles
+# that matter most. Comparing them against an absolute 1e-9 discards the level
+# set of any polynomial whose coefficients are small: scaling the coefficients
+# of a test patch by 1e-10, which does not move the zero contour or change the
+# true area at all, made the computed area 3.5 times too large, because no
+# intersections were found and the whole triangle was reported as occupied.
+const def_coeff_rtol = 1e-9
+
+# A coefficient is roundoff rather than merely small when it falls below this
+# many multiples of the working precision, measured against the reference
+# coefficient scale carried down from the patch the calculation started on.
+#
+# Two references are needed because a tolerance relative only to the coefficients
+# present cannot tell a small number from a meaningless one - dividing noise by
+# itself makes the noise look significant. Subdividing a patch whose values are of
+# order one leaves sub-patches whose coefficients are cancellation residue, and
+# judged on their own terms those become a genuine quadratic, so a region that is
+# not there gets integrated.
+#
+# The floor is expressed in multiples of `eps` rather than as a fixed number
+# because it is a property of the arithmetic, not of the problem. The same
+# coefficient that is unrecoverable in Float64 may be perfectly meaningful in
+# higher precision, and taking eps from the coefficient type means the floor
+# drops accordingly - which is what makes computing in BigFloat worth doing here
+# rather than merely slower.
+const def_coeff_noise_eps = 100
+
+# How close a root may come to the ends of its edge before it counts as sitting
+# on the corner. This is a question about a curve parameter, which runs from 0 to
+# 1 whatever the geometry or the coefficients, so it is genuinely absolute - and
+# it is a different question from whether a coefficient is zero, which is why it
 const def_fatten = 2.0 # A parameter for scaling the interval coefficients
 const max_refine_steps = 100 # The maximum number of refinement iterations
 const def_num_neighbors2D = 16 # The desired number of neighbors in 2D interval coefficient calculation
@@ -77,18 +112,15 @@ const def_neighbor_dist_rtol = 1e-9
 const def_max_neighbor_tol = 1.01 # Tolerance for selecting neighbors near the triangle
 const def_inside_neighbors_divs = 5 # The number of points for a uniform grid over a triangle for inside neighbors
 const def_bez_weight_tol = 1e-12 # Smaller tolerance for classifying conic sections
-# A patch this small that `split_bezsurf` could not reduce to two curve
-# intersections is integrated by its sign instead of exactly.
+# Divides the two ways integration can fail on a patch `split_bezsurf` could not
+# reduce to two curve intersections. It selects the wording of the error only -
+# both sides raise.
 #
-# The box-padded Delaunay in split_bezsurf1 sometimes cannot subdivide a triangle
-# even though it is well above def_min_simplex_size - every candidate sub-triangle
-# has a corner on the padding box - and the result comes back with three
-# intersections, which two_intersects_area_volume has no formula for. Such a patch
-# contributes at most its own size to the area, and at most its size times its
-# largest coefficient to the volume, so approximating it costs no more than that.
-# Refusing to integrate it costs the entire calculation. Above this size the
-# refusal stands, since a large patch that will not subdivide means something has
-# gone wrong rather than merely become small.
+# A patch below this size that will not subdivide points at a tolerance which has
+# stopped scaling with the geometry, the failure mode that produced every such
+# case seen so far. One above it points at the geometry or the coefficients
+# themselves. Saying which shortens the diagnosis considerably, since the two
+# have nothing in common but the symptom.
 const def_degenerate_simplex_size = 1e-6
 # A simplex from a triangulation counts as degenerate when its size is below
 # this fraction of the largest simplex in the same triangulation.
@@ -100,7 +132,6 @@ const def_degenerate_simplex_size = 1e-6
 # "zero volume" and the caller was told the patch could not be subdivided. The
 # geometry was never the problem; the yardstick was.
 const def_simplex_size_rtol = 1e-9
-const def_min_simplex_size = 1e-12 # The smallest triangle that can be split
 const def_rational_bezpt_dist = 1e6 # The maximum size of a component of a rational Bezier point
 const def_weighted = false # Points are not weighted to calculate interval coefficients
 const def_constrained = true # Band structure interpolated with constrained least squares

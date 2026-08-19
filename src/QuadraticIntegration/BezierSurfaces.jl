@@ -92,11 +92,11 @@ simplex_intersects(bezpts)
 ```
 """
 function simplex_intersects(bezpts::AbstractMatrix{<:Real};
-    atol::Real=def_atol)::Array
+    atol::Real=def_atol, coeff_ref::Union{Nothing,Real}=nothing)::Array
     intersects = Array{Array,1}([[],[],[]])
     for i=1:3
         edge_bezpts = bezpts[:,edge_indices[i]]
-        edge_ints = bezcurve_intersects(edge_bezpts[end,:];atol=atol)
+        edge_ints = bezcurve_intersects(edge_bezpts[end,:];atol=atol,coeff_ref=coeff_ref)
         if edge_ints != []
             intersects[i] = reduce(hcat,[edge_bezpts[1:end-1,1] .+ 
                 i*(edge_bezpts[1:end-1,end] .- edge_bezpts[1:end-1,1]) for i=edge_ints])
@@ -180,17 +180,15 @@ length(sbezpts)
 6
 ```
 """
-function split_bezsurf₁(bezpts::AbstractMatrix{<:Real}; atol::Real=def_atol)::AbstractArray
+function split_bezsurf₁(bezpts::AbstractMatrix{<:Real}; atol::Real=def_atol,
+    coeff_ref::Union{Nothing,Real}=nothing)::AbstractArray
     spatial = pyimport("scipy.spatial")
     dim = 2; deg = 2; 
     triangle = bezpts[1:end-1,corner_indices]
-    if simplex_size(triangle) < def_min_simplex_size
-        return [bezpts]
-    end
-     
+
     coeffs = bezpts[end,:]; pts = bezpts[1:end-1,:]
     simplex_bpts = sample_simplex(dim,deg)
-    intersects = simplex_intersects(bezpts,atol=atol)
+    intersects = simplex_intersects(bezpts,atol=atol,coeff_ref=coeff_ref)
     spt = saddlepoint(coeffs)
     allpts = pts
     if insimplex(spt) # Using the default absolute tolerance 1e-12
@@ -200,7 +198,13 @@ function split_bezsurf₁(bezpts::AbstractMatrix{<:Real}; atol::Real=def_atol)::
         allintersects = reduce(hcat,[i for i=intersects if i!=[]])
         allpts = [allpts allintersects]
     end
-    allpts = unique_points(allpts,atol=atol)
+    # Deduplication happens in coordinate space, so the tolerance carries the
+    # patch's units. Held fixed it stops being a test for coincident points and
+    # becomes a floor on patch size: once the patch is narrower than atol every
+    # point in it looks like every other, the six collapse to one, and the
+    # Delaunay below has nothing to triangulate.
+    extent = maximum(maximum(allpts,dims=2) - minimum(allpts,dims=2))
+    allpts = unique_points(allpts,atol=(extent > 0 ? atol*extent : atol))
     # Had to add box points to prevent collinear triangles.
     xmax,ymax = maximum(bezpts[1:2,:],dims=2)
     xmin,ymin = minimum(bezpts[1:2,:],dims=2)
@@ -254,17 +258,24 @@ split_bezsurf(bezpts)
 ```
 *See `split_bezsurf₁` for a more detailed description.
 """
-function split_bezsurf(bezpts::AbstractMatrix{<:Real};atol=def_atol)::AbstractArray
+function split_bezsurf(bezpts::AbstractMatrix{<:Real};atol=def_atol,
+    coeff_ref::Union{Nothing,Real}=nothing)::AbstractArray
     
-    intersects = simplex_intersects(bezpts,atol=atol)
+    intersects = simplex_intersects(bezpts,atol=atol,coeff_ref=coeff_ref)
     num_intersects = sum([size(i,2) for i=intersects if i!=[]])
     if num_intersects <= 2
         return [bezpts]
     else
-        sub_bezpts = split_bezsurf₁(bezpts)
-        sub_intersects = [simplex_intersects(b,atol=atol) for b=sub_bezpts]
-        num_intersects = [sum([size(sub_intersects[i][j])[1] == 0 ? 0 : 
-            size(sub_intersects[i][j])[2] for j=1:3]) for i=1:length(sub_intersects)]
+        # Splitting one patch cannot change how many times the level set crosses
+        # any other, so the counts are carried alongside the patches and only the
+        # new pieces are measured. Recounting all of them after every split made
+        # the work quadratic in the number of pieces, which is what made the
+        # degenerate conics - the ones that split most - slow out of proportion to
+        # their difficulty.
+        ncrossings(b) = (ints = simplex_intersects(b,atol=atol,coeff_ref=coeff_ref);
+            sum([size(i,2) for i=ints if i != []], init=0))
+        sub_bezpts = split_bezsurf₁(bezpts,coeff_ref=coeff_ref)
+        num_intersects = [ncrossings(b) for b=sub_bezpts]
         while any(num_intersects .> 2)
             # `split_bezsurf₁` returns its input unchanged when the surface
             # cannot be subdivided any further (a degenerate or very small
@@ -274,14 +285,14 @@ function split_bezsurf(bezpts::AbstractMatrix{<:Real};atol=def_atol)::AbstractAr
             split_occurred = false
             for i = length(num_intersects):-1:1
                 if num_intersects[i] <= 2 continue end
-                subs = split_bezsurf₁(sub_bezpts[i])
+                subs = split_bezsurf₁(sub_bezpts[i],coeff_ref=coeff_ref)
                 if length(subs) == 1 continue end
                 split_occurred = true
-                append!(sub_bezpts,subs)
-                deleteat!(sub_bezpts,i)
-                sub_intersects = [simplex_intersects(b,atol=atol) for b=sub_bezpts]
-                num_intersects = [sum([size(sub_intersects[i][j])[1] == 0 ? 0 :
-                    size(sub_intersects[i][j])[2] for j=1:3]) for i=1:length(sub_intersects)]
+                # Deleting at i leaves every index below it alone, so the downward
+                # sweep stays valid, and the new pieces go on the end where this
+                # pass will not reach them - they are examined on the next.
+                deleteat!(sub_bezpts,i); deleteat!(num_intersects,i)
+                append!(sub_bezpts,subs); append!(num_intersects,[ncrossings(b) for b=subs])
             end
             if !split_occurred break end
         end
@@ -352,10 +363,15 @@ bezcurve_intersects(coeffs)
 ```
 """
 function bezcurve_intersects(bezcoeffs::AbstractVector{<:Real};
-    atol::Real=def_atol)::AbstractVector
+    atol::Real=def_atol, coeff_ref::Union{Nothing,Real}=nothing)::AbstractVector
     a,b,c = bezcoeffs
-    solutions = solve_quadratic(a - 2*b + c, 2*(b-a), a)
-    solutions = filter(t -> (t > 0 || isapprox(t,0,atol=atol)) 
+    solutions = solve_quadratic(a - 2*b + c, 2*(b-a), a, coeff_ref=coeff_ref)
+    # Whether a root sits on a corner is a question about the curve parameter,
+    # which runs 0 to 1 whatever the geometry and whatever the coefficients, so an
+    # absolute tolerance is already relative to the only scale there is. This is
+    # the sole use of atol in this function, which makes atol exactly that
+    # tolerance and leaves it under the caller's control.
+    solutions = filter(t -> (t > 0 || isapprox(t,0,atol=atol))
         && (t < 1 && !isapprox(t,1,atol=atol)), solutions)
     return solutions
 end

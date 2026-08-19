@@ -113,6 +113,44 @@ function analytic_volume(coeffs::AbstractVector{<:Real},w::Real)::Real
 end
 
 @doc """
+    simplex_extrema(coeffs;atol)
+
+Return the exact minimum and maximum of a quadratic over its simplex.
+
+A quadratic attains its extrema over a simplex either at a vertex, at a
+stationary point of its restriction to an edge, or at its interior stationary
+point, and all three are closed form. Sampling the interior instead - the
+centroid, say - answers a different question, and gets it wrong exactly where the
+level set passes through the point sampled.
+
+# Arguments
+- `coeffs::AbstractVector{<:Real}`: the Bezier coefficients of the quadratic.
+- `atol::Real`: a tolerance for placing a stationary point inside the simplex.
+
+# Returns
+- `Tuple{Real,Real}`: the minimum and maximum over the simplex.
+"""
+function simplex_extrema(coeffs::AbstractVector{<:Real};
+    atol::Real=def_atol)::Tuple{Real,Real}
+    lo = minimum(coeffs[corner_indices]); hi = maximum(coeffs[corner_indices])
+    for idx = ([1,2,3],[3,5,6],[6,4,1])
+        c0,c1,c2 = coeffs[idx]
+        A = c0 - 2*c1 + c2
+        A == 0 && continue
+        t = (c0 - c1)/A
+        0 < t < 1 || continue
+        v = (1-t)^2*c0 + 2*t*(1-t)*c1 + t^2*c2
+        lo = min(lo,v); hi = max(hi,v)
+    end
+    stat = saddlepoint(coeffs,atol=atol)
+    if all(isfinite,stat) && insimplex(stat)
+        v = eval_poly(stat,coeffs,2,2)
+        lo = min(lo,v); hi = max(hi,v)
+    end
+    lo,hi
+end
+
+@doc """
     two_intersects_area_volume(bezpts,quantity;atol)
 
 Calculate the area or volume within a quadratic curve and triangle.
@@ -137,17 +175,52 @@ two_intersects_area_volume(bezpts,"volume")
 ```
 """
 function two_intersects_area_volume(bezpts::AbstractMatrix{<:Real},
-    quantity::String; atol::Real=def_atol)::Real
+    quantity::String; atol::Real=def_atol,
+    coeff_ref::Union{Nothing,Real}=nothing)::Real
      
     # Calculate the bezier curve and weights, make sure the curve passes through
     # the triangle
     triangle = bezpts[1:end-1,corner_indices]
     coeffs = bezpts[end,:]
-    intersects = simplex_intersects(bezpts,atol=atol)
+    # What counts as zero for a coefficient is set by the coefficients present.
+    # These carry the units of the interpolated quantity - eigenvalues measured
+    # from the Fermi level - so a fixed threshold declares a patch entirely below
+    # zero whenever its values happen to be small, which is exactly the patches
+    # the Fermi surface passes through.
+    cscale = maximum(abs, coeffs)
+    # The reference is inherited when there is one, so a sub-patch made of
+    # roundoff is judged against the scale the calculation started from.
+    cref = coeff_ref === nothing ? cscale : coeff_ref
+    # Same two floors as solve_quadratic: relative to the coefficients present,
+    # but never below what this precision can resolve against the reference.
+    ctol = max(cscale == 0 ? atol : def_coeff_rtol*cscale,
+        def_coeff_noise_eps*eps(float(eltype(coeffs)))*abs(cref))
+    # Whether the surface is one-signed over the whole simplex is a question about
+    # its range, and the range is exact. Asking it first settles the cases the
+    # intersection machinery cannot: a level set tangent to the simplex touches it
+    # without enclosing anything, so the curve is found, two touch points are
+    # collected, and a chord is drawn across a region that does not exist.
+    #
+    # It has to be the range and not a sample. The centroid of a surface tangent
+    # along a line through it reads exactly zero, which says the simplex lies
+    # below the level set when nothing does. It also has to be the range and not
+    # the coefficients: those bound the surface without attaining it, so a
+    # non-negative surface can still have a negative coefficient - x^2 over a
+    # triangle has coefficients [1,-1,1,0,0,0] - and testing them alone reports a
+    # region that is not there.
+    lo,hi = simplex_extrema(coeffs,atol=atol)
+    if lo >= -ctol
+        return 0
+    elseif hi <= ctol
+        return quantity == "area" ? simplex_size(triangle) :
+            quantity == "volume" ? mean(coeffs)*simplex_size(triangle) :
+            throw(ArgumentError("The quantity calculated is either \"area\" or \"volume\"."))
+    end
+    intersects = simplex_intersects(bezpts,atol=atol,coeff_ref=cref)
     # No intersections
     if intersects == [[],[],[]]
         # Case where the sheet is completely above or below 0.    
-        if all(coeffs .< 0) && !any(isapprox.(coeffs,0,atol=atol))
+        if all(coeffs .< 0) && !any(isapprox.(coeffs,0,atol=ctol))
             if quantity == "area"
                 areaₒᵣvolume = simplex_size(triangle)
             elseif quantity == "volume"
@@ -157,7 +230,7 @@ function two_intersects_area_volume(bezpts::AbstractMatrix{<:Real},
             end
             return areaₒᵣvolume
         end
-        if all(coeffs .> 0) && !any(isapprox.(coeffs,0,atol=atol))
+        if all(coeffs .> 0) && !any(isapprox.(coeffs,0,atol=ctol))
             areaₒᵣvolume = 0
             return areaₒᵣvolume
         end
@@ -166,21 +239,27 @@ function two_intersects_area_volume(bezpts::AbstractMatrix{<:Real},
     bezptsᵣ = []
     if intersects != [[],[],[]]
         all_intersects = reduce(hcat,[i for i=intersects if i != []])
-        # `split_bezsurf` could not reduce this patch to two intersections. That
-        # happens on triangles the box-padded Delaunay in split_bezsurf1 cannot
-        # subdivide - every candidate sub-triangle has a corner on the padding
-        # box - which occurs well above def_min_simplex_size, around 1e-9 in
-        # practice.
+        # `split_bezsurf` could not reduce this patch to two intersections.
         #
         # Below def_degenerate_simplex_size the patch is integrated by its sign
-        # rather than exactly. Its whole contribution is bounded by its own size,
-        # so the error introduced is at most that, which is orders below the
-        # accuracy any calculation here is targeting. Above that size the refusal
-        # stands: a large patch that will not subdivide means something has gone
-        # wrong rather than merely become small.
+        # instead of exactly. What that costs is bounded by the patch itself - its
+        # whole contribution to the area is its size, and to the volume its size
+        # times its largest coefficient - so on a patch of 1e-16 the approximation
+        # is worth less than the rounding already in the sum. Refusing it costs the
+        # entire calculation, which is not a good trade for that.
+        #
+        # It warns rather than doing it quietly. This branch was made a hard error
+        # earlier on the grounds that nothing could reach it: true of every 2D
+        # path, and of a full refinement of m31, but 3D could not run at all at the
+        # time and reaches it readily. An approximation that no one is told about
+        # is the part worth avoiding, not the approximation.
         if size(all_intersects,2) != 2
             tsize = simplex_size(triangle)
             if tsize < def_degenerate_simplex_size
+                @warn "Integrating a patch of size $(tsize) by its sign: it meets "*
+                    "the triangle at $(size(all_intersects,2)) points and will not "*
+                    "subdivide. The error this introduces is bounded by the patch's "*
+                    "own contribution." maxlog=3
                 if quantity == "area"
                     return mean(coeffs) < 0 ? tsize : 0
                 elseif quantity == "volume"
@@ -190,7 +269,9 @@ function two_intersects_area_volume(bezpts::AbstractMatrix{<:Real},
                 end
             end
             error("Cannot integrate a patch of size $(tsize) that intersects the "*
-                "triangle at $(size(all_intersects,2)) points and will not subdivide.")
+                "triangle at $(size(all_intersects,2)) points and will not subdivide. "*
+                "The patch is not small, so this indicates a genuine problem with "*
+                "the geometry or the coefficients rather than a limit of precision.")
         end
         p₀ = all_intersects[:,1]
         p₂ = all_intersects[:,2]
@@ -205,8 +286,16 @@ function two_intersects_area_volume(bezpts::AbstractMatrix{<:Real},
             end
         else
             # Remove intersections if the mipoint of the Bezier curve is on an edge.
-            on_edge = any(isapprox.([lineseg_pt_dist(ptᵣ,triangle[:,i],atol=atol) 
-                for i=[[1,2],[2,3],[3,1]]],0,atol=atol))
+            # Whether the curve's midpoint lies on an edge is a distance in
+            # coordinate space, so the tolerance carries the triangle's units.
+            # Held fixed it stops asking whether the point is on the edge and
+            # starts asking whether the triangle is small: on a patch of extent
+            # 1e-7, atol of 1e-9 is a hundredth of the whole patch, and points
+            # well inside it are discarded along with their intersections.
+            tex = maximum(maximum(triangle,dims=2) - minimum(triangle,dims=2))
+            etol = tex > 0 ? atol*tex : atol
+            on_edge = any(isapprox.([lineseg_pt_dist(ptᵣ,triangle[:,i],atol=etol) 
+                for i=[[1,2],[2,3],[3,1]]],0,atol=etol))
             if on_edge intersects = [[],[],[]] end
         end
     end
@@ -231,14 +320,14 @@ function two_intersects_area_volume(bezpts::AbstractMatrix{<:Real},
     end
 
     if split
-        bezptsᵤ = [split_bezsurf(b,atol=atol) for b=split_bezsurf₁(bezpts)] |> flatten |> collect
-        return sum([two_intersects_area_volume(b,quantity,atol=atol) for b=bezptsᵤ])
+        bezptsᵤ = [split_bezsurf(b,atol=atol,coeff_ref=cref) for b=split_bezsurf₁(bezpts,coeff_ref=cref)] |> flatten |> collect
+        return sum([two_intersects_area_volume(b,quantity,atol=atol,coeff_ref=cref) for b=bezptsᵤ])
     end
 
     # No intersections, no island, and the coefficients are less or greater than 0.
     if intersects == [[],[],[]]
         v = eval_poly([1/3,1/3,1/3],coeffs,2,2)
-        if v < 0 || isapprox(v,0,atol=atol)
+        if v < 0 || isapprox(v,0,atol=ctol)
             below = true
         else
             below = false
@@ -279,7 +368,7 @@ function two_intersects_area_volume(bezpts::AbstractMatrix{<:Real},
     end
     avept = carttobary(avept,triangle)
     if (eval_poly(avept,coeffs,2,2) < 0 || 
-        isapprox(eval_poly(avept,coeffs,2,2), 0, atol=atol))
+        isapprox(eval_poly(avept,coeffs,2,2), 0, atol=ctol))
         below₀ = true
     else
         below₀ = false
@@ -359,8 +448,11 @@ function quad_area_volume(bezpts::AbstractMatrix{<:Real},
     if size(bezpts,1) == 4
         bezpts = [mapto_xyplane(bezpts[1:3,:]); bezpts[end,:]']
     end
-    sum([two_intersects_area_volume(b,quantity,atol=atol) for 
-        b=split_bezsurf(bezpts,atol=atol)])
+    # The top of the chain sets the reference: every sub-patch below is judged
+    # against the coefficients of the patch actually handed in.
+    cref = maximum(abs, bezpts[end,:])
+    sum([two_intersects_area_volume(b,quantity,atol=atol,coeff_ref=cref) for 
+        b=split_bezsurf(bezpts,atol=atol,coeff_ref=cref)])
 end
 
 end # module AreaVolume

@@ -542,7 +542,13 @@ function ibz_borders(ibz::Chull)
     if size(ibz.points,2) == 2
         [Matrix(ibz.points[i,:]') for i=eachrow(ibz.simplices)], lineseg_pt_dist
     else
-        [Matrix(ibz.points[f,:]') for f=get_uniquefacets(ibz)], ptface_mindist
+        # `get_uniquefacets` hands back each facet as its own points, not as
+        # indices into the hull's, so indexing `ibz.points` with one is a type
+        # error and always was - which is why nothing three-dimensional could get
+        # as far as building a mesh. The points arrive as a vector of vectors and
+        # `ptface_mindist` wants them in the columns of a matrix, same as the two
+        # dimensional branch above produces.
+        [reduce(hcat,f) for f=get_uniquefacets(ibz)], ptface_mindist
     end
 end
 
