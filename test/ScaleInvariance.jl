@@ -190,19 +190,22 @@ end
             @test isapprox(_fraction_under([λ 0.0; 0.0 1/λ]), _exact_fraction,
                 rtol=1e-10)
         end
-        # Stretching it upright is not, and fails from a ratio of 2.
-        for λ in [1.0,1.5]
+        # Stretching it upright is tolerated less well, but the limit is no longer
+        # at 2: the test for the curve's midpoint lying on an edge is a distance
+        # in coordinate space, and once scaled to the triangle rather than fixed,
+        # 2 and 3 resolve.
+        for λ in [1.0,1.5,2.0,3.0]
             @test isapprox(_fraction_under([1/λ 0.0; 0.0 λ]), _exact_fraction,
                 rtol=1e-10)
         end
     end
 
     @testset "aspect ratio, known limits" begin
-        # Upright stretching gives up at a ratio of 2, and the patch it fails on
-        # is the same size at every ratio - 4.7369515e-15 at 2, 3 and 5 alike.
-        # A size that does not move with the geometry that produced it is the
-        # signature of a tolerance that is still absolute somewhere.
-        for λ in [2.0,3.0,5.0]
+        # Upright stretching now gives up at 5 rather than 2. What remains is the
+        # same shape of problem one level down: the subdivision produces slivers
+        # it cannot resolve and recurses until they reach the relative precision
+        # floor, rather than reducing the intersection count.
+        for λ in [5.0,10.0,15.0]
             @test_broken isapprox(_fraction_under([1/λ 0.0; 0.0 λ]),
                 _exact_fraction, rtol=1e-10)
         end

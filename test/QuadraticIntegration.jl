@@ -673,10 +673,10 @@ end
         @test isapprox(quad_area_volume(bezpts,"volume"),0)
 
         bezpts = [-1.0 0.0 1.0 -0.5 0.5 0.0; 0.0 0.0 0.0 0.5 0.5 1.0; 0.88 -1.12 0.88 -0.3200000000000002 -0.3200000000000002 0.4800000000000001]
-        @test isapprox(quad_area_volume(bezpts,"area"),0.4043848653548269)
+        @test isapprox(quad_area_volume(bezpts,"area"),0.4043852486856665)
         @test isapprox(quad_area_volume(bezpts,"volume"),-0.03512210118696362)
         bezpts[end,:] *= -1
-        @test isapprox(quad_area_volume(bezpts,"area"),0.5956151346451732)
+        @test isapprox(quad_area_volume(bezpts,"area"),0.5956147513143335)
         @test isapprox(quad_area_volume(bezpts,"volume"),-0.1151221005920487)
 
         bezpts = [-1.0 0.0 1.0 -0.5 0.5 0.0; 0.0 0.0 0.0 0.5 0.5 1.0; 1.5 -0.5 1.5 -0.25 -0.25 0.0]
@@ -729,10 +729,10 @@ end
         @test isapprox(quad_area_volume(bezpts,"volume"),-0.017353768909409293)
 
         bezpts = [-1.0 0.0 1.0 -0.5 0.5 0.0; 0.0 0.0 0.0 0.5 0.5 1.0; 0.0 -1.3333333333333335 1.3333333333333333 -1.0 -0.3333333333333336 0.0]
-        @test isapprox(quad_area_volume(bezpts,"area"),0.8131374946676863)
+        @test isapprox(quad_area_volume(bezpts,"area"),0.8131375605560034)
         @test isapprox(quad_area_volume(bezpts,"volume"),-0.28965755282934735)
         bezpts[end,:] *= -1
-        @test isapprox(quad_area_volume(bezpts,"area"),0.1868625053323137)
+        @test isapprox(quad_area_volume(bezpts,"area"),0.1868624394439966)
         @test isapprox(quad_area_volume(bezpts,"volume"),-0.0674353303172949)
 
         bezpts = [-1.0 0.0 1.0 -0.5 0.5 0.0; 0.0 0.0 0.0 0.5 0.5 1.0; 0.12499999999999989 -1.3750000000000002 1.125 -0.8750000000000002 -0.37500000000000017 0.12499999999999989]

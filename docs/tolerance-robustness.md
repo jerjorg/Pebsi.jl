@@ -75,7 +75,7 @@ is tracked as a gap rather than as a pass.
 | Translation | to 1e3 | |
 | Vertex component magnitude | 1e-8 → 1e8 | exact at every magnitude, holding shape in range; isolates cleanly from size and translation |
 | Aspect ratio, flattening | to 15 | `diag(λ, 1/λ)` |
-| Aspect ratio, upright | to 1.5 | `diag(1/λ, λ)` |
+| Aspect ratio, upright | to 3 | `diag(1/λ, λ)` |
 | Level curve: hyperbola | unit scale | in tests |
 | Level curve: tangent, one-signed, circle wholly inside | unit scale | in tests; circle anchored on pi*r^2 |
 | Level curve: parallel lines, single line, all-positive, all-negative | unit scale | measured, not yet in tests |
@@ -86,17 +86,20 @@ is tracked as a gap rather than as a pass.
 
 Ordered by how badly each one can corrupt a band energy.
 
-- [ ] **Upright stretching fails from aspect ratio 2**, while flattening survives
-      to 15. The surface is unchanged by an affine map, so this can only come from
-      the parts of the integration that reason about the contour in Cartesian
-      coordinates (`getbez_pts_wts`, `conicsection`).
-      The failing sub-patch is always the same *fraction* of its parent - 4.7369e-15,
-      about 21 eps - across sixteen orders of magnitude of vertex component size
-      (4.736951370e-30 of a 1e-15 triangle, 4.736951571e-14 of a 1e+1 one). An
-      earlier note here called that a fixed absolute size and inferred a tolerance
-      that had stopped scaling; that was wrong. It scales proportionally, so the
-      diagnosis is that subdivision never resolves the intersection count and
-      recurses until the sub-patch reaches the relative precision floor.
+- [ ] **Upright stretching fails from aspect ratio 5**, while flattening survives
+      to 15. Was 2, until the test for the curve's midpoint lying on an edge was
+      scaled to the triangle: it compared a distance in coordinate space against a
+      fixed 1e-9, which on a patch of extent 1e-7 is a hundredth of the whole
+      patch, so points well inside were called "on the edge" and their
+      intersections discarded. Two orientations of the same barycentric surface
+      told the story - flattening never reached that test at all, while upright
+      reached it 46 times and it fired on 22.
+      What remains is the same shape of problem one level down: subdivision
+      produces slivers whose intersection count it never reduces, and recurses
+      until they reach the relative precision floor at about 21 eps of the parent.
+      The degenerate conics are worth looking at together with this - they split
+      many times at unit scale, taking tens of seconds, which is the same runaway
+      subdivision without the wrong answer at the end.
 - [ ] **Deep enough recursion overflows the stack.** At vertex components around
       1e8 the upright case raises `StackOverflowError`, and Julia reports that
       program state may be corrupted. This is the same non-termination as the
@@ -205,4 +208,5 @@ duplicates are not. Current state worth watching:
 | `ab5b0a1` | `test/ScaleInvariance.jl`: affine-invariance harness |
 | `45bbfee` | `def_root_boundary_atol` removed as a duplicate of the `atol` already threaded into `bezcurve_intersects` |
 | `2c72a6c` | Vertex component magnitude measured and covered; two tracker claims corrected |
-| pending | Tangency fixed: the range over the simplex is computed exactly and settles the one-signed cases before the intersection logic runs |
+| `c61a909` | Tangency fixed: the range over the simplex is computed exactly and settles the one-signed cases before the intersection logic runs |
+| pending | The on-edge test scaled to the triangle; upright aspect ratio extends from 2 to 3, and 16 captured calls improve |

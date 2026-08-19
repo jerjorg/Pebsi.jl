@@ -277,8 +277,16 @@ function two_intersects_area_volume(bezpts::AbstractMatrix{<:Real},
             end
         else
             # Remove intersections if the mipoint of the Bezier curve is on an edge.
-            on_edge = any(isapprox.([lineseg_pt_dist(ptᵣ,triangle[:,i],atol=atol) 
-                for i=[[1,2],[2,3],[3,1]]],0,atol=atol))
+            # Whether the curve's midpoint lies on an edge is a distance in
+            # coordinate space, so the tolerance carries the triangle's units.
+            # Held fixed it stops asking whether the point is on the edge and
+            # starts asking whether the triangle is small: on a patch of extent
+            # 1e-7, atol of 1e-9 is a hundredth of the whole patch, and points
+            # well inside it are discarded along with their intersections.
+            tex = maximum(maximum(triangle,dims=2) - minimum(triangle,dims=2))
+            etol = tex > 0 ? atol*tex : atol
+            on_edge = any(isapprox.([lineseg_pt_dist(ptᵣ,triangle[:,i],atol=etol) 
+                for i=[[1,2],[2,3],[3,1]]],0,atol=etol))
             if on_edge intersects = [[],[],[]] end
         end
     end
