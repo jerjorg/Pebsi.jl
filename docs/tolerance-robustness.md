@@ -97,9 +97,22 @@ Ordered by how badly each one can corrupt a band energy.
       What remains is the same shape of problem one level down: subdivision
       produces slivers whose intersection count it never reduces, and recurses
       until they reach the relative precision floor at about 21 eps of the parent.
-      The degenerate conics are worth looking at together with this - they split
-      many times at unit scale, taking tens of seconds, which is the same runaway
-      subdivision without the wrong answer at the end.
+      What is actually stuck: at a ratio of 5 the splitting produces 320 pieces and
+      leaves 10 of them with 3 or 4 crossings that `split_bezsurf1` will not
+      subdivide at all - every candidate sub-triangle comes back touching the
+      padding box, so it returns its input unchanged. The crossings are genuinely
+      distinct, 24% to 100% of the patch's extent apart, and one such patch is
+      nearly equilateral rather than a sliver, so this is not roots being
+      double-counted or a degenerate shape. Four crossings is a real
+      configuration - the level set entering and leaving through one edge - that
+      the two-intersection formula cannot take and the splitting has to break up.
+      A count of 3, being odd, is a miscount somewhere on top of that.
+- [ ] **The padding box in `split_bezsurf1` is asymmetric, and load-bearing.**
+      `xmin` is derived from the already-enlarged `xmax`, so the patch is padded by
+      100 widths on one side and 10100 on the other. That is plainly not the
+      intent, but making it symmetric is a regression: the upright ratio of 3 goes
+      from working to raising. Something about the lopsided box is helping the
+      triangulation, and it should be understood before it is corrected.
 - [ ] **Deep enough recursion overflows the stack.** At vertex components around
       1e8 the upright case raises `StackOverflowError`, and Julia reports that
       program state may be corrupted. This is the same non-termination as the
