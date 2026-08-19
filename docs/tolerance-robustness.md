@@ -75,7 +75,7 @@ is tracked as a gap rather than as a pass.
 | Translation | to 1e3 | |
 | Vertex component magnitude | 1e-8 → 1e8 | exact at every magnitude, holding shape in range; isolates cleanly from size and translation |
 | Aspect ratio, flattening | to 15 | `diag(λ, 1/λ)` |
-| Aspect ratio, upright | to 3 | `diag(1/λ, λ)` |
+| Aspect ratio, upright | to 1.5 portably, 3 on some platforms | `diag(1/λ, λ)`; 2 and 3 depend on the scipy version |
 | Level curve: hyperbola | unit scale | in tests |
 | Level curve: tangent, one-signed, circle wholly inside | unit scale | in tests; circle anchored on pi*r^2 |
 | Level curve: parallel lines, single line, all-positive, all-negative | unit scale | measured, not yet in tests |
@@ -135,9 +135,16 @@ Ordered by how badly each one can corrupt a band energy.
 - [ ] **Translation to 1e6 costs about ten digits** to cancellation; the unit
       triangle measures 0.9999999999 and the patch arrives with four
       intersections. Likely recoverable by working relative to the patch centroid.
-- [ ] **Extreme ratios behave differently per platform**: at 100, Linux, macOS and
-      1.12 raise, Windows under 1.10 returns a value. Whatever that value is, it
-      is unadjudicated.
+- [ ] **Results near the limit depend on the scipy version.** The subdivision
+      triangulates through scipy's Delaunay, and different versions split these
+      near-degenerate slivers differently, so the same aspect ratio returns an
+      answer on one machine and raises on another - upright 2 and 3 do exactly
+      that. At a flattening ratio of 100, Linux, macOS and 1.12 raise while
+      Windows under 1.10 returns a value. For a package whose point is a
+      reproducible Fermi area this is worth more than a footnote: the boundary of
+      what works is not a property of the code alone. Replacing the triangulation
+      with a Julia-native one would remove the dependence, and would also lift the
+      Float64-only restriction that PyCall imposes.
 - [ ] **Error message dichotomy is incomplete.** A large patch far from the origin
       fails for precision reasons but is reported as "not small, so this indicates
       a genuine problem with the geometry" — which is misleading in exactly the
