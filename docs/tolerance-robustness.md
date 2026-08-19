@@ -81,10 +81,26 @@ is tracked as a gap rather than as a pass.
 | Level curve: parallel lines, single line, all-positive, all-negative | unit scale | measured, not yet in tests |
 | Level curve: ellipse, parabola, intersecting lines | — | measured but **unadjudicated**: the differences are ~1e-6, which is the reference integrator's own error |
 | Any level surface, any tetrahedron | — | not measured |
+| 3D end to end (Ag) | **does not converge** | runs now, but the band energy plateaus ~1e-2 from the stored value, which carries an uncertainty of 5.1e-6 |
 
 ## Outstanding
 
 Ordered by how badly each one can corrupt a band energy.
+
+- [ ] **3D does not converge to the stored band energy.** With `ibz_borders`
+      fixed, Ag runs end to end for the first time. Over 24 refinements the band
+      energy error falls from 8.0e-2 to 1.0e-2 and then stops improving, moving up
+      and down between 5e-3 and 1.2e-2; the stored value carries an uncertainty of
+      5.1e-6, so the calculation is about three orders of magnitude short of its
+      own target. The Fermi level behaves the same way - it touches 6.1e-5 at one
+      step and is back at 3.7e-3 six steps later.
+- [ ] **Refinement barely refines in 3D.** Each step splits one simplex and adds
+      six k-points: 112 to 262 over 24 refinements. Whatever the integration is
+      doing, the mesh is not being driven anywhere near hard enough to tell, and
+      the non-monotonic error is consistent with a refinement criterion choosing
+      the wrong simplex rather than with an integration that is merely imprecise.
+      This wants looking at before any more tolerance work, because it is the
+      thing that decides whether the rest of it matters.
 
 - [ ] **Upright stretching fails from aspect ratio 5**, while flattening survives
       to 15. Was 2, until the test for the curve's midpoint lying on an edge was
